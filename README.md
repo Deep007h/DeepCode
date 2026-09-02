@@ -3,6 +3,7 @@
 <div align="center">
   <img src="icon.png" alt="DeepCode Logo" width="128"/>
 </div>
+<br/>
 
 <div align="center">
 
