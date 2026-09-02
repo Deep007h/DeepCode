@@ -1,6 +1,10 @@
 # DeepCode — AI Agent, Code Engine & Automation Assistant for Android
 
 <div align="center">
+  <img src="icon.png" alt="DeepCode Logo" width="128"/>
+</div>
+
+<div align="center">
 
 [![Platform](https://img.shields.io/badge/Platform-Android-brightgreen?logo=android)](https://developer.android.com)
 [![Language](https://img.shields.io/badge/Language-Kotlin%20%2B%20Jetpack%20Compose-blue?logo=kotlin&logoColor=white)](https://kotlinlang.org)
