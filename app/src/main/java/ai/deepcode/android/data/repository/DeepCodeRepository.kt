@@ -1,0 +1,201 @@
+package ai.deepcode.android.data.repository
+
+import android.content.Context
+import ai.deepcode.android.data.local.AppDatabase
+import ai.deepcode.android.data.local.EncryptedPrefs
+import ai.deepcode.android.data.local.MessageEntity
+import ai.deepcode.android.data.local.SessionEntity
+import ai.deepcode.android.data.local.TurnTokenUsage
+import ai.deepcode.android.domain.model.ChatSession
+import ai.deepcode.android.domain.model.Message
+import ai.deepcode.android.service.git.GitInfo
+import ai.deepcode.android.service.git.GitService
+import ai.deepcode.android.service.storage.TelegramDriveService
+import ai.deepcode.android.service.notion.NotionService
+import ai.deepcode.android.service.github.GitHubService
+import ai.deepcode.android.service.tools.ToolExecutor
+import ai.deepcode.android.util.AppLogger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+
+class DeepCodeRepository(context: Context) {
+    val appContext = context.applicationContext
+    private val database = AppDatabase.getDatabase(appContext)
+    private val sessionDao = database.sessionDao()
+    private val messageDao = database.messageDao()
+    val securePrefs = EncryptedPrefs.getInstance(appContext)
+    val telegramDrive = TelegramDriveService(appContext)
+    val tokenRepository = TokenUsageRepository(
+        database.tokenUsageDao(),
+        database.tokenEventDao()
+    )
+    private val toolExecutor = ToolExecutor(appContext).also {
+        it.telegramDrive = telegramDrive
+        val notionToken = securePrefs.getSetting("notion_token", "")
+        if (notionToken.isNotEmpty()) {
+            it.notionService = NotionService(notionToken)
+        }
+        val githubToken = securePrefs.getSetting("github_token", "")
+        if (githubToken.isNotEmpty()) {
+            it.gitHubService = GitHubService(githubToken)
+        }
+    }
+    private val gitService = GitService()
+
+    companion object {
+        private val prewarmedRepo = AtomicReference<DeepCodeRepository?>()
+        private val prewarmScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        @JvmStatic
+        fun prewarm(context: Context) {
+            if (prewarmedRepo.get() != null) return
+            prewarmScope.launch {
+                try {
+                    val repo = DeepCodeRepository(context.applicationContext)
+                    if (prewarmedRepo.compareAndSet(null, repo)) {
+                        AppLogger.i("DeepCodeRepository", "Prewarmed repository")
+                    }
+                } catch (e: Exception) {
+                    AppLogger.e("DeepCodeRepository", "Prewarm failed", e)
+                }
+            }
+        }
+
+        @JvmStatic
+        fun getInstance(context: Context): DeepCodeRepository {
+            prewarmedRepo.get()?.let { return it }
+            val repo = DeepCodeRepository(context.applicationContext)
+            prewarmedRepo.set(repo)
+            return repo
+        }
+    }
+
+    fun getAllSessions(): Flow<List<ChatSession>> {
+        return sessionDao.getAllSessions().map { entities ->
+            entities.map { it.toDomain() }
+                .filter { !it.id.startsWith("telegram_") && !it.title.startsWith("Automation:") }
+        }
+    }
+
+    suspend fun createSession(title: String): String {
+        val id = java.util.UUID.randomUUID().toString()
+        val session = SessionEntity(id, title, System.currentTimeMillis())
+        sessionDao.insertSession(session)
+        return id
+    }
+
+    suspend fun createSessionWithId(id: String, title: String): String {
+        val session = SessionEntity(id, title, System.currentTimeMillis())
+        sessionDao.insertSession(session)
+        return id
+    }
+
+    suspend fun getSessionById(id: String): ChatSession? {
+        return sessionDao.getSessionById(id)?.toDomain()
+    }
+
+    suspend fun deleteSession(id: String) {
+        withContext(Dispatchers.IO) {
+            val messages = messageDao.getMessagesListForSession(id)
+            for (msg in messages) {
+                val allText = listOfNotNull(msg.content, msg.toolResultsJson).joinToString(" ")
+                Regex("""\[audio:([^\]]+)\]""").findAll(allText).forEach {
+                    try { File(it.groupValues[1]).delete() } catch (_: Exception) {}
+                }
+                Regex("""\[image:([^\]]+)\]""").findAll(allText).forEach {
+                    try { File(it.groupValues[1]).delete() } catch (_: Exception) {}
+                }
+                Regex("""file://([^\s\]]+)""").findAll(allText).forEach {
+                    try { File(it.groupValues[1]).delete() } catch (_: Exception) {}
+                }
+            }
+            val imgDir = File(appContext.filesDir, "session_images/$id")
+            if (imgDir.exists()) imgDir.deleteRecursively()
+            sessionDao.deleteSession(id)
+            messageDao.deleteMessagesForSession(id)
+        }
+    }
+
+    suspend fun renameSession(id: String, newTitle: String) {
+        withContext(Dispatchers.IO) {
+            sessionDao.renameSession(id, newTitle)
+        }
+    }
+
+    fun getMessagesForSession(sessionId: String): Flow<List<Message>> {
+        return messageDao.getMessagesForSession(sessionId).map { entities ->
+            entities.map { it.toDomain() }
+        }
+    }
+
+    suspend fun getMessagesListForSession(sessionId: String): List<Message> {
+        return messageDao.getMessagesListForSession(sessionId).map { it.toDomain() }
+    }
+
+    suspend fun insertMessage(message: Message) {
+        messageDao.insertMessage(MessageEntity.fromDomain(message))
+    }
+
+    suspend fun deleteMessage(messageId: String) {
+        messageDao.deleteMessageById(messageId)
+    }
+
+    suspend fun deleteToolMessagesForSession(sessionId: String) {
+        messageDao.deleteToolMessagesForSession(sessionId)
+    }
+
+    fun getMessageCount(): Flow<Int> {
+        return messageDao.getMessageCount()
+    }
+
+    fun executeTool(name: String, argsJson: String, workingDir: String): String {
+        val rootMode = securePrefs.getBooleanSetting("root_mode", false)
+        return toolExecutor.executeTool(name, argsJson, workingDir, rootMode)
+    }
+
+    fun getDeclaredTools() = toolExecutor.getDeclaredTools()
+
+    fun getGitStatus(workingDir: String): GitInfo {
+        return gitService.getGitStatus(workingDir)
+    }
+
+    fun getDefaultProjectPath(): String {
+        return "/storage/emulated/0"
+    }
+
+    suspend fun recordTokenUsage(
+        sessionId: String,
+        modelId: String,
+        providerName: String,
+        usage: TurnTokenUsage
+    ) {
+        tokenRepository.recordTurn(sessionId, modelId, usage)
+
+        val totalCost = ai.deepcode.android.data.local.ModelPriceProvider.calculateTurnCost(
+            modelId = modelId,
+            inputTokens = usage.inputTokens,
+            outputTokens = usage.outputTokens,
+            reasoningTokens = usage.reasoningTokens,
+            cacheReadTokens = usage.cacheReadTokens,
+            cacheWriteTokens = usage.cacheWriteTokens
+        )
+
+        sessionDao.accumulateSessionTokens(
+            sessionId = sessionId,
+            inputTokens = usage.inputTokens.toLong(),
+            outputTokens = usage.outputTokens.toLong(),
+            cost = totalCost
+        )
+    }
+
+}
