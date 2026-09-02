@@ -677,6 +677,7 @@ fun ApiKeysScreen(
             }
         }
     }
+}
 
 private suspend fun performBrowserOAuth(
     context: android.content.Context,
@@ -798,13 +799,6 @@ private suspend fun performBrowserOAuth(
         Result.failure(e)
     } finally {
         try { serverSocket?.close() } catch (_: Exception) {}
-        // Keep the Antigravity OAuth client permanently — don't restore the old one.
-        // The old fallback client (623008392016-...) is only used for device-level
-        // AccountManager tokens (Gmail/Calendar), not for this OAuth code flow.
-        if (prevClientId != null && providerId != "antigravity") {
-            securePrefs.saveSetting("google_client_id", prevClientId)
-            securePrefs.saveSetting("google_client_secret", "")
-        }
     }
 }
 
