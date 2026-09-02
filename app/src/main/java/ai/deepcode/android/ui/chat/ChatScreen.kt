@@ -2207,7 +2207,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                                 // Reset marker — next token will replace (not append)
                                 _streamedText.value = ""
                             } else {
-                                _streamedText.update { it + token }
+                                _streamedText.value += token
                             }
                         },
                         onToolCall = { toolCall ->
@@ -2459,7 +2459,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     tools = if (consecutiveWebSearches >= 2 || toolCallDepth >= maxToolCallDepth) emptyList() else repository.getDeclaredTools(),
                     apiKey = retryApiKey,
                     customBaseUrl = baseUrl,
-                    onToken = { token -> _streamedText.update { it + token } },
+                    onToken = { token -> _streamedText.value += token },
                     onToolCall = { tc ->
                         nextStreamHadToolCall = true
                         maybeAutoApproveTool(tc)

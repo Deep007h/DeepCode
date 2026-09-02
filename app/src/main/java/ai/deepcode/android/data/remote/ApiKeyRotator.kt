@@ -67,7 +67,7 @@ object ApiKeyRotator {
         var nextConfiguredKey: Pair<String, Int>? = null
 
         // Pass 1: Look for a non-exhausted non-empty key
-        for (offset in 1 until max) {
+        for (offset in 1..max) {
             val slot = ((afterSlot - 1 + offset) % max) + 1
             val key = prefs.getApiKeySlot(storageId, slot)
             if (key.isNotEmpty()) {

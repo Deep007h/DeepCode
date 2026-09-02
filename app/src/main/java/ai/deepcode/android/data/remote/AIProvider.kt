@@ -1,6 +1,8 @@
 package ai.deepcode.android.data.remote
 
 import com.google.gson.Gson
+import okio.buffer
+import okio.source
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -28,6 +30,13 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
 
+
+fun shouldIncludeTools(messages: List<Message>, tools: List<Tool>?): Boolean {
+    if (tools.isNullOrEmpty()) return false
+    val lastUserMsg = messages.lastOrNull { it.role == "user" }?.content?.lowercase() ?: ""
+    val toolTriggers = listOf("search", "google", "web", "fetch", "url", "http", "image", "video", "audio", "tts", "speak", "voice", "pdf", "file", "read", "write", "list", "directory", "dir", "grep", "command", "exec", "terminal", "run", "qr", "csv", "zip", "json", "hash", "base64", "calendar", "contact", "vcard")
+    return toolTriggers.any { lastUserMsg.contains(it) } || messages.any { it.role == "tool" || it.isToolCall }
+}
 interface AIProvider {
     val name: String
     val isFree: Boolean
@@ -244,7 +253,40 @@ class AIProviderFactory {
     }
 }
 
+
+class KeepAliveSocketFactory(private val delegate: javax.net.SocketFactory = javax.net.SocketFactory.getDefault()) : javax.net.SocketFactory() {
+    override fun createSocket(): java.net.Socket {
+        val socket = delegate.createSocket()
+        socket.keepAlive = true
+        return socket
+    }
+
+    override fun createSocket(host: String?, port: Int): java.net.Socket {
+        val socket = delegate.createSocket(host, port)
+        socket.keepAlive = true
+        return socket
+    }
+
+    override fun createSocket(host: String?, port: Int, localHost: java.net.InetAddress?, localPort: Int): java.net.Socket {
+        val socket = delegate.createSocket(host, port, localHost, localPort)
+        socket.keepAlive = true
+        return socket
+    }
+
+    override fun createSocket(host: java.net.InetAddress?, port: Int): java.net.Socket {
+        val socket = delegate.createSocket(host, port)
+        socket.keepAlive = true
+        return socket
+    }
+
+    override fun createSocket(address: java.net.InetAddress?, port: Int, localAddress: java.net.InetAddress?, localPort: Int): java.net.Socket {
+        val socket = delegate.createSocket(address, port, localAddress, localPort)
+        socket.keepAlive = true
+        return socket
+    }
+}
 private val client = OkHttpClient.Builder()
+    .socketFactory(KeepAliveSocketFactory())
     .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
     .connectionPool(okhttp3.ConnectionPool(16, 5, TimeUnit.MINUTES))
     .connectTimeout(15, TimeUnit.SECONDS)
@@ -292,6 +334,7 @@ class ZenProvider : AIProvider {
     companion object {
         private val zenHttpClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
+                .socketFactory(KeepAliveSocketFactory())
                 .connectionPool(okhttp3.ConnectionPool(8, 5, TimeUnit.MINUTES))
                 .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
                 .connectTimeout(10, TimeUnit.SECONDS)
@@ -366,13 +409,9 @@ class ZenProvider : AIProvider {
 
         // Only include tool schemas if the conversation history or user query indicates tools are relevant.
         // Skipping 15+ complex JSON schemas on standard chat queries cuts Time-To-First-Token (TTFT) by seconds.
-        val lastUserMsg = messages.lastOrNull { it.role == "user" }?.content?.lowercase() ?: ""
-        val toolTriggers = listOf("search", "google", "web", "fetch", "url", "http", "image", "video", "audio", "tts", "speak", "voice", "pdf", "file", "read", "write", "list", "directory", "dir", "grep", "command", "exec", "terminal", "run", "qr", "csv", "zip", "json", "hash", "base64", "calendar", "contact", "vcard")
-        val needsTools = !tools.isNullOrEmpty() && (toolTriggers.any { lastUserMsg.contains(it) } || messages.any { it.role == "tool" || it.isToolCall })
-
-        if (needsTools && tools != null) {
+        if (shouldIncludeTools(messages, tools)) {
             val toolsArray = com.google.gson.JsonArray()
-            val filteredTools = if (tools.size > 10) {
+            val filteredTools = if (tools!!.size > 10) {
                 val priorityNames = setOf("edge_tts", "web_search", "web_fetch", "create_pdf", "generate_image", "generate_video", "read_file", "list_directory", "grep_search", "write_file", "replace_in_file", "execute_command")
                 tools.filter { it.name in priorityNames }
             } else tools
@@ -457,8 +496,8 @@ class ZenProvider : AIProvider {
                     return@withContext
                 }
 
-                val reader = java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream, "UTF-8"))
-                parseSseStream(reader, onToken, onToolCall, onComplete, onUsage)
+                val source = conn.inputStream.source().buffer()
+                parseSseStream(source, onToken, onToolCall, onComplete, onUsage)
             } finally {
                 try { conn.disconnect() } catch (_: Exception) {}
             }
@@ -502,8 +541,8 @@ class ZenProvider : AIProvider {
                     parseNonStreamingResponse(bodyStr, onToken, onToolCall, onComplete, onUsage)
                     return@withContext
                 }
-                val reader = java.io.BufferedReader(java.io.InputStreamReader(body.byteStream()))
-                parseSseStream(reader, onToken, onToolCall, onComplete, onUsage)
+                val source = body.source()
+                parseSseStream(source, onToken, onToolCall, onComplete, onUsage)
             }
         }
     }
@@ -611,7 +650,7 @@ class ZenProvider : AIProvider {
     }
 
     private fun parseSseStream(
-        reader: java.io.BufferedReader,
+        source: okio.BufferedSource,
         onToken: (String) -> Unit,
         onToolCall: (ToolCall) -> Unit,
         onComplete: (String) -> Unit,
@@ -627,7 +666,7 @@ class ZenProvider : AIProvider {
         var usageReasoning = 0
 
         var line: String?
-        while (reader.readLine().also { line = it } != null) {
+        while (source.readUtf8Line().also { line = it } != null) {
             val cleaned = line!!.trim()
             if (cleaned.startsWith("data: ")) {
                 val dataVal = cleaned.substring(6).trim()
@@ -678,7 +717,7 @@ class ZenProvider : AIProvider {
                 } catch (_: Exception) {}
             }
         }
-        reader.close()
+        source.close()
 
         toolCallBuilders.values.forEach { builder ->
             if (builder.name.isNotEmpty()) onToolCall(ToolCall(builder.getValidId(), builder.name, builder.arguments.toString()))
@@ -867,10 +906,10 @@ class GeminiProvider : AIProvider {
                     payload.add("systemInstruction", sysObj)
                 }
 
-                if (!tools.isNullOrEmpty()) {
+                if (shouldIncludeTools(messages, tools)) {
                     val toolsArray = JsonArray()
                     val functionDeclarations = JsonArray()
-                    for (tool in tools) {
+                    for (tool in tools!!) {
                         val fd = JsonObject()
                         fd.addProperty("name", tool.name)
                         fd.addProperty("description", tool.description)
@@ -927,7 +966,7 @@ class GeminiProvider : AIProvider {
                         throw Exception("API Error ${response.code}: $errBody")
                     }
                     val body = response.body ?: throw Exception("Empty response body")
-                    val reader = BufferedReader(InputStreamReader(body.byteStream()))
+                    val source = body.source()
                     var line: String?
                     val accumulatedJson = StringBuilder()
 
@@ -956,7 +995,7 @@ class GeminiProvider : AIProvider {
                         }
                     }
 
-                    while (reader.readLine().also { line = it } != null) {
+                    while (source.readUtf8Line().also { line = it } != null) {
                         val rawLine = line!!.trim()
                         if (rawLine.isEmpty()) continue
 
@@ -1367,9 +1406,9 @@ class AnthropicProvider : AIProvider {
                 payload.addProperty("stream", true)
                 payload.addProperty("max_tokens", 4096)
 
-                if (!tools.isNullOrEmpty()) {
+                if (shouldIncludeTools(messages, tools)) {
                     val toolsArray = JsonArray()
-                    for (tool in tools) {
+                    for (tool in tools!!) {
                         val t = JsonObject()
                         t.addProperty("name", tool.name)
                         t.addProperty("description", tool.description)
@@ -1424,14 +1463,14 @@ class AnthropicProvider : AIProvider {
                         throw Exception("Anthropic API Error ${response.code}: $errBody")
                     }
                     val body = response.body ?: throw Exception("Empty response body")
-                    val reader = BufferedReader(InputStreamReader(body.byteStream()))
+                    val source = body.source()
                     var line: String?
                     
                     var currentToolCallId = ""
                     var currentToolName = ""
                     val currentToolArgs = StringBuilder()
 
-                    while (reader.readLine().also { line = it } != null) {
+                    while (source.readUtf8Line().also { line = it } != null) {
                         val cleaned = line!!.trim()
                         if (cleaned.startsWith("data: ")) {
                             val dataStr = cleaned.substring(6).trim()
@@ -1786,9 +1825,9 @@ private suspend fun streamOpenAiCompatible(
             payload.add("messages", finalMessages)
             payload.addProperty("stream", true)
 
-            if (!tools.isNullOrEmpty()) {
+            if (shouldIncludeTools(messages, tools)) {
                 val toolsArray = JsonArray()
-                for (tool in tools) {
+                for (tool in tools!!) {
                     val tObj = JsonObject()
                     tObj.addProperty("type", "function")
                     
@@ -1861,13 +1900,13 @@ private suspend fun streamOpenAiCompatible(
                     val bodyString = body.string().take(1024)
                     throw Exception("Expected event stream but got: $contentType\nResponse: $bodyString")
                 }
-                val reader = BufferedReader(InputStreamReader(body.byteStream()))
+                val source = body.source()
                 var line: String?
                 var usageInput = 0
                 var usageOutput = 0
                 var usageReasoning = 0
 
-                while (reader.readLine().also { line = it } != null) {
+                while (source.readUtf8Line().also { line = it } != null) {
                     val cleaned = line!!.trim()
                     if (cleaned.startsWith("data: ")) {
                         val dataVal = cleaned.substring(6).trim()
@@ -2003,9 +2042,9 @@ private suspend fun streamZenCompatible(
             payload.add("messages", finalMessages)
             payload.addProperty("stream", true)
 
-            if (!tools.isNullOrEmpty()) {
+            if (shouldIncludeTools(messages, tools)) {
                 val toolsArray = JsonArray()
-                for (tool in tools) {
+                for (tool in tools!!) {
                     val tObj = JsonObject()
                     tObj.addProperty("type", "function")
                     
@@ -2085,13 +2124,13 @@ private suspend fun streamZenCompatible(
                     ai.deepcode.android.util.AppLogger.w("AIProvider", "Unexpected content-type: $contentType | body: $bodyString | request(truncated): $loggableBody")
                     throw Exception("Expected event stream but got: $contentType\nResponse: $bodyString")
                 }
-                val reader = BufferedReader(InputStreamReader(body.byteStream()))
+                val source = body.source()
                 var line: String?
                 var usageInput = 0
                 var usageOutput = 0
                 var usageReasoning = 0
 
-                while (reader.readLine().also { line = it } != null) {
+                while (source.readUtf8Line().also { line = it } != null) {
                     val cleaned = line!!.trim()
                     if (cleaned.startsWith("data: ")) {
                         val dataVal = cleaned.substring(6).trim()
@@ -2216,9 +2255,9 @@ private suspend fun streamZenWithHttpUrlConnection(
             payload.add("messages", finalMessages)
             payload.addProperty("stream", true)
 
-            if (!tools.isNullOrEmpty()) {
+            if (shouldIncludeTools(messages, tools)) {
                 val toolsArray = com.google.gson.JsonArray()
-                for (tool in tools) {
+                for (tool in tools!!) {
                     val tObj = com.google.gson.JsonObject()
                     tObj.addProperty("type", "function")
 
@@ -2291,9 +2330,9 @@ private suspend fun streamZenWithHttpUrlConnection(
             var usageOutput = 0
             var usageReasoning = 0
 
-            val reader = java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream, "UTF-8"))
+            val source = conn.inputStream.source().buffer()
             var line: String?
-            while (reader.readLine().also { line = it } != null) {
+            while (source.readUtf8Line().also { line = it } != null) {
                 val cleaned = line!!.trim()
                 if (cleaned.startsWith("data: ")) {
                     val dataVal = cleaned.substring(6).trim()
@@ -2360,7 +2399,7 @@ private suspend fun streamZenWithHttpUrlConnection(
                     } catch (_: Exception) { }
                 }
             }
-            reader.close()
+            source.close()
 
             toolCallBuilders.values.forEach { builder ->
                 if (builder.name.isNotEmpty()) {
@@ -2653,9 +2692,9 @@ class AntigravityProvider : AIProvider {
             }
         }
 
-        if (tools != null && tools.isNotEmpty()) {
+        if (shouldIncludeTools(messages, tools)) {
             val functionsArray = JsonArray()
-            for (tool in tools) {
+            for (tool in tools!!) {
                 val func = JsonObject()
                 func.addProperty("name", tool.name)
                 func.addProperty("description", tool.description)
