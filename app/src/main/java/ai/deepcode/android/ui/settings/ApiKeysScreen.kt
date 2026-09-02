@@ -1815,3 +1815,4 @@ private fun ProviderIcon(id: String, name: String) {
         }
     }
 }
+}

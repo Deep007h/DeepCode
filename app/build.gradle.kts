@@ -25,6 +25,10 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+        val edgeTtsToken = System.getenv("EDGE_TTS_CLIENT_TOKEN")
+            ?: (project.findProperty("EDGE_TTS_CLIENT_TOKEN") as? String)
+            ?: ""
+        buildConfigField("String", "EDGE_TTS_CLIENT_TOKEN", "\"$edgeTtsToken\"")
     }
 
     buildTypes {
