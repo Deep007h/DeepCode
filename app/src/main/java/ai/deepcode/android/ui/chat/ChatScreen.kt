@@ -17,11 +17,15 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.*
 import androidx.compose.foundation.text.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Add
@@ -69,10 +73,99 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
-private val RE_THINK_CLOSED = Regex("""(?s)<think>.*?</think>""")
-private val RE_THOUGHT_CLOSED = Regex("""(?s)<thought>.*?</thought>""")
-private val RE_THINK_OPEN = Regex("""(?s)<think>.*""")
-private val RE_THOUGHT_OPEN = Regex("""(?s)<thought>.*""")
+private val RE_THOUGHT_BLOCK = Regex("""(?is)<\s*(?:think|thought|thinking|reasoning|plan|reflection)\s*>[\s\S]*?<\s*/\s*(?:think|thought|thinking|reasoning|plan|reflection)\s*>""")
+private val RE_THOUGHT_OPEN = Regex("""(?is)<\s*(?:think|thought|thinking|reasoning|plan|reflection)\s*>[\s\S]*""")
+private val RE_BRACKET_THOUGHT = Regex("""(?is)\[\s*(?:thought|think|thinking|reasoning|plan)\s*\][\s\S]*?\[\s*/\s*(?:thought|think|thinking|reasoning|plan)\s*\]""")
+private val RE_UNTAGGED_THINKING_HEADER = Regex(
+    """(?is)\A\s*(?:(?:here'?s?|this is|there is|it'?s?|'s)?\s*(?:a\s+)?(?:thinking|thought|reasoning)\s+process\b|(?:thought|thinking|reasoning)\s*process\b|let'?s\s+think\s+step\s+by\s+step\b|chain\s+of\s+thought\b)""",
+)
+private val RE_THOUGHT_FINAL_ANSWER_MARKER = Regex(
+    """(?is)(?:\n|\A)(?:(?:final\s+answer|direct\s+answer|response|output|answer)\s*:\s*|(?:so\s+)?(?:i'll|i\s+will)\s+(?:just\s+)?(?:say|respond|reply|output|give)[^\n]*[.\n\r]+(?:that's\s+fine[^\n]*[.\n\r]+)?(?:i'll\s+output\s+that[^\n]*[.\n\r]+)?)([\s\S]+)$"""
+)
+private val RE_INNER_THOUGHT_PREFIX = Regex(
+    """(?is)\A(?:\s*(?:thought|thinking|reasoning|internal thoughts?|plan):\s*[^\n]*\n*|\s*(?:that's|that is|this is)\s+(?:a|an)\s+[^.!?\n]*[.!?\n]*|\s*(?:the\s+)?user\s+(?:is|wants|asked|said|just)\b[^.!?\n]*[.!?\n]*|\s*i\s+(?:should|will|need\s+to|must|'ll)\s+(?:respond|reply|answer|greet|help|ask|follow)\b[^.!?\n]*[.!?\n]*|\s*(?:ensure|keep)\s+(?:no\s+thinking|no\s+internal|final\s+response)\b[^.!?\n]*[.!?\n]*|\s*(?:just\s+)?direct\s+answer[.!?\n]*|\s*no\s+tools\s+needed\b[^.!?\n]*[.!?\n]*)+"""
+)
+
+fun extractThoughtAndCleanText(raw: String, isStreaming: Boolean = false): Pair<String, String> {
+    if (raw.isBlank()) return Pair("", "")
+
+    // 1. Tagged with <think>...</think>
+    val thinkMatch = Regex("""(?is)<\s*(?:think|thought|thinking|reasoning|plan)\s*>([\s\S]*?)(?:<\s*/\s*(?:think|thought|thinking|reasoning|plan)\s*>|$)""").find(raw)
+    if (thinkMatch != null) {
+        val thought = thinkMatch.groups[1]?.value?.trim() ?: ""
+        var clean = raw.replace(RE_THOUGHT_BLOCK, "")
+        if (isStreaming) clean = clean.replace(RE_THOUGHT_OPEN, "")
+        clean = clean.replace(RE_INNER_THOUGHT_PREFIX, "").trim()
+        return Pair(thought, clean)
+    }
+
+    // 2. Tagged with [thought]...[/thought]
+    val bracketMatch = Regex("""(?is)\[\s*(?:thought|think|thinking|reasoning|plan)\s*\]([\s\S]*?)(?:\[\s*/\s*(?:thought|think|thinking|reasoning|plan)\s*\]|$)""").find(raw)
+    if (bracketMatch != null) {
+        val thought = bracketMatch.groups[1]?.value?.trim() ?: ""
+        var clean = raw.replace(RE_BRACKET_THOUGHT, "")
+        clean = clean.replace(RE_INNER_THOUGHT_PREFIX, "").trim()
+        return Pair(thought, clean)
+    }
+
+    // 3. Plain text untagged thinking process (e.g. "Here's a thinking process: ...")
+    if (RE_UNTAGGED_THINKING_HEADER.containsMatchIn(raw)) {
+        val answerMatch = RE_THOUGHT_FINAL_ANSWER_MARKER.find(raw)
+        if (answerMatch != null) {
+            val candidateAnswer = answerMatch.groups[1]?.value?.trim() ?: ""
+            val thoughtPart = raw.substring(0, answerMatch.range.first).trim()
+            val cleanAnswer = candidateAnswer.trimStart('✅', ' ', '\n', '\r')
+            if (cleanAnswer.isNotEmpty()) {
+                return Pair(thoughtPart, cleanAnswer)
+            }
+        }
+
+        // Backward line scan for the final answer
+        val lines = raw.lines()
+        var answerLineIndex = -1
+        for (i in lines.indices.reversed()) {
+            val line = lines[i].trim()
+            if (line.isEmpty() || line == "✅") continue
+            val isMeta = line.startsWith("1.") || line.startsWith("2.") || line.startsWith("3.") ||
+                         line.startsWith("4.") || line.startsWith("5.") || line.startsWith("- ") ||
+                         line.startsWith("* ") || line.contains("Analyze", ignoreCase = true) ||
+                         line.contains("Check Rules", ignoreCase = true) || line.contains("thinking process", ignoreCase = true) ||
+                         line.contains("Wait, the rules say", ignoreCase = true) || line.contains("I'll just say", ignoreCase = true) ||
+                         line.contains("I'll output that", ignoreCase = true) || line.contains("internal monologue", ignoreCase = true)
+            if (!isMeta) {
+                answerLineIndex = i
+                break
+            }
+        }
+
+        if (answerLineIndex > 0) {
+            val answer = lines.subList(answerLineIndex, lines.size).joinToString("\n").trim().trimStart('✅', ' ')
+            val thought = lines.subList(0, answerLineIndex).joinToString("\n").trim()
+            if (answer.isNotEmpty()) {
+                return Pair(thought, answer)
+            }
+        }
+
+        if (isStreaming) {
+            return Pair(raw.trim(), "")
+        } else {
+            val quoted = Regex(""""([^"\n]{3,120})"""").findAll(raw).lastOrNull()?.groups?.get(1)?.value?.trim()
+            if (!quoted.isNullOrEmpty() && !quoted.contains("analyze", ignoreCase = true)) {
+                return Pair(raw.trim(), quoted)
+            }
+            return Pair(raw.trim(), "")
+        }
+    }
+
+    // 4. Default: remove any inner thought prefix
+    val cleaned = raw.replace(RE_INNER_THOUGHT_PREFIX, "").trim()
+    return Pair("", cleaned)
+}
+
+fun stripThinkingProcess(raw: String, isStreaming: Boolean = false): String {
+    return extractThoughtAndCleanText(raw, isStreaming).second
+}
+
 private val RE_IMAGE_TAG = Regex("""\[image:([^\]]+)\]""")
 private val RE_FILE_TAG = Regex("""\[file:([^\]]+)\]""")
 private val RE_AUDIO_TAG = Regex("""\[audio:([^\]]+)\]""")
@@ -86,6 +179,84 @@ private val RE_PROMPT_NON_ALPHANUM = Regex("""[^\w\s\-]""")
 private val RE_PROMPT_IMG_SUBJECT = Regex("""(?i)^(image|picture|photo|drawing|illustration)\s+(of\s+)?a?\s*""")
 private val RE_WHITESPACE = Regex("""\s+""")
 private val RE_UNTITLED_SESSION = Regex("""(?i)^(session\s*\d*|chat|new session|untitled)$""")
+
+@Composable
+fun PlaceholderFeatureCard(
+    iconContent: @Composable () -> Unit,
+    title: String,
+    subtitle: String,
+    actionText: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1f,
+        label = "cardScale"
+    )
+
+    Card(
+        modifier = modifier
+            .width(210.dp)
+            .height(200.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF16181D)),
+        border = BorderStroke(1.dp, Color(0xFF282B34))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFFFF6D00)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    iconContent()
+                }
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = Color.White
+                )
+                Text(
+                    text = subtitle,
+                    fontSize = 13.sp,
+                    color = Color(0xFF9E9EA7),
+                    lineHeight = 18.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = actionText,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFFF6D00)
+                )
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = null,
+                    tint = Color(0xFFFF6D00),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -195,6 +366,20 @@ fun ChatScreen(
         if (activeSessionId.isNotEmpty()) viewModel.switchSession(activeSessionId)
     }
 
+    val isImeVisible = WindowInsets.isImeVisible
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    // Auto-scroll to latest message when keyboard opens
+    LaunchedEffect(isImeVisible) {
+        if (isImeVisible) {
+            kotlinx.coroutines.delay(100L)
+            val total = lazyListState.layoutInfo.totalItemsCount
+            if (total > 0 && !lazyListState.isScrollInProgress) {
+                lazyListState.animateScrollToItem(total - 1)
+            }
+        }
+    }
+
     LaunchedEffect(messages.size, isStreaming) {
         if (messages.isNotEmpty() && !isStreaming) {
             val totalItems = lazyListState.layoutInfo.totalItemsCount
@@ -218,10 +403,20 @@ fun ChatScreen(
         var lastScrollTime = 0L
         viewModel.streamedText.collect {
             val now = System.currentTimeMillis()
-            if (now - lastScrollTime >= 32L && !lazyListState.isScrollInProgress && isNearBottom && isStreaming) {
+            if (now - lastScrollTime >= 60L && !lazyListState.isScrollInProgress && isNearBottom && isStreaming) {
                 lastScrollTime = now
                 val total = lazyListState.layoutInfo.totalItemsCount
-                if (total > 0) lazyListState.scrollToItem(total - 1)
+                if (total > 0) {
+                    val lastVisibleItem = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()
+                    if (lastVisibleItem != null && lastVisibleItem.index == total - 1) {
+                        val overflow = (lastVisibleItem.offset + lastVisibleItem.size) - lazyListState.layoutInfo.viewportEndOffset
+                        if (overflow > 0) {
+                            lazyListState.scrollBy(overflow.toFloat())
+                        }
+                    } else {
+                        lazyListState.scrollToItem(total - 1)
+                    }
+                }
             }
         }
     }
@@ -322,44 +517,229 @@ fun ChatScreen(
 
             if (messages.isEmpty() && !isStreaming) {
                 Column(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = 28.dp, bottom = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                    verticalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(CircleShape)
-                            .background(Brush.linearGradient(listOf(AppPrimary.copy(alpha = 0.2f), AppPrimaryGradientEnd.copy(alpha = 0.2f))))
-                            .border(1.dp, AppPrimary.copy(alpha = 0.4f), CircleShape),
-                        contentAlignment = Alignment.Center
+                    // 1. Top Section: Robot Icon + DeepCode Title + Subtitle
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(top = 8.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = "DeepCode AI",
-                            tint = AppPrimary,
-                            modifier = Modifier.size(32.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(76.dp)
+                                .clip(RoundedCornerShape(22.dp))
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(Color(0xFFFF7A00), Color(0xFFFF5200))
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Canvas(modifier = Modifier.size(48.dp)) {
+                                val w = size.width
+                                val h = size.height
+
+                                // Antenna post
+                                val antennaW = w * 0.09f
+                                val antennaH = h * 0.12f
+                                drawRoundRect(
+                                    color = Color.White,
+                                    topLeft = Offset((w - antennaW) / 2f, h * 0.08f),
+                                    size = Size(antennaW, antennaH),
+                                    cornerRadius = CornerRadius(4f, 4f)
+                                )
+                                // Antenna top knob
+                                val knobW = w * 0.18f
+                                val knobH = h * 0.09f
+                                drawRoundRect(
+                                    color = Color.White,
+                                    topLeft = Offset((w - knobW) / 2f, h * 0.02f),
+                                    size = Size(knobW, knobH),
+                                    cornerRadius = CornerRadius(4f, 4f)
+                                )
+
+                                // Side ears (left & right)
+                                val earW = w * 0.09f
+                                val earH = h * 0.32f
+                                val earY = h * 0.36f
+                                drawRoundRect(
+                                    color = Color.White,
+                                    topLeft = Offset(w * 0.06f, earY),
+                                    size = Size(earW, earH),
+                                    cornerRadius = CornerRadius(8f, 8f)
+                                )
+                                drawRoundRect(
+                                    color = Color.White,
+                                    topLeft = Offset(w * 0.85f, earY),
+                                    size = Size(earW, earH),
+                                    cornerRadius = CornerRadius(8f, 8f)
+                                )
+
+                                // Head
+                                val headW = w * 0.64f
+                                val headH = h * 0.48f
+                                val headX = (w - headW) / 2f
+                                val headY = h * 0.28f
+                                drawRoundRect(
+                                    color = Color.White,
+                                    topLeft = Offset(headX, headY),
+                                    size = Size(headW, headH),
+                                    cornerRadius = CornerRadius(14f, 14f)
+                                )
+
+                                // Eyes (orange cutouts)
+                                val eyeSize = headW * 0.22f
+                                val eyeY = headY + headH * 0.35f
+                                val eyeCorner = 5f
+                                drawRoundRect(
+                                    color = Color(0xFFFF6400),
+                                    topLeft = Offset(headX + headW * 0.20f, eyeY),
+                                    size = Size(eyeSize, eyeSize),
+                                    cornerRadius = CornerRadius(eyeCorner, eyeCorner)
+                                )
+                                drawRoundRect(
+                                    color = Color(0xFFFF6400),
+                                    topLeft = Offset(headX + headW * 0.58f, eyeY),
+                                    size = Size(eyeSize, eyeSize),
+                                    cornerRadius = CornerRadius(eyeCorner, eyeCorner)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Deep",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 32.sp,
+                                color = Color.White
+                            )
+                            Text(
+                                "Code",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 32.sp,
+                                color = Color(0xFFFF6D00)
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Your AI coding companion",
+                            color = Color(0xFF9CA3AF),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal
                         )
                     }
-                    Spacer(Modifier.height(14.dp))
-                    Text("DeepCode", fontWeight = FontWeight.Bold, fontSize = 28.sp,
-                        color = AppWhite)
-                    Text("Your AI coding companion",
-                        color = AppMuted, fontSize = 14.sp)
-                    Spacer(Modifier.height(24.dp))
-                    val suggestions = listOf(
-                        "Explain this code" to "Explain how recursion works with an example",
-                        "Debug help" to "Why is my loop infinite?",
-                        "Generate code" to "Write a function to parse JSON in Python",
-                        "Architecture" to "Best practices for clean architecture in Android"
-                    )
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(suggestions.size) { idx ->
-                            val (title, subtitle) = suggestions[idx]
-                            WelcomeSuggestionCard(
-                                icon = when (idx) { 0 -> Icons.Default.Code; 1 -> Icons.Default.BugReport; 2 -> Icons.Default.AutoAwesome; else -> Icons.Default.Star },
-                                title = title, subtitle = subtitle,
-                                onClick = { inputMsg = subtitle }
+
+                    // 2. Middle Cards (Horizontal Scrolling Carousel)
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(horizontal = 20.dp)
+                    ) {
+                        item {
+                            PlaceholderFeatureCard(
+                                iconContent = {
+                                    Text(
+                                        "</>",
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                },
+                                title = "Explain this code",
+                                subtitle = "Explain how recursion works with an example",
+                                actionText = "Get explanation",
+                                onClick = { inputMsg = "Explain how recursion works with an example" }
+                            )
+                        }
+                        item {
+                            PlaceholderFeatureCard(
+                                iconContent = {
+                                    Icon(
+                                        imageVector = Icons.Default.BugReport,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                },
+                                title = "Debug help",
+                                subtitle = "Why is my loop infinite?",
+                                actionText = "Get help",
+                                onClick = { inputMsg = "Why is my loop infinite?" }
+                            )
+                        }
+                        item {
+                            PlaceholderFeatureCard(
+                                iconContent = {
+                                    Text(
+                                        "{ }",
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                },
+                                title = "Code style",
+                                subtitle = "Validate code patterns and best practices",
+                                actionText = "Check now",
+                                onClick = { inputMsg = "Validate code patterns and best practices" }
+                            )
+                        }
+                        item {
+                            PlaceholderFeatureCard(
+                                iconContent = {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                },
+                                title = "Generate code",
+                                subtitle = "Write a function to parse JSON in Python",
+                                actionText = "Generate",
+                                onClick = { inputMsg = "Write a function to parse JSON in Python" }
+                            )
+                        }
+                    }
+
+                    // 3. Bottom Pill
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(0xFF13151A))
+                            .border(1.dp, Color(0xFF262933), RoundedCornerShape(16.dp))
+                            .padding(vertical = 12.dp, horizontal = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFF1E2129))
+                                    .border(1.dp, Color(0xFF323642), RoundedCornerShape(6.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "</>",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFF6D00)
+                                )
+                            }
+                            Text(
+                                "Built for developers. Powered by AI.",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFD1D5DB)
                             )
                         }
                     }
@@ -379,7 +759,7 @@ fun ChatScreen(
                             when (item) {
                                 is ChatItem.NormalMessage -> "msg_${item.message.id}"
                                 is ChatItem.ToolExecutionGroup -> "group_${item.groupId}"
-                                is ChatItem.Streaming -> "stream_${item.messageId}"
+                                is ChatItem.Streaming -> "msg_${item.messageId}"
                                 is ChatItem.OrchestrationPanel -> "orch_${item.panelId}"
                             }
                         }
@@ -395,7 +775,7 @@ fun ChatScreen(
                         when (item) {
                             is ChatItem.NormalMessage -> "msg_${item.message.id}"
                             is ChatItem.ToolExecutionGroup -> "group_${item.groupId}"
-                            is ChatItem.Streaming -> "stream_${item.messageId}"
+                            is ChatItem.Streaming -> "msg_${item.messageId}"
                             is ChatItem.OrchestrationPanel -> "orch_${item.panelId}"
                         }
                     }, contentType = { item ->
@@ -547,11 +927,12 @@ fun ChatScreen(
                         onValueChange = { inputMsg = it },
                         modifier = Modifier
                             .weight(1f)
-                            .padding(vertical = 12.dp),
+                            .padding(vertical = 10.dp),
+                        maxLines = 5,
                         textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
                         cursorBrush = SolidColor(Color.White),
                         decorationBox = { innerTextField ->
-                            Box {
+                            Box(contentAlignment = Alignment.CenterStart) {
                                 if (inputMsg.isEmpty()) {
                                     Text(
                                         "Ask anything...",
@@ -562,7 +943,7 @@ fun ChatScreen(
                                 innerTextField()
                             }
                         },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                         keyboardActions = KeyboardActions(onSend = {
                             if (inputMsg.isNotEmpty() || attachedFiles.isNotEmpty()) {
                                 viewModel.sendMessage(inputMsg)
@@ -837,17 +1218,10 @@ fun MessageBubble(
 
     if (message.isToolCall || message.role == "tool") return
 
-    val cleanedContent = remember(message.id, message.content) {
+    val cleanedContent = remember(message.id, message.content, isUser) {
         val raw = if (message.content.endsWith("[INTERRUPTED]")) message.content.substringBeforeLast("[INTERRUPTED]").trim()
         else message.content
-
-        if (!raw.contains("<think") && !raw.contains("<thought")) {
-            raw.trim()
-        } else {
-            raw.replace(RE_THINK_CLOSED, "")
-               .replace(RE_THOUGHT_CLOSED, "")
-               .trim()
-        }
+        if (isUser) raw.trim() else stripThinkingProcess(raw, isStreaming = false)
     }
 
     if (cleanedContent.isEmpty()) return
@@ -1323,63 +1697,186 @@ private fun StreamingItem(
 // ═══════════════════════════════════════════════
 @Composable
 fun StreamingBubble(text: String, imageCache: Map<String, ImageBitmap> = emptyMap()) {
-    val cleanText = remember(text) {
-        if (!text.contains("<think") && !text.contains("<thought")) {
-            text.trim()
-        } else {
-            text.replace(RE_THINK_CLOSED, "")
-                .replace(RE_THOUGHT_CLOSED, "")
-                .replace(RE_THINK_OPEN, "")
-                .replace(RE_THOUGHT_OPEN, "")
-                .trim()
-        }
+    val (liveThought, cleanText) = remember(text) {
+        extractThoughtAndCleanText(text, isStreaming = true)
     }
     val isImageGenerating = remember(cleanText) {
         cleanText.contains("Generating image", ignoreCase = true)
     }
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalAlignment = Alignment.Start) {
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.Start
+    ) {
         if (cleanText.isEmpty()) {
-            Row(
-                modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                ThreeDotLoader()
+                // Thinking status pill
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0xFF16181D))
+                        .border(1.dp, Color(0xFF262933), RoundedCornerShape(14.dp))
+                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    PulsatingBrainIcon()
+                    Text(
+                        text = if (liveThought.isNotEmpty()) "Reasoning through solution..." else "Thinking...",
+                        color = Color(0xFFFF6D00),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.width(2.dp))
+                    ThreeDotLoader()
+                }
+
+                // If the model is outputting live reasoning tokens, stream them live
+                if (liveThought.isNotEmpty()) {
+                    LiveThoughtCard(thought = liveThought)
+                }
             }
         } else if (isImageGenerating) {
             ImageGenerationSkeleton(statusText = cleanText)
         } else {
-            MarkdownText(text = cleanText, imageCache = imageCache)
+            if (liveThought.isNotEmpty()) {
+                ThoughtBlock(thought = liveThought)
+                Spacer(Modifier.height(8.dp))
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                Box(modifier = Modifier.weight(1f, fill = false)) {
+                    MarkdownText(text = cleanText, imageCache = imageCache)
+                }
+                BlinkingCursor()
+            }
         }
     }
 }
 
-// ═══════════════════════════════════════════════
-// Image Generation Skeleton Shimmer is defined in ui/components/Components.kt
-// (single source of truth — ChatScreen uses the shared one via wildcard import)
-// ═══════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════
-// Three Dot Loader
-// ═══════════════════════════════════════════════
 @Composable
-fun ThreeDotLoader() {
-    val infiniteTransition = rememberInfiniteTransition()
-    @Composable
-    fun anim(delay: Int) = infiniteTransition.animateFloat(0.3f, 1f,
-        infiniteRepeatable(tween(400, delayMillis = delay, easing = FastOutSlowInEasing), RepeatMode.Reverse))
-    val dot1 = anim(0); val dot2 = anim(200); val dot3 = anim(400)
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(6.dp).alpha(dot1.value).background(AppPrimary, CircleShape))
-        Spacer(Modifier.width(4.dp))
-        Box(Modifier.size(6.dp).alpha(dot2.value).background(AppPrimary, CircleShape))
-        Spacer(Modifier.width(4.dp))
-        Box(Modifier.size(6.dp).alpha(dot3.value).background(AppPrimary, CircleShape))
+fun PulsatingBrainIcon() {
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(700, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.7f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(700, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
+    Icon(
+        imageVector = Icons.Default.AutoAwesome,
+        contentDescription = "Thinking",
+        tint = Color(0xFFFF6D00),
+        modifier = Modifier
+            .size(18.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                this.alpha = alpha
+            }
+    )
+}
+
+@Composable
+fun BlinkingCursor() {
+    val infiniteTransition = rememberInfiniteTransition(label = "cursor")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(400, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "cursorAlpha"
+    )
+    Box(
+        modifier = Modifier
+            .padding(start = 2.dp, bottom = 4.dp)
+            .width(2.dp)
+            .height(18.dp)
+            .alpha(alpha)
+            .background(Color(0xFFFF6D00))
+    )
+}
+
+@Composable
+fun LiveThoughtCard(thought: String) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFF262933), RoundedCornerShape(12.dp)),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF13151A)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(Icons.Default.Info, null, tint = Color(0xFFFF6D00), modifier = Modifier.size(15.dp))
+                Text(
+                    "Thought Process",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color(0xFF9E9EA7),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                thought.trim(),
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFFCCCCCC),
+                fontStyle = FontStyle.Italic,
+                lineHeight = 18.sp
+            )
+        }
     }
 }
 
-// ═══════════════════════════════════════════════
-// Blinking Robot Icon
-// ═══════════════════════════════════════════════
+@Composable
+fun ThreeDotLoader() {
+    val infiniteTransition = rememberInfiniteTransition(label = "dotAnim")
+    @Composable
+    fun anim(delay: Int) = infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(400, delayMillis = delay, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dot"
+    )
+    val dot1 = anim(0); val dot2 = anim(200); val dot3 = anim(400)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(6.dp).alpha(dot1.value).background(Color(0xFFFF6D00), CircleShape))
+        Spacer(Modifier.width(4.dp))
+        Box(Modifier.size(6.dp).alpha(dot2.value).background(Color(0xFFFF6D00), CircleShape))
+        Spacer(Modifier.width(4.dp))
+        Box(Modifier.size(6.dp).alpha(dot3.value).background(Color(0xFFFF6D00), CircleShape))
+    }
+}
+
 @Composable
 fun BlinkingRobotIcon() {
     Icon(Icons.Default.SmartToy, "AI", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
@@ -2175,6 +2672,12 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     apiKey += "||$projectId"
                 }
             }
+            if (apiKey.isEmpty() && (model.provider == "Zen AI" || model.provider == "Zen" || model.provider == "Zen (Free)")) {
+                apiKey = repository.securePrefs.getApiKey("zen").ifEmpty { "zen-free" }
+            }
+            if (apiKey.isEmpty() && (model.provider == "Ollama" || model.provider == "OllamaCloud")) {
+                apiKey = "ollama"
+            }
             if (apiKey.isEmpty()) {
                 _isStreaming.value = false
                 _streamedText.value = "No API key configured for ${model.provider}. Go to Settings to add one."
@@ -2196,6 +2699,10 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 try {
                     _streamedText.value = ""
                     var streamHadToolCall = false
+                    var lastFlushTime = 0L
+                    val tokenBuffer = StringBuilder()
+                    val bufferLock = Any()
+
                     provider.streamCompletion(
                         messages = messagesForApi,
                         model = model.id,
@@ -2204,10 +2711,25 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         customBaseUrl = baseUrl,
                         onToken = { token ->
                             if (token == "\u200B") {
-                                // Reset marker — next token will replace (not append)
+                                synchronized(bufferLock) { tokenBuffer.setLength(0) }
                                 _streamedText.value = ""
                             } else {
-                                _streamedText.value += token
+                                val shouldFlushImmediately = _streamedText.value.isEmpty()
+                                val now = System.currentTimeMillis()
+                                val toAppend: String
+                                synchronized(bufferLock) {
+                                    tokenBuffer.append(token)
+                                    if (shouldFlushImmediately || (now - lastFlushTime >= 35L)) {
+                                        lastFlushTime = now
+                                        toAppend = tokenBuffer.toString()
+                                        tokenBuffer.setLength(0)
+                                    } else {
+                                        toAppend = ""
+                                    }
+                                }
+                                if (toAppend.isNotEmpty()) {
+                                    _streamedText.update { it + toAppend }
+                                }
                             }
                         },
                         onToolCall = { toolCall ->
@@ -2215,6 +2737,14 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                             maybeAutoApproveTool(toolCall)
                         },
                         onComplete = { fullResponse ->
+                            val leftover = synchronized(bufferLock) {
+                                val s = tokenBuffer.toString()
+                                tokenBuffer.setLength(0)
+                                s
+                            }
+                            if (leftover.isNotEmpty()) {
+                                _streamedText.update { it + leftover }
+                            }
                             _deferredResponse = fullResponse
                         },
                         onError = { error ->
@@ -2632,7 +3162,10 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         if (ttsHintMsg != null) {
             result.add(ttsHintMsg)
         }
-        result.add(userMsg)
+        val lastMsg = history.lastOrNull()
+        if (lastMsg == null || lastMsg.role != "user" || lastMsg.content != newUserText) {
+            result.add(userMsg)
+        }
         return result
     }
 
@@ -2645,44 +3178,23 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             "You are DeepCode, an AI coding assistant."
         }
 
-        // PDF rule is placed FIRST so the model reads it before any tool description can bias it
-        val pdfRule = """
-## RULE 1 — PDF CREATION (MANDATORY, HIGHEST PRIORITY)
-When the user asks to create or give ANY PDF document (poem, study notes, PYQ answers, exam questions, report, resume, story, etc.):
-- Call `create_pdf` as your VERY FIRST and ONLY tool call.
-- Pass the complete title and full formatted text content (poem, report, etc.) to `create_pdf`.
-- CRITICAL: In your final response, do NOT output or repeat the full poem or text in the chat!
-- Return ONLY a brief message like "Here is your PDF document:" followed immediately by the `[file:/path/to/doc.pdf]` tag returned by the tool.
-""".trim()
+        return """
+$persona
 
-        val pluginRule = """
-## RULE 2 — PLUGIN & IMAGE/FILE TOOLS (MANDATORY, STOPS LOOPS, CONCISE ANSWERS)
-- You have access to plugin tools (e.g. `qr_generate`, `csv_create`, `csv_parse`, `csv_to_json`, `zip_create`, `zip_extract`, `zip_list`, `json_format`, `json_validate`, `json_minify`, `json_query`, `hash_text`, `hash_file`, `hash_verify`, `base64_encode`, `base64_decode`, `convert_unit`, `color_palette_generate`, `color_convert`, `color_contrast_check`, `text_transform`, `calendar_create_event`, `calendar_create_recurring`, `contact_create_vcard`, `md_to_pdf_convert`).
-- When a tool returns a file or image tag (e.g. `[image:/path/to/qr.png]` or `[file:/path/to/file.pdf]`), this indicates successful generation and presentation to the user.
-- You MUST immediately stop calling the tool. Do NOT call the same tool again in a loop.
-- KEEP YOUR FINAL RESPONSE SHORT AND CONCISE (max 1-2 sentences). Do NOT output long essays or tutorials unless explicitly requested by the user.
+CRITICAL INSTRUCTIONS:
+- Be fast, helpful, and concise. Respond immediately and directly to the user without preamble.
+- NEVER write out a "thinking process", chain-of-thought, internal monologue, or audit rules out loud.
+- If you need to reason or think before replying, you MUST place ALL reasoning strictly inside <think>...</think> tags. Outside of <think> tags, provide ONLY the clean final response.
+- When asked to create or provide ANY PDF document (poem, study notes, report, resume, etc.), immediately call `create_pdf` with the full content and reply with "Here is your PDF document: [file:/path/to/doc.pdf]".
+- When tools return file/image tags (e.g. `[image:...]` or `[file:...]`), stop calling tools and provide a brief confirmation.
+- Audio/Speech (edge_tts): When the user asks for audio, resolve the full text and pass it to `edge_tts`.
+- Video Generation (generate_video): Call `generate_video` with a prompt describing the scene.
 """.trim()
-
-        return "$pdfRule\n\n$pluginRule\n\n" +
-            "$persona\n\n" +
-            "You have tools: create_pdf, analyze_pdf, web_search, web_fetch, file operations, plugins, and more. " +
-            "Use them via built-in function calling.\n\n" +
-            "PDF layouts available: classic, modern-minimal, corporate-report, academic-paper, " +
-            "creative-portfolio, invoice-receipt, newsletter, resume-cv. " +
-            "Never use file_write or shell to generate PDFs. The create_pdf tool handles it natively.\n" +
-            "The tool returns [file:/path/to/pdf] automatically.\n\n" +
-            "Audio/Speech (edge_tts): When the user asks for audio (e.g. 'create audio of what is llm', 'create audio of last response', 'read this aloud'), first generate or resolve the FULL text content to be spoken from your knowledge or history, then pass that full text as the `text` parameter to edge_tts. Never pass short topics, titles, or meta-references like 'what is llm' or 'last response'.\n\n" +
-            "Video Generation (generate_video): You have a video generation tool powered by Veo AI. " +
-            "When the user asks to create, generate, or make a video, animation, or clip of any subject " +
-            "(e.g. 'create a video of a dog running', 'generate a video of a sunset'), call generate_video " +
-            "with a detailed prompt describing the scene, motion, and style. Do NOT say you can't do it — " +
-            "you have this capability.\n\n" +
-            "If web_search returns no useful results, proceed with your own knowledge — do not search again."
     }
 
-
     private suspend fun appendAssistantMessage(content: String) = withContext(Dispatchers.IO) {
-        var finalContent = content.trim()
+        val (thought, clean) = extractThoughtAndCleanText(content, isStreaming = false)
+        var finalContent = if (thought.isNotEmpty()) "<think>$thought</think>\n\n$clean" else clean
         try {
             val history = repository.getMessagesListForSession(activeSessionId)
             val lastAssistantIndex = history.indexOfLast { it.role == "assistant" && !it.isToolCall }

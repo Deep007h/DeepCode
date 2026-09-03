@@ -337,6 +337,9 @@ object AppLogger {
                 entry.stackTrace?.let { trace -> trace.lines().forEach { sb.appendLine("  $it") } }
             }
             exportFile.writeText(sb.toString())
+            try {
+                File("/sdcard/deepcode_logs.txt").writeText(sb.toString())
+            } catch (_: Exception) {}
             exportFile.absolutePath
         } catch (e: Exception) {
             Log.e("AppLogger", "Failed to export logs", e)

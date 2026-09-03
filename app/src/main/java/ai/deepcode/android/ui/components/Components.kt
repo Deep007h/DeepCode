@@ -1171,10 +1171,14 @@ private const val MAX_PARSE_CACHE = 400
 private val DSML_TOOL_CALLS_REGEX = Regex("""<\s*(?:\|{1,2}\s*DSML\s*\|{1,2}\s*)?tool_calls?[\s\S]*?<\s*/\s*(?:\|{1,2}\s*DSML\s*\|{1,2}\s*)?tool_calls?\s*>""", RegexOption.IGNORE_CASE)
 private val DSML_INVOKE_REGEX = Regex("""<\s*(?:\|{1,2}\s*DSML\s*\|{1,2}\s*)?invoke[\s\S]*?<\s*/\s*(?:\|{1,2}\s*DSML\s*\|{1,2}\s*)?invoke\s*>""", RegexOption.IGNORE_CASE)
 private val DSML_PARAM_REGEX = Regex("""<\s*(?:\|{1,2}\s*DSML\s*\|{1,2}\s*)?parameter[\s\S]*?<\s*/\s*(?:\|{1,2}\s*DSML\s*\|{1,2}\s*)?parameter\s*>""", RegexOption.IGNORE_CASE)
-private val THINK_OPEN_REGEX = Regex("""<\s*(?:think|thinking|reasoning)\s*>""", RegexOption.IGNORE_CASE)
-private val THINK_CLOSE_REGEX = Regex("""<\s*/\s*(?:think|thinking|reasoning)\s*>""", RegexOption.IGNORE_CASE)
-private val THINK_BRACKET_OPEN_REGEX = Regex("""\[\s*(?:thought|think|thinking|reasoning)\s*\]""", RegexOption.IGNORE_CASE)
-private val THINK_BRACKET_CLOSE_REGEX = Regex("""\[\s*/\s*(?:thought|think|thinking|reasoning)\s*\]""", RegexOption.IGNORE_CASE)
+private val THINK_OPEN_REGEX = Regex("""<\s*(?:think|thinking|reasoning|plan|reflection)\s*>""", RegexOption.IGNORE_CASE)
+private val THINK_CLOSE_REGEX = Regex("""<\s*/\s*(?:think|thinking|reasoning|plan|reflection)\s*>""", RegexOption.IGNORE_CASE)
+private val THINK_BRACKET_OPEN_REGEX = Regex("""\[\s*(?:thought|think|thinking|reasoning|plan)\s*\]""", RegexOption.IGNORE_CASE)
+private val THINK_BRACKET_CLOSE_REGEX = Regex("""\[\s*/\s*(?:thought|think|thinking|reasoning|plan)\s*\]""", RegexOption.IGNORE_CASE)
+private val INNER_THOUGHT_PREFIX_REGEX = Regex(
+    """(?is)^(?:\s*(?:thought|thinking|reasoning|internal thoughts?|plan):\s*[^\n]*\n*|\s*(?:the\s+)?user\s+(?:is|wants|asked|said|just)\b[^.!?\n]*[.!?\n]*|\s*i\s+(?:should|will|need\s+to|must)\s+(?:respond|reply|answer|greet|help|ask)\b[^.!?\n]*[.!?\n]*|\s*no\s+tools\s+needed\b[^.!?\n]*[.!?\n]*)+""",
+    RegexOption.MULTILINE
+)
 
 fun parseMessageContent(content: String, isUser: Boolean): List<MessageContentPart> {
     val key = (if (isUser) "U:" else "A:") + content
@@ -1202,6 +1206,10 @@ fun parseMessageContentInternal(content: String, isUser: Boolean): List<MessageC
         .replace(THINK_BRACKET_OPEN_REGEX, "<thought>")
         .replace(THINK_BRACKET_CLOSE_REGEX, "</thought>")
 
+    if (!isUser) {
+        remaining = ai.deepcode.android.ui.chat.stripThinkingProcess(remaining, isStreaming = false)
+    }
+
     if (remaining.startsWith("📌 ")) {
         val filename = remaining.lines().firstOrNull()?.substring(2)?.trim() ?: "file"
         parts.add(MessageContentPart.Attachment(filename))
@@ -1215,25 +1223,18 @@ fun parseMessageContentInternal(content: String, isUser: Boolean): List<MessageC
             parts.addAll(parseMessageContent(beforeThought, isUser))
         }
         val afterThought = remaining.substringAfter("<thought>")
-        val thoughtContent = afterThought.substringBefore("</thought>")
-        parts.add(MessageContentPart.Thought(thoughtContent))
-
         val afterThoughtEnd = afterThought.substringAfter("</thought>", "")
         if (afterThoughtEnd.trim().isNotEmpty()) {
             parts.addAll(parseMessageContent(afterThoughtEnd, isUser))
         }
         return parts
     } else if (remaining.contains("</thought>")) {
-        val thoughtContent = remaining.substringBefore("</thought>")
-        parts.add(MessageContentPart.Thought(thoughtContent))
         val afterThoughtEnd = remaining.substringAfter("</thought>")
         if (afterThoughtEnd.trim().isNotEmpty()) {
             parts.addAll(parseMessageContent(afterThoughtEnd, isUser))
         }
         return parts
     } else if (content.contains("<thought>") && !content.contains("</thought>")) {
-        val thoughtContent = remaining.substringAfter("<thought>")
-        parts.add(MessageContentPart.Thought(thoughtContent))
         return parts
     }
 

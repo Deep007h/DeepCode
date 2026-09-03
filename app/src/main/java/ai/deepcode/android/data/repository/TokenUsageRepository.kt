@@ -95,6 +95,17 @@ class TokenUsageRepository(
             cacheWriteTokens = turnTokens.cacheWriteTokens
         )
 
+        // Ensure session row exists so accumulateTurn UPDATE doesn't fail on new sessions
+        tokenUsageDao.insertIfAbsent(
+            TokenUsageEntity(
+                sessionId = sessionId,
+                modelId = modelId,
+                providerName = ModelPriceProvider.resolveProvider(modelId),
+                timeCreated = nowMs,
+                timeUpdated = nowMs
+            )
+        )
+
         tokenUsageDao.accumulateTurn(
             sessionId = sessionId,
             inputTokens = turnTokens.inputTokens,

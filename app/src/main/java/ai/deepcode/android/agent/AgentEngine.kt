@@ -362,7 +362,7 @@ class AgentEngine(private val context: Context) {
     private fun getApiKeyForProvider(provider: AIProvider): String {
         val name = provider.name
         val key = when (name) {
-            "Zen AI", "Zen", "Zen (Free)" -> securePrefs.getApiKey("zen")
+            "Zen AI", "Zen", "Zen (Free)" -> securePrefs.getApiKey("zen").ifEmpty { "zen-free" }
             "Google Gemini" -> securePrefs.getApiKey("gemini")
             "Groq" -> securePrefs.getApiKey("groq")
             "Cerebrus", "Cerebras" -> {

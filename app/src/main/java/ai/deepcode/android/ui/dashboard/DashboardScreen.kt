@@ -52,6 +52,19 @@ fun DashboardScreen(
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val messageCount by (repository?.getMessageCount() ?: kotlinx.coroutines.flow.flowOf(0))
         .collectAsStateWithLifecycle(initialValue = 0)
+    val allTokenSessions by (repository?.tokenRepository?.observeAllSessions() ?: kotlinx.coroutines.flow.flowOf(emptyList()))
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val lifetimeTotals by (repository?.tokenRepository?.observeLifetimeTotals() ?: kotlinx.coroutines.flow.flowOf(null))
+        .collectAsStateWithLifecycle(initialValue = null)
+
+    val profileName = repository?.securePrefs?.getSetting("profile_name", "Deep Patel") ?: "Deep Patel"
+
+    LaunchedEffect(profileName, sessions.size, messageCount) {
+        ai.deepcode.android.util.DailyGreetingManager.initialize(context, profileName)
+        repository?.syncAndBackfillTokenUsage()
+    }
+
+    val dailyGreeting by ai.deepcode.android.util.DailyGreetingManager.greetingState.collectAsStateWithLifecycle()
 
     val messagesSynced = if (messageCount > 0) {
         if (messageCount >= 1000) "${messageCount / 1000}k+" else messageCount.toString()
@@ -59,43 +72,32 @@ fun DashboardScreen(
         "${sessions.size * 3}+"
     } else "0"
 
-    val recentSessions = remember(sessions) { sessions.sortedByDescending { it.createdAt }.take(4) }
+    val recentSessions = remember(sessions) { sessions.sortedByDescending { it.createdAt }.take(5) }
     val now = System.currentTimeMillis()
 
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Transparent)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(top = 8.dp, bottom = 8.dp)
-            ) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Transparent)
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp)
+    ) {
+        // ── TOP BAR WITH DAILY GREETING & STATUS ───────────────────────────────────
         item {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    val profileName = repository?.securePrefs?.getSetting("profile_name", "Deep Patel") ?: "Deep Patel"
-                    val firstName = profileName.trim().split(Regex("\\s+")).firstOrNull()?.takeIf { it.isNotBlank() } ?: "User"
-
-                    val greeting = remember {
-                        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-                        when {
-                            hour < 12 -> "Good morning"
-                            hour < 17 -> "Good afternoon"
-                            else -> "Good evening"
-                        }
-                    }
-
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "$greeting, $firstName",
+                        text = dailyGreeting.title,
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "Your AI workspace is ready",
                         fontSize = 12.sp,
@@ -214,7 +216,7 @@ fun DashboardScreen(
                             .size(36.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .background(MaterialTheme.colorScheme.surface)
-                            .clickable { Toast.makeText(context, "Notifications", Toast.LENGTH_SHORT).show() },
+                            .clickable { Toast.makeText(context, "Notifications synced", Toast.LENGTH_SHORT).show() },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -228,6 +230,86 @@ fun DashboardScreen(
             }
         }
 
+        // ── DAILY AI BRIEFING & GREETING CARD (UPDATES ONCE DAILY) ───────────────
+        item {
+            var isRefreshingGreeting by remember { mutableStateOf(false) }
+
+            AppCard(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    isRefreshingGreeting = true
+                    ai.deepcode.android.util.DailyGreetingManager.refreshDailyGreeting(context, profileName, forceRefresh = true)
+                    Toast.makeText(context, "Refreshed daily AI insight", Toast.LENGTH_SHORT).show()
+                    isRefreshingGreeting = false
+                }
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("✨", fontSize = 12.sp)
+                            }
+                            Text(
+                                text = dailyGreeting.tag,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (dailyGreeting.isAiGenerated) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "AI GENERATED",
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.tertiary
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                            }
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh Greeting",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = dailyGreeting.subtitle,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+        }
+
+        // ── TOP CORE METRICS ───────────────────────────────────────────────────────
         item {
             AppCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
@@ -237,7 +319,7 @@ fun DashboardScreen(
                 ) {
                     StatItem(
                         modifier = Modifier.weight(1f),
-                        label = "Active Connections",
+                        label = "Connections",
                         value = "${activeConnections.size}",
                         valueColor = MaterialTheme.colorScheme.primary,
                         icon = Icons.Default.Link
@@ -270,136 +352,124 @@ fun DashboardScreen(
             }
         }
 
+        // ── REAL DATA ANALYSIS & TOKEN INTELLIGENCE CARD ──────────────────────────
         item {
-            val lifetimeTotals by (repository?.tokenRepository?.observeLifetimeTotals()
-                ?: kotlinx.coroutines.flow.flowOf(null))
-                .collectAsStateWithLifecycle(initialValue = null)
+            val totalTokens = lifetimeTotals?.totalTokens ?: 0L
+            val totalInput = lifetimeTotals?.totalInput ?: 0L
+            val totalOutput = lifetimeTotals?.totalOutput ?: 0L
+            val totalReasoning = lifetimeTotals?.totalReasoning ?: 0L
+            val totalTurns = lifetimeTotals?.totalTurns ?: 0
+            val costStr = lifetimeTotals?.formattedCost() ?: "$0.00"
+
+            val inputPercent = if (totalTokens > 0) ((totalInput.toDouble() / totalTokens) * 100).toInt() else 60
+            val outputPercent = if (totalTokens > 0) ((totalOutput.toDouble() / totalTokens) * 100).toInt() else 35
+            val reasoningPercent = (100 - inputPercent - outputPercent).coerceAtLeast(0)
 
             AppCard(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { onShowTokenUsage?.invoke() }
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Σ", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        }
-                        Column {
-                            Text("Token Usage", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (lifetimeTotals != null && lifetimeTotals!!.totalTokens > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("Σ", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Column {
                                 Text(
-                                    "${formatCompactNumber(lifetimeTotals!!.totalTokens)} tokens  ·  ${lifetimeTotals!!.formattedCost()}",
-                                    fontSize = 11.sp,
+                                    text = "Real-Time Token Analysis",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                            } else {
-                                Text("No data yet — starts tracking after first AI response", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                                Text(
+                                    text = if (totalTokens > 0) "${formatCompactNumber(totalTokens)} total tokens  ·  $costStr  ·  $totalTurns turns"
+                                           else "Real-time tracker ready",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
+                        Icon(
+                            Icons.Default.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
-                    Icon(
-                        Icons.Default.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-        }
 
-        item {
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text(
-                        text = "Today's Activity",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Box(
-                        modifier = Modifier
-                            .width(32.dp)
-                            .height(2.dp)
-                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(1.dp))
-                    )
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable { }
-                ) {
-                    Text(
-                        text = "View all",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(12.dp)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-        }
+                    if (totalTokens > 0) {
+                        Spacer(modifier = Modifier.height(12.dp))
 
-        item {
-            val tertiaryColor = MaterialTheme.colorScheme.tertiary
-            val primaryColor = MaterialTheme.colorScheme.primary
-            val activities = remember(activeConnections, recentSessions, tertiaryColor, primaryColor) {
-                val list = mutableListOf<Triple<ImageVector, Color, String>>()
-                activeConnections.take(2).forEach { conn ->
-                    val icon = if (conn.displayName.contains("Telegram", ignoreCase = true)) Icons.Default.Send else Icons.Default.Link
-                    list.add(Triple(icon, tertiaryColor, "${conn.displayName} connected"))
-                }
-                recentSessions.take(2).forEach { session ->
-                    list.add(Triple(Icons.Default.Chat, primaryColor, "Session: ${session.title}"))
-                }
-                list.add(Triple(Icons.Default.Bolt, AppIntegrationPurple, "Automation executed"))
-                list
-            }
-
-            AppCard {
-                if (activities.isEmpty()) {
-                    Text(
-                        text = "No recent activity yet. Start a chat or connect a service.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(8.dp)
-                    )
-                } else {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    ) {
-                        activities.forEachIndexed { index, act ->
-                            TimelineActivityItem(
-                                icon = act.first,
-                                iconBg = act.second.copy(alpha = 0.12f),
-                                title = act.third,
-                                time = if (index == 0) "2m ago" else if (index == 1) "2m ago" else "15m ago",
-                                isLast = index == activities.size - 1
+                        // Visual Distribution Bar
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(inputPercent.coerceAtLeast(1).toFloat())
+                                    .fillMaxHeight()
+                                    .background(MaterialTheme.colorScheme.primary)
                             )
+                            Spacer(modifier = Modifier.width(1.dp))
+                            Box(
+                                modifier = Modifier
+                                    .weight(outputPercent.coerceAtLeast(1).toFloat())
+                                    .fillMaxHeight()
+                                    .background(MaterialTheme.colorScheme.tertiary)
+                            )
+                            if (reasoningPercent > 0) {
+                                Spacer(modifier = Modifier.width(1.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .weight(reasoningPercent.toFloat())
+                                        .fillMaxHeight()
+                                        .background(AppIntegrationPurple)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Breakdown Legend
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("In: ${formatCompactNumber(totalInput)}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(MaterialTheme.colorScheme.tertiary))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Out: ${formatCompactNumber(totalOutput)}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (totalReasoning > 0) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(AppIntegrationPurple))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Reason: ${formatCompactNumber(totalReasoning)}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
                         }
                     }
                 }

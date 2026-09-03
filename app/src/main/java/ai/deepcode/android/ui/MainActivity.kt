@@ -791,27 +791,30 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
             }
         }
         ) {
+        val isImeVisible = WindowInsets.isImeVisible
         Scaffold(
             bottomBar = {
-                BottomNavBar(
-                    activeTab = selectedTab,
-                    onTabSelected = { index ->
-                        appState.setShowAgents(false)
-                        appState.setShowLogViewer(false)
-                        appState.setShowTokenUsage(false)
-                        appState.setSelectedFilePath("")
-                        appState.setShowFileExplorer(false)
-                        appState.setShowPersonas(false)
-                        appState.setSelectedPersona(null)
-                        appState.setShowManageTemplates(false)
-                        appState.setSelectedTemplateId("")
-                        appState.setShowVpnSettings(false)
-                        appState.setShowApiKeys(false)
-                        appState.setShowCloudflare(false)
-                        appState.setShowPlugins(false)
-                        appState.selectTab(index)
-                    }
-                )
+                if (!isImeVisible) {
+                    BottomNavBar(
+                        activeTab = selectedTab,
+                        onTabSelected = { index ->
+                            appState.setShowAgents(false)
+                            appState.setShowLogViewer(false)
+                            appState.setShowTokenUsage(false)
+                            appState.setSelectedFilePath("")
+                            appState.setShowFileExplorer(false)
+                            appState.setShowPersonas(false)
+                            appState.setSelectedPersona(null)
+                            appState.setShowManageTemplates(false)
+                            appState.setSelectedTemplateId("")
+                            appState.setShowVpnSettings(false)
+                            appState.setShowApiKeys(false)
+                            appState.setShowCloudflare(false)
+                            appState.setShowPlugins(false)
+                            appState.selectTab(index)
+                        }
+                    )
+                }
             },
             containerColor = Color.Transparent
         ) { padding ->
@@ -825,10 +828,6 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                         end = padding.calculateEndPadding(layoutDirection),
                         bottom = padding.calculateBottomPadding()
                     )
-                    // Tell descendants the bottom-bar inset is already applied,
-                    // otherwise ChatScreen's imePadding() stacks on top of it and
-                    // the input bar floats a whole navbar above the keyboard.
-                    .consumeWindowInsets(padding)
             ) {
                 when (selectedTab) {
                         0 -> DashboardScreen(

@@ -55,6 +55,8 @@ interface AIProvider {
     )
 }
 
+
+
 /**
  * Thrown when an API returns HTTP 429 or indicates quota/rate-limit exhaustion.
  * Caught by ChatViewModel to trigger silent key rotation.
@@ -117,64 +119,82 @@ private fun genProvider(name: String, baseUrl: String, modelIds: List<Pair<Strin
 
 private val OPENAI_PROVIDERS = listOf(
     genProvider("OpenAI", "https://api.openai.com/v1", listOf(
-        "gpt-4o" to "GPT-4o", "gpt-4o-mini" to "GPT-4o Mini", "gpt-4-turbo" to "GPT-4 Turbo", "gpt-3.5-turbo" to "GPT-3.5 Turbo"
+        "gpt-4o" to "GPT-4o", "gpt-4o-mini" to "GPT-4o Mini", "o1" to "OpenAI o1", "o1-mini" to "OpenAI o1 Mini",
+        "o3-mini" to "OpenAI o3 Mini", "gpt-4.5-preview" to "GPT-4.5 Preview", "gpt-4-turbo" to "GPT-4 Turbo", "gpt-3.5-turbo" to "GPT-3.5 Turbo"
     )),
     genProvider("Anthropic", "https://api.anthropic.com/v1", listOf(
-        "claude-opus-4-6" to "Claude Opus 4.6", "claude-sonnet-4-6" to "Claude Sonnet 4.6", "claude-haiku-4-5" to "Claude Haiku 4.5"
+        "claude-3-7-sonnet-latest" to "Claude 3.7 Sonnet", "claude-3-5-sonnet-latest" to "Claude 3.5 Sonnet",
+        "claude-3-5-haiku-latest" to "Claude 3.5 Haiku", "claude-3-opus-latest" to "Claude 3 Opus",
+        "claude-4.5-sonnet" to "Claude Sonnet 4.5", "claude-4.5-opus" to "Claude Opus 4.5"
     )),
     genProvider("Groq", "https://api.groq.com/openai/v1", listOf(
-        "llama-3.3-70b-versatile" to "Llama 3.3 70B", "mixtral-8x7b-32768" to "Mixtral 8x7B", "gemma2-9b-it" to "Gemma 2 9B"
+        "llama-3.3-70b-versatile" to "Llama 3.3 70B Versatile", "llama-3.3-70b-specdec" to "Llama 3.3 70B SpecDec",
+        "llama-3.1-8b-instant" to "Llama 3.1 8B Instant", "qwen-2.5-coder-32b" to "Qwen 2.5 Coder 32B",
+        "deepseek-r1-distill-llama-70b" to "DeepSeek R1 Distill 70B", "mixtral-8x7b-32768" to "Mixtral 8x7B", "gemma2-9b-it" to "Gemma 2 9B"
     )),
     genProvider("Mistral AI", "https://api.mistral.ai/v1", listOf(
-        "mistral-large-latest" to "Mistral Large", "mistral-small-latest" to "Mistral Small", "codestral-latest" to "Codestral"
+        "mistral-large-latest" to "Mistral Large", "mistral-small-latest" to "Mistral Small",
+        "codestral-latest" to "Codestral", "pixtral-12b-2409" to "Pixtral 12B", "open-mistral-nemo" to "Mistral NeMo"
     )),
     genProvider("DeepSeek", "https://api.deepseek.com/v1", listOf(
-        "deepseek-chat" to "DeepSeek Chat", "deepseek-reasoner" to "DeepSeek Reasoner"
+        "deepseek-chat" to "DeepSeek V3 (Chat)", "deepseek-reasoner" to "DeepSeek R1 (Reasoner)", "deepseek-coder" to "DeepSeek Coder"
     )),
     genProvider("OpenRouter", "https://openrouter.ai/api/v1", listOf(
-        "openai/gpt-4o" to "GPT-4o", "anthropic/claude-sonnet-4" to "Claude Sonnet 4", "google/gemini-2.0-flash-001" to "Gemini 2.0 Flash"
+        "deepseek/deepseek-r1:free" to "DeepSeek R1 (Free)", "deepseek/deepseek-chat:free" to "DeepSeek V3 (Free)",
+        "meta-llama/llama-3.3-70b-instruct:free" to "Llama 3.3 70B (Free)", "meta-llama/llama-3.1-8b-instruct:free" to "Llama 3.1 8B (Free)",
+        "google/gemma-2-9b-it:free" to "Gemma 2 9B (Free)", "qwen/qwen-2.5-72b-instruct:free" to "Qwen 2.5 72B (Free)",
+        "openai/gpt-4o" to "GPT-4o", "openai/gpt-4o-mini" to "GPT-4o Mini", "anthropic/claude-3.5-sonnet" to "Claude 3.5 Sonnet"
     )),
     genProvider("Together AI", "https://api.together.xyz/v1", listOf(
-        "meta-llama/Llama-3.3-70B-Instruct" to "Llama 3.3 70B", "mistralai/Mixtral-8x22B-Instruct" to "Mixtral 8x22B"
+        "meta-llama/Llama-3.3-70B-Instruct-Turbo" to "Llama 3.3 70B Turbo", "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo" to "Llama 3.1 8B Turbo",
+        "deepseek-ai/DeepSeek-V3" to "DeepSeek V3", "deepseek-ai/DeepSeek-R1" to "DeepSeek R1",
+        "Qwen/Qwen2.5-Coder-32B-Instruct" to "Qwen 2.5 Coder 32B", "mistralai/Mixtral-8x22B-Instruct-v0.1" to "Mixtral 8x22B"
     )),
     genProvider("Perplexity", "https://api.perplexity.ai", listOf(
-        "sonar-pro" to "Sonar Pro", "sonar" to "Sonar", "sonar-deep-research" to "Sonar Deep Research"
+        "sonar-pro" to "Sonar Pro", "sonar" to "Sonar", "sonar-deep-research" to "Sonar Deep Research",
+        "sonar-reasoning-pro" to "Sonar Reasoning Pro", "sonar-reasoning" to "Sonar Reasoning"
     )),
     genProvider("xAI", "https://api.x.ai/v1", listOf(
-        "grok-4" to "Grok 4", "grok-4-mini" to "Grok 4 Mini", "grok-4-vision" to "Grok 4 Vision"
+        "grok-2" to "Grok 2", "grok-2-mini" to "Grok 2 Mini", "grok-2-vision" to "Grok 2 Vision", "grok-beta" to "Grok Beta"
     )),
     genProvider("Cohere", "https://api.cohere.com/v1", listOf(
-        "command-a" to "Command A", "command-r" to "Command R", "command-r-plus" to "Command R+"
+        "command-r-plus" to "Command R+", "command-r" to "Command R", "command-light" to "Command Light", "command-a" to "Command A"
     )),
     genProvider("DeepInfra", "https://api.deepinfra.com/v1/openai", listOf(
-        "meta-llama/Llama-3.3-70B-Instruct" to "Llama 3.3 70B", "Qwen/Qwen3-235B-A22B" to "Qwen3 235B", "deepseek-ai/DeepSeek-V3" to "DeepSeek V3"
+        "deepseek-ai/DeepSeek-V3" to "DeepSeek V3", "deepseek-ai/DeepSeek-R1" to "DeepSeek R1",
+        "meta-llama/Llama-3.3-70B-Instruct" to "Llama 3.3 70B", "Qwen/Qwen2.5-72B-Instruct" to "Qwen 2.5 72B",
+        "Qwen/Qwen2.5-Coder-32B-Instruct" to "Qwen 2.5 Coder 32B"
     )),
     genProvider("Fireworks AI", "https://api.fireworks.ai/inference/v1", listOf(
-        "accounts/fireworks/models/llama-v3p3-70b-instruct" to "Llama 3.3 70B", "accounts/fireworks/models/deepseek-v3" to "DeepSeek V3"
+        "accounts/fireworks/models/llama-v3p3-70b-instruct" to "Llama 3.3 70B", "accounts/fireworks/models/deepseek-v3" to "DeepSeek V3",
+        "accounts/fireworks/models/deepseek-r1" to "DeepSeek R1", "accounts/fireworks/models/qwen2p5-coder-32b-instruct" to "Qwen 2.5 Coder"
     )),
     genProvider("NVIDIA NIM", "https://integrate.api.nvidia.com/v1", listOf(
-        "nvidia/llama-3.3-nemotron-super-49b-v1" to "Nemotron Super", "meta/llama-3.3-70b-instruct" to "Llama 3.3 70B"
+        "meta/llama-3.3-70b-instruct" to "Llama 3.3 70B", "deepseek-ai/deepseek-r1" to "DeepSeek R1",
+        "nvidia/llama-3.3-nemotron-super-49b-v1" to "Nemotron Super 49B", "qwen/qwen2.5-coder-32b-instruct" to "Qwen 2.5 Coder 32B"
     )),
     genProvider("SambaNova", "https://api.sambanova.ai/v1", listOf(
-        "Meta-Llama-3.3-70B-Instruct" to "Llama 3.3 70B", "DeepSeek-V3.2" to "DeepSeek V3.2"
+        "Meta-Llama-3.3-70B-Instruct" to "Llama 3.3 70B", "DeepSeek-R1" to "DeepSeek R1",
+        "DeepSeek-V3" to "DeepSeek V3", "Qwen2.5-Coder-32B-Instruct" to "Qwen 2.5 Coder"
     )),
     genProvider("Cerebrus", "https://api.cerebrus.com/v1", listOf(
-        "default" to "Default"
+        "llama-3.3-70b" to "Llama 3.3 70B", "llama3.1-8b" to "Llama 3.1 8B", "qwen2.5-72b" to "Qwen 2.5 72B"
     )),
     genProvider("Hyperbolic", "https://api.hyperbolic.xyz/v1", listOf(
-        "meta-llama/Meta-Llama-3.3-70B-Instruct" to "Llama 3.3 70B", "deepseek-ai/DeepSeek-R1" to "DeepSeek R1"
+        "meta-llama/Meta-Llama-3.3-70B-Instruct" to "Llama 3.3 70B", "deepseek-ai/DeepSeek-R1" to "DeepSeek R1",
+        "deepseek-ai/DeepSeek-V3" to "DeepSeek V3", "Qwen/Qwen2.5-Coder-32B-Instruct" to "Qwen 2.5 Coder"
     )),
     genProvider("GitHub Models", "https://models.inference.ai.azure.com", listOf(
-        "gpt-4o" to "GPT-4o", "gpt-4o-mini" to "GPT-4o Mini", "DeepSeek-R1" to "DeepSeek R1"
-    )),
-    genProvider("Together AI", "https://api.together.xyz/v1", listOf(
-        "meta-llama/Llama-3.3-70B-Instruct" to "Llama 3.3 70B", "deepseek-ai/DeepSeek-V3" to "DeepSeek V3"
+        "gpt-4o" to "GPT-4o", "gpt-4o-mini" to "GPT-4o Mini", "DeepSeek-R1" to "DeepSeek R1",
+        "Phi-3.5-mini-instruct" to "Phi 3.5 Mini", "Meta-Llama-3.1-70B-Instruct" to "Llama 3.1 70B"
     )),
     genProvider("Novita AI", "https://api.novita.ai/v1", listOf(
-        "meta-llama/llama-4-scout" to "Llama 4 Scout", "deepseek/deepseek-r1" to "DeepSeek R1"
+        "deepseek/deepseek-r1" to "DeepSeek R1", "deepseek/deepseek-v3" to "DeepSeek V3",
+        "meta-llama/llama-3.3-70b-instruct" to "Llama 3.3 70B"
     )),
     genProvider("SiliconFlow", "https://api.siliconflow.cn/v1", listOf(
-        "deepseek-ai/DeepSeek-V3" to "DeepSeek V3", "Qwen/Qwen3-235B-A22B" to "Qwen3 235B"
+        "deepseek-ai/DeepSeek-V3" to "DeepSeek V3", "deepseek-ai/DeepSeek-R1" to "DeepSeek R1",
+        "Qwen/Qwen2.5-72B-Instruct" to "Qwen 2.5 72B", "Qwen/Qwen2.5-Coder-32B-Instruct" to "Qwen 2.5 Coder"
     )),
     genProvider("Agent Router", "https://agentrouter.org/v1", listOf(
         "gpt-5.6-sol" to "GPT 5.6 Sol", "claude-opus-4-8" to "Claude Opus 4.8",
@@ -324,12 +344,37 @@ private val gson = Gson()
 
 // ==========================================
 // ==========================================
-// 0. ZEN PROVIDER (API KEY REQUIRED)
+// 0. ZEN PROVIDER
 // ==========================================
 class ZenProvider : AIProvider {
     override val name = "Zen AI"
-    override val isFree = false
-    override val models = emptyList<AIModel>()
+    override val isFree = true
+    override val models = listOf(
+        AIModel("deepseek-v4-flash-free", "DeepSeek V4 Flash (Free)", "Zen AI", true, "1M tokens", "Free"),
+        AIModel("muse-spark-1.2-contributor-free", "Muse Spark 1.2 (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("mimo-v2.5-free", "Mimo V2.5 (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("ling-3.0-flash-fin-free", "Ling 3.0 Flash Fin (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("nemotron-3-ultra-free", "Nemotron 3 Ultra (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("nemotron-3.5-lightning-free", "Nemotron 3.5 Lightning (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("laguna-s-2.1-free", "Laguna S 2.1 (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("claude-fable-5", "Claude Fable 5", "Zen AI", false, "200k tokens", "Paid"),
+        AIModel("claude-opus-5", "Claude Opus 5", "Zen AI", false, "200k tokens", "Paid"),
+        AIModel("claude-sonnet-5", "Claude Sonnet 5", "Zen AI", false, "200k tokens", "Paid"),
+        AIModel("claude-sonnet-4-6", "Claude Sonnet 4.6", "Zen AI", false, "200k tokens", "Paid"),
+        AIModel("gemini-3.7-flash", "Gemini 3.7 Flash", "Zen AI", false, "1M tokens", "Paid"),
+        AIModel("gemini-3.6-flash", "Gemini 3.6 Flash", "Zen AI", false, "1M tokens", "Paid"),
+        AIModel("gemini-3.5-flash", "Gemini 3.5 Flash", "Zen AI", false, "1M tokens", "Paid"),
+        AIModel("gpt-5.6-sol", "GPT 5.6 Sol", "Zen AI", false, "128k tokens", "Paid"),
+        AIModel("gpt-5.5", "GPT 5.5", "Zen AI", false, "128k tokens", "Paid"),
+        AIModel("gpt-5.4", "GPT 5.4", "Zen AI", false, "128k tokens", "Paid"),
+        AIModel("grok-4.6", "Grok 4.6", "Zen AI", false, "128k tokens", "Paid"),
+        AIModel("deepseek-v4-flash", "DeepSeek V4 Flash", "Zen AI", false, "1M tokens", "Paid"),
+        AIModel("deepseek-v4-pro", "DeepSeek V4 Pro", "Zen AI", false, "1M tokens", "Paid"),
+        AIModel("glm-5.2", "GLM 5.2", "Zen AI", false, "128k tokens", "Paid"),
+        AIModel("minimax-m3", "MiniMax M3", "Zen AI", false, "128k tokens", "Paid"),
+        AIModel("kimi-k3", "Kimi K3", "Zen AI", false, "128k tokens", "Paid"),
+        AIModel("qwen3.6-plus", "Qwen 3.6 Plus", "Zen AI", false, "128k tokens", "Paid")
+    )
 
     companion object {
         private val zenHttpClient: OkHttpClient by lazy {
@@ -374,25 +419,57 @@ class ZenProvider : AIProvider {
         val baseUrl = resolveBaseUrl(customBaseUrl, "https://opencode.ai/zen/v1")
         var lastException: Throwable? = null
 
-        val payload = buildZenPayload(messages, model, tools)
-        val payloadJson = gson.toJson(payload)
-
-        // 1. Pooled HTTP/2 OkHttp streaming
-        try {
-            streamZenOkHttp(payloadJson, baseUrl, apiKey, zenHttpClient, onToken, onToolCall, onComplete, onUsage)
-            return
-        } catch (e: Throwable) {
-            ai.deepcode.android.util.AppLogger.w("ZenProvider", "OkHttp primary: ${e.message}")
-            lastException = e
+        val isFreeModel = model.contains("free", ignoreCase = true)
+        val candidateModels = linkedSetOf<String>().apply {
+            add(model)
+            if (isFreeModel) {
+                add("deepseek-v4-flash-free")
+                add("nemotron-3-ultra-free")
+                add("gemini-2.0-flash")
+                add("gpt-4o-mini")
+                add("deepseek-chat")
+            } else {
+                add("claude-sonnet-4-6")
+                add("gemini-3.5-flash")
+                add("gpt-5.4")
+                add("deepseek-v4-flash-free")
+            }
         }
 
-        // 2. HttpURLConnection streaming backup
-        try {
-            streamZenHttp(payloadJson, baseUrl, apiKey, onToken, onToolCall, onComplete, onUsage)
-            return
-        } catch (e: Throwable) {
-            ai.deepcode.android.util.AppLogger.w("ZenProvider", "HttpURL backup: ${e.message}")
-            lastException = e
+        for (candidate in candidateModels) {
+            val payload = buildZenPayload(messages, candidate, tools)
+            val payloadJson = gson.toJson(payload)
+
+            // 1. Pooled HTTP/2 OkHttp streaming
+            try {
+                streamZenOkHttp(payloadJson, baseUrl, apiKey, zenHttpClient, onToken, onToolCall, onComplete, onUsage)
+                return
+            } catch (e: Throwable) {
+                ai.deepcode.android.util.AppLogger.w("ZenProvider", "Candidate $candidate OkHttp failed: ${e.message}")
+                lastException = e
+            }
+
+            val errStr = lastException?.message ?: ""
+            val isHttpError = lastException is RateLimitException || errStr.contains("503") || errStr.contains("502") ||
+                errStr.contains("500") || errStr.contains("404") || errStr.contains("429") ||
+                errStr.contains("Endpoint is unavailable") || errStr.contains("server_error") ||
+                errStr.contains("FreeUsageLimitError")
+
+            // 2. Only try HttpURLConnection backup if it was a transport/connection error, not server refusal
+            if (!isHttpError) {
+                try {
+                    streamZenHttp(payloadJson, baseUrl, apiKey, onToken, onToolCall, onComplete, onUsage)
+                    return
+                } catch (e: Throwable) {
+                    ai.deepcode.android.util.AppLogger.w("ZenProvider", "Candidate $candidate HttpURL failed: ${e.message}")
+                    lastException = e
+                }
+            }
+
+            val isUpstreamOrRateLimit = isHttpError || errStr.contains("RateLimit")
+            if (!isUpstreamOrRateLimit) {
+                break
+            }
         }
 
         val errMsg = "Zen API error: ${lastException?.message ?: "All transports failed"}"
@@ -586,10 +663,6 @@ class ZenProvider : AIProvider {
                 val choice = json.getAsJsonArray("choices")?.firstOrNull()?.asJsonObject
                 val msgObj = choice?.getAsJsonObject("message")
                 val text = msgObj?.get("content")?.asString ?: ""
-                val reasoning = msgObj?.get("reasoning_content")?.asString ?: ""
-                if (reasoning.isNotEmpty()) {
-                    onToken("<thought>\n$reasoning\n</thought>\n")
-                }
                 if (text.isNotEmpty()) {
                     onToken(text)
                 }
@@ -692,12 +765,18 @@ class ZenProvider : AIProvider {
                         if (reasoningField != null) {
                             val t = delta.get(reasoningField).asString
                             accumulatedReasoning.append(t)
-                            if (!startedReasoning) { startedReasoning = true; onToken("<thought>\n") }
+                            if (!startedReasoning) {
+                                startedReasoning = true
+                                onToken("<think>")
+                            }
                             onToken(t)
                         }
                         if (delta.has("content") && !delta.get("content").isJsonNull) {
+                            if (startedReasoning && !endedReasoning) {
+                                endedReasoning = true
+                                onToken("</think>\n\n")
+                            }
                             val t = delta.get("content").asString
-                            if (startedReasoning && !endedReasoning) { endedReasoning = true; onToken("\n</thought>\n") }
                             accumulatedContent.append(t)
                             onToken(t)
                         }
@@ -726,15 +805,11 @@ class ZenProvider : AIProvider {
             onUsage?.invoke(TurnTokenUsage(usageInput, usageOutput, usageReasoning))
         } else if (onUsage != null) {
             val estimatedOutput = (accumulatedContent.length / 4).coerceAtLeast(1)
-            onUsage.invoke(TurnTokenUsage(150, estimatedOutput, 0))
+            val estimatedReasoning = (accumulatedReasoning.length / 4)
+            val estimatedInput = ((accumulatedReasoning.length + accumulatedContent.length) / 4 + 120).coerceAtLeast(10)
+            onUsage.invoke(TurnTokenUsage(estimatedInput, estimatedOutput, estimatedReasoning))
         }
-        if (startedReasoning && !endedReasoning) onToken("\n</thought>\n")
-        val fullText = if (accumulatedReasoning.isNotEmpty() && !accumulatedContent.startsWith("<thought>")) {
-            "<thought>\n${accumulatedReasoning.toString().trim()}\n</thought>\n${accumulatedContent.toString().trim()}".trim()
-        } else {
-            accumulatedContent.toString()
-        }
-        onComplete(fullText)
+        onComplete(accumulatedContent.toString())
     }
 }
 
@@ -747,8 +822,9 @@ class GeminiProvider : AIProvider {
     override val models = listOf(
         AIModel("gemini-2.0-flash", "Gemini 2.0 Flash", "Google Gemini", true, "1M tokens", "Free"),
         AIModel("gemini-2.0-flash-lite", "Gemini 2.0 Flash Lite", "Google Gemini", true, "1M tokens", "Free"),
+        AIModel("gemini-2.0-pro-exp-02-05", "Gemini 2.0 Pro Experimental", "Google Gemini", true, "2M tokens", "Free"),
         AIModel("gemini-1.5-flash", "Gemini 1.5 Flash", "Google Gemini", true, "1M tokens", "Free"),
-        AIModel("gemini-1.5-pro", "Gemini 1.5 Pro", "Google Gemini", true, "2M tokens", "Paid"),
+        AIModel("gemini-1.5-pro", "Gemini 1.5 Pro", "Google Gemini", false, "2M tokens", "Paid"),
         AIModel("imagen-3.0-generate-002", "Imagen 3 (Image Creation)", "Google Gemini", false, "Image Gen", "Free"),
         AIModel("imagen-3.0-fast-generate-001", "Imagen 3 Fast (Image Creation)", "Google Gemini", false, "Image Gen", "Free")
     )
@@ -969,8 +1045,16 @@ class GeminiProvider : AIProvider {
                     val source = body.source()
                     var line: String?
                     val accumulatedJson = StringBuilder()
+                    val collectedGeminiText = StringBuilder()
+                    var geminiInputTokens = 0
+                    var geminiOutputTokens = 0
 
                     fun handleGeminiChunk(chunk: JsonObject) {
+                        if (chunk.has("usageMetadata")) {
+                            val u = chunk.getAsJsonObject("usageMetadata")
+                            geminiInputTokens = u.get("promptTokenCount")?.asInt ?: geminiInputTokens
+                            geminiOutputTokens = u.get("candidatesTokenCount")?.asInt ?: geminiOutputTokens
+                        }
                         val candidates = chunk.getAsJsonArray("candidates")
                         if (candidates != null && candidates.size() > 0) {
                             totalCandidates++
@@ -988,6 +1072,7 @@ class GeminiProvider : AIProvider {
                                         onToolCall(ToolCall(callId, name, args))
                                     } else if (firstPart.has("text") && !firstPart.get("text").isJsonNull) {
                                         val text = firstPart.get("text").asString
+                                        collectedGeminiText.append(text)
                                         onToken(text)
                                     }
                                 }
@@ -1037,8 +1122,16 @@ class GeminiProvider : AIProvider {
                         }
                     }
                     ai.deepcode.android.util.AppLogger.i("GeminiProvider", "Response: code=$responseCode candidates=$totalCandidates")
+                    
+                    if (geminiInputTokens > 0 || geminiOutputTokens > 0) {
+                        onUsage?.invoke(TurnTokenUsage(geminiInputTokens, geminiOutputTokens, 0))
+                    } else if (onUsage != null) {
+                        val estimatedInput = (messages.sumOf { it.content.length } / 4).coerceAtLeast(10)
+                        val estimatedOutput = (collectedGeminiText.length / 4).coerceAtLeast(1)
+                        onUsage.invoke(TurnTokenUsage(estimatedInput, estimatedOutput, 0))
+                    }
+                    onComplete(collectedGeminiText.toString())
                 }
-                onComplete("")
             } catch (e: Throwable) {
                 ai.deepcode.android.util.AppLogger.e("GeminiProvider", "Gemini stream failed", e)
                 onError(e)
@@ -1258,6 +1351,11 @@ class OpenAIProvider : AIProvider {
     override val isFree = false
     override val models = listOf(
         AIModel("gpt-4o", "GPT-4o", "OpenAI", false, "128k tokens", "Paid"),
+        AIModel("gpt-4o-mini", "GPT-4o Mini", "OpenAI", false, "128k tokens", "Paid"),
+        AIModel("o1", "OpenAI o1", "OpenAI", false, "200k tokens", "Paid"),
+        AIModel("o1-mini", "OpenAI o1 Mini", "OpenAI", false, "128k tokens", "Paid"),
+        AIModel("o3-mini", "OpenAI o3 Mini", "OpenAI", false, "200k tokens", "Paid"),
+        AIModel("gpt-4.5-preview", "GPT-4.5 Preview", "OpenAI", false, "128k tokens", "Paid"),
         AIModel("gpt-4-turbo", "GPT-4 Turbo", "OpenAI", false, "128k tokens", "Paid"),
         AIModel("gpt-3.5-turbo", "GPT-3.5 Turbo", "OpenAI", false, "16k tokens", "Paid"),
         AIModel("dall-e-3", "DALL-E 3 (Image Generation)", "OpenAI", false, "1024x1024 Image", "Paid"),
@@ -1312,8 +1410,12 @@ class AnthropicProvider : AIProvider {
     override val name = "Anthropic"
     override val isFree = false
     override val models = listOf(
-        AIModel("claude-4.5-opus", "Claude Opus 4.5", "Anthropic", false, "200k tokens", "Paid"),
+        AIModel("claude-3-7-sonnet-latest", "Claude 3.7 Sonnet (Hybrid)", "Anthropic", false, "200k tokens", "Paid"),
+        AIModel("claude-3-5-sonnet-latest", "Claude 3.5 Sonnet", "Anthropic", false, "200k tokens", "Paid"),
+        AIModel("claude-3-5-haiku-latest", "Claude 3.5 Haiku", "Anthropic", false, "200k tokens", "Paid"),
+        AIModel("claude-3-opus-latest", "Claude 3 Opus", "Anthropic", false, "200k tokens", "Paid"),
         AIModel("claude-4.5-sonnet", "Claude Sonnet 4.5", "Anthropic", false, "200k tokens", "Paid"),
+        AIModel("claude-4.5-opus", "Claude Opus 4.5", "Anthropic", false, "200k tokens", "Paid"),
         AIModel("claude-4.5-haiku", "Claude Haiku 4.5", "Anthropic", false, "200k tokens", "Paid")
     )
 
@@ -1469,6 +1571,9 @@ class AnthropicProvider : AIProvider {
                     var currentToolCallId = ""
                     var currentToolName = ""
                     val currentToolArgs = StringBuilder()
+                    val collectedAnthropicText = StringBuilder()
+                    var anthropicInputTokens = 0
+                    var anthropicOutputTokens = 0
 
                     while (source.readUtf8Line().also { line = it } != null) {
                         val cleaned = line!!.trim()
@@ -1480,6 +1585,19 @@ class AnthropicProvider : AIProvider {
                                 val type = ai.deepcode.android.util.SafeJson.string(chunk, "type")
                                 
                                 when (type) {
+                                    "message_start" -> {
+                                        val msgObj = ai.deepcode.android.util.SafeJson.obj(chunk, "message")
+                                        val usageObj = ai.deepcode.android.util.SafeJson.obj(msgObj, "usage")
+                                        if (usageObj != null) {
+                                            anthropicInputTokens = usageObj.get("input_tokens")?.asInt ?: 0
+                                        }
+                                    }
+                                    "message_delta" -> {
+                                        val usageObj = ai.deepcode.android.util.SafeJson.obj(chunk, "usage")
+                                        if (usageObj != null) {
+                                            anthropicOutputTokens = usageObj.get("output_tokens")?.asInt ?: 0
+                                        }
+                                    }
                                     "content_block_start" -> {
                                         val block = ai.deepcode.android.util.SafeJson.obj(chunk, "content_block") ?: continue
                                         if (ai.deepcode.android.util.SafeJson.string(block, "type") == "tool_use") {
@@ -1492,6 +1610,7 @@ class AnthropicProvider : AIProvider {
                                         val delta = ai.deepcode.android.util.SafeJson.obj(chunk, "delta") ?: continue
                                         val text = ai.deepcode.android.util.SafeJson.string(delta, "text")
                                         if (text != null) {
+                                            collectedAnthropicText.append(text)
                                             onToken(text)
                                         } else {
                                             val partial = ai.deepcode.android.util.SafeJson.string(delta, "partial_json")
@@ -1514,8 +1633,15 @@ class AnthropicProvider : AIProvider {
                             }
                         }
                     }
+                    if (anthropicInputTokens > 0 || anthropicOutputTokens > 0) {
+                        onUsage?.invoke(TurnTokenUsage(anthropicInputTokens, anthropicOutputTokens, 0))
+                    } else if (onUsage != null) {
+                        val estimatedInput = (messages.sumOf { it.content.length } / 4).coerceAtLeast(10)
+                        val estimatedOutput = (collectedAnthropicText.length / 4).coerceAtLeast(1)
+                        onUsage.invoke(TurnTokenUsage(estimatedInput, estimatedOutput, 0))
+                    }
+                    onComplete(collectedAnthropicText.toString())
                 }
-                onComplete("")
             } catch (e: Throwable) {
                 ai.deepcode.android.util.AppLogger.e("AnthropicProvider", "Anthropic stream failed", e)
                 onError(e)
@@ -1897,8 +2023,31 @@ private suspend fun streamOpenAiCompatible(
                 val contentType = response.header("Content-Type") ?: ""
                 val body = response.body ?: throw Exception("Empty response body")
                 if (!contentType.contains("text/event-stream") && !contentType.contains("application/x-ndjson") && !contentType.contains("application/stream+json")) {
-                    val bodyString = body.string().take(1024)
-                    throw Exception("Expected event stream but got: $contentType\nResponse: $bodyString")
+                    val bodyString = body.string()
+                    try {
+                        val json = JsonParser.parseString(bodyString).asJsonObject
+                        val choice = json.getAsJsonArray("choices")?.firstOrNull()?.asJsonObject
+                        val msg = choice?.getAsJsonObject("message")
+                        val text = msg?.get("content")?.asString ?: ""
+                        val reasoning = msg?.get("reasoning_content")?.asString ?: msg?.get("reasoning")?.asString ?: ""
+                        if (reasoning.isNotEmpty()) onToken("<think>$reasoning</think>\n\n")
+                        if (text.isNotEmpty()) onToken(text)
+                        val tcArray = msg?.getAsJsonArray("tool_calls")
+                        if (tcArray != null) {
+                            for (i in 0 until tcArray.size()) {
+                                val tc = tcArray.get(i).asJsonObject
+                                val id = tc.get("id")?.asString ?: UUID.randomUUID().toString()
+                                val func = tc.getAsJsonObject("function")
+                                val name = func?.get("name")?.asString ?: ""
+                                val args = func?.get("arguments")?.asString ?: "{}"
+                                onToolCall(ToolCall(id, name, args))
+                            }
+                        }
+                        onComplete(text)
+                        return@withContext
+                    } catch (e: Exception) {
+                        throw Exception("Expected event stream but got: $contentType\nResponse: ${bodyString.take(500)}")
+                    }
                 }
                 val source = body.source()
                 var line: String?
@@ -1938,25 +2087,21 @@ private suspend fun streamOpenAiCompatible(
                                         accumulatedReasoning.append(reasoningToken)
                                         if (!startedReasoning) {
                                             startedReasoning = true
-                                            onToken("<thought>\n")
+                                            onToken("<think>")
                                         }
                                         onToken(reasoningToken)
                                     }
                                     if (delta.has("content") && !delta.get("content").isJsonNull) {
-                                        val contentToken = delta.get("content").asString
                                         if (startedReasoning && !endedReasoning) {
                                             endedReasoning = true
-                                            onToken("\n</thought>\n")
+                                            onToken("</think>\n\n")
                                         }
+                                        val contentToken = delta.get("content").asString
                                         onToken(contentToken)
                                         accumulatedContent.append(contentToken)
                                     }
                                     
                                     if (delta.has("tool_calls") && !delta.get("tool_calls").isJsonNull) {
-                                        if (startedReasoning && !endedReasoning) {
-                                            endedReasoning = true
-                                            onToken("\n</thought>\n")
-                                        }
                                         val tcArray = delta.getAsJsonArray("tool_calls") ?: continue
                                         for (i in 0 until tcArray.size()) {
                                             val tcElement = try { tcArray.get(i).asJsonObject } catch (_: Exception) { continue }
@@ -1998,9 +2143,6 @@ private suspend fun streamOpenAiCompatible(
                     val estimatedOutput = (accumulatedText.length / 4).coerceAtLeast(1)
                     onUsage?.invoke(TurnTokenUsage(estimatedInput, estimatedOutput, 0))
                 }
-            }
-            if (startedReasoning && !endedReasoning) {
-                onToken("\n</thought>\n")
             }
             onComplete(accumulatedContent.toString())
         } catch (e: Throwable) {
@@ -2162,16 +2304,16 @@ private suspend fun streamZenCompatible(
                                         accumulatedReasoning.append(reasoningToken)
                                         if (!startedReasoning) {
                                             startedReasoning = true
-                                            onToken("<thought>\n")
+                                            onToken("<think>")
                                         }
                                         onToken(reasoningToken)
                                     }
                                     if (delta.has("content") && !delta.get("content").isJsonNull) {
-                                        val contentToken = delta.get("content").asString
                                         if (startedReasoning && !endedReasoning) {
                                             endedReasoning = true
-                                            onToken("\n</thought>\n")
+                                            onToken("</think>\n\n")
                                         }
+                                        val contentToken = delta.get("content").asString
                                         onToken(contentToken)
                                         accumulatedContent.append(contentToken)
                                     }
@@ -2361,16 +2503,16 @@ private suspend fun streamZenWithHttpUrlConnection(
                                     accumulatedReasoning.append(reasoningToken)
                                     if (!startedReasoning) {
                                         startedReasoning = true
-                                        onToken("<thought>\n")
+                                        onToken("<think>")
                                     }
                                     onToken(reasoningToken)
                                 }
                                 if (delta.has("content") && !delta.get("content").isJsonNull) {
-                                    val contentToken = delta.get("content").asString
                                     if (startedReasoning && !endedReasoning) {
                                         endedReasoning = true
-                                        onToken("\n</thought>\n")
+                                        onToken("</think>\n\n")
                                     }
+                                    val contentToken = delta.get("content").asString
                                     onToken(contentToken)
                                     accumulatedContent.append(contentToken)
                                 }
@@ -2408,9 +2550,6 @@ private suspend fun streamZenWithHttpUrlConnection(
             }
             if (usageInput > 0 || usageOutput > 0) {
                 onUsage?.invoke(TurnTokenUsage(usageInput, usageOutput, usageReasoning))
-            }
-            if (startedReasoning && !endedReasoning) {
-                onToken("\n</thought>\n")
             }
             onComplete(accumulatedContent.toString())
         } catch (e: Throwable) {
@@ -2833,10 +2972,54 @@ object ModelCatalog {
     }
 }
 
+fun formatModelTitle(rawId: String): String {
+    val id = rawId.split("/").lastOrNull() ?: rawId
+    val isFree = id.contains("free", ignoreCase = true)
+    val base = id.removeSuffix("-free").removeSuffix(":free")
+    val words = base.split("-", "_", ".").filter { it.isNotEmpty() }
+    val formattedWords = words.map { word ->
+        when (word.lowercase()) {
+            "gpt" -> "GPT"
+            "glm" -> "GLM"
+            "qwen" -> "Qwen"
+            "claude" -> "Claude"
+            "gemini" -> "Gemini"
+            "deepseek" -> "DeepSeek"
+            "grok" -> "Grok"
+            "kimi" -> "Kimi"
+            "minimax" -> "MiniMax"
+            "nemotron" -> "Nemotron"
+            "mimo" -> "Mimo"
+            "ling" -> "Ling"
+            "muse" -> "Muse"
+            "spark" -> "Spark"
+            "laguna" -> "Laguna"
+            "coder", "code" -> "Coder"
+            "pro" -> "Pro"
+            "flash" -> "Flash"
+            "plus" -> "Plus"
+            "max" -> "Max"
+            "mini" -> "Mini"
+            "nano" -> "Nano"
+            "sol" -> "Sol"
+            "terra" -> "Terra"
+            "luna" -> "Luna"
+            "contributor" -> "Contributor"
+            "ultra" -> "Ultra"
+            "lightning" -> "Lightning"
+            "fin" -> "Fin"
+            else -> word.replaceFirstChar { it.uppercase() }
+        }
+    }
+    val title = formattedWords.joinToString(" ")
+    return if (isFree) "$title (Free)" else title
+}
+
 suspend fun fetchModels(apiKey: String, baseUrl: String, providerName: String): List<AIModel> {
     return withContext(Dispatchers.IO) {
         try {
             val isGemini = providerName.contains("Gemini", ignoreCase = true) || baseUrl.contains("generativelanguage.googleapis.com", ignoreCase = true)
+            val isZen = providerName.contains("Zen", ignoreCase = true) || baseUrl.contains("opencode.ai/zen", ignoreCase = true)
             val url = if (isGemini) {
                 "https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey"
             } else {
@@ -2845,7 +3028,7 @@ suspend fun fetchModels(apiKey: String, baseUrl: String, providerName: String): 
 
             val ua = if (providerName.contains("Agent Router", ignoreCase = true) || url.contains("agentrouter", ignoreCase = true)) "codex_cli_rs/0.1.0" else "opencode/1.0"
             val reqBuilder = Request.Builder().url(url).header("User-Agent", ua)
-            if (!isGemini) {
+            if (!isGemini && (!isZen || (apiKey.isNotBlank() && apiKey != "zen-free"))) {
                 reqBuilder.addHeader("Authorization", "Bearer $apiKey")
             }
             val request = reqBuilder.build()
@@ -2901,9 +3084,10 @@ suspend fun fetchModels(apiKey: String, baseUrl: String, providerName: String): 
                     val id = obj.optString("id", "")
                     if (id.isBlank()) continue
                     val isFree = id.contains("free", ignoreCase = true)
+                    val formattedName = formatModelTitle(id)
                     result.add(AIModel(
                         id = id,
-                        name = id.split("/").lastOrNull()?.replace("-", " ")?.replaceFirstChar { it.uppercase() } ?: id,
+                        name = formattedName,
                         provider = providerName,
                         isFree = isFree,
                         contextWindow = obj.optString("context_length", ""),

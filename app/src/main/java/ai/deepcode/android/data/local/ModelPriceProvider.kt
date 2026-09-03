@@ -125,6 +125,18 @@ object ModelPriceProvider {
         return cost.coerceAtLeast(0.0)
     }
 
+    fun resolveProvider(modelId: String): String = when {
+        modelId.startsWith("claude") -> "Anthropic"
+        modelId.startsWith("gemini") -> "Google Gemini"
+        modelId.startsWith("gpt") || modelId.startsWith("o1") || modelId.startsWith("o3") -> "OpenAI"
+        modelId.startsWith("deepseek") -> "DeepSeek"
+        modelId.startsWith("mistral") || modelId.startsWith("codestral") -> "Mistral AI"
+        modelId.startsWith("llama") || modelId.startsWith("mixtral") -> "Groq"
+        modelId.startsWith("openrouter") -> "OpenRouter"
+        modelId.startsWith("ollama") -> "Ollama (Local)"
+        else -> "Zen (Free)"
+    }
+
     val registeredModels: Set<String> get() = registry.keys
 }
 

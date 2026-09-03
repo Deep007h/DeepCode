@@ -198,4 +198,36 @@ class DeepCodeRepository(context: Context) {
         )
     }
 
+    suspend fun syncAndBackfillTokenUsage() = withContext(Dispatchers.IO) {
+        try {
+            val lifetime = tokenRepository.getLifetimeTotals()
+            if (lifetime == null || lifetime.totalTokens == 0L) {
+                val allMessages = messageDao.getAllMessagesList()
+                val messagesBySession = allMessages.groupBy { it.sessionId }
+
+                messagesBySession.forEach { (sessId, msgs) ->
+                    val userChars = msgs.filter { it.role == "user" }.sumOf { it.content.length }
+                    val assistantChars = msgs.filter { it.role == "assistant" }.sumOf { it.content.length }
+
+                    val inputTokens = (userChars / 4).coerceAtLeast(15)
+                    val outputTokens = (assistantChars / 4).coerceAtLeast(15)
+
+                    if (inputTokens > 0 || outputTokens > 0) {
+                        recordTokenUsage(
+                            sessionId = sessId,
+                            modelId = "deepseek-v4-flash-free",
+                            providerName = "Zen (Free)",
+                            usage = TurnTokenUsage(
+                                inputTokens = inputTokens,
+                                outputTokens = outputTokens,
+                                reasoningTokens = 0
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            AppLogger.e("DeepCodeRepository", "Failed to backfill tokens", e)
+        }
+    }
 }

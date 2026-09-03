@@ -105,6 +105,9 @@ interface MessageDao {
 
     @Query("SELECT * FROM messages WHERE role = 'assistant' ORDER BY timestamp DESC LIMIT 20")
     suspend fun getRecentAssistantMessages(): List<MessageEntity>
+
+    @Query("SELECT * FROM messages")
+    suspend fun getAllMessagesList(): List<MessageEntity>
 }
 
 @Database(

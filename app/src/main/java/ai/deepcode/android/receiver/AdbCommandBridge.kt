@@ -101,6 +101,9 @@ class AdbCommandBridge : BroadcastReceiver() {
                 append("}")
             }
             Log.i(RESPONSE_TAG, json)
+            try {
+                java.io.File("/sdcard/deepcode_agent_response.json").writeText(json)
+            } catch (_: Exception) {}
             AppLogger.logAdbResponse(reqId, status, json)
         }
 
