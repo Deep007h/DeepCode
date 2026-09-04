@@ -173,6 +173,17 @@ class DeepCodeRepository(context: Context) {
 
     fun getDeclaredTools() = toolExecutor.getDeclaredTools()
 
+    fun updateGitHubToken(token: String?) {
+        val cleanToken = token?.trim()?.takeIf { it.isNotEmpty() }
+        if (cleanToken != null) {
+            securePrefs.saveSetting("github_token", cleanToken)
+            toolExecutor.gitHubService = GitHubService(cleanToken)
+        } else {
+            securePrefs.saveSetting("github_token", "")
+            toolExecutor.gitHubService = null
+        }
+    }
+
     fun getGitStatus(workingDir: String): GitInfo {
         return gitService.getGitStatus(workingDir)
     }

@@ -245,6 +245,14 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
                     } catch (e: Exception) {
                         addLog("Error stopping Telegram Bridge: ${e.message}")
                     }
+                } else if (appId == "github") {
+                    try {
+                        securePrefs.saveSetting("github_token", "")
+                        ai.deepcode.android.data.repository.DeepCodeRepository.getInstance(appContext).updateGitHubToken(null)
+                        addLog("GitHub disconnected and credentials cleared.")
+                    } catch (e: Exception) {
+                        addLog("Error disconnecting GitHub: ${e.message}")
+                    }
                 } else if (appId == "whatsapp") {
                     disconnectWhatsApp()
                 }
@@ -375,26 +383,40 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
     }
 
     fun connectGitHub(githubToken: String) {
+        val cleanToken = githubToken.trim()
+        if (cleanToken.isEmpty()) {
+            addLog("GitHub token cannot be empty.")
+            return
+        }
         viewModelScope.launch {
             addLog("Validating GitHub Personal Access Token...")
             withContext(Dispatchers.IO) {
-                val service = GitHubService(githubToken.trim())
+                val service = GitHubService(cleanToken)
                 val result = service.validateToken()
                 result.onSuccess { user ->
-                    addLog("GitHub token validated. Connected as: ${user.name} (@${user.login})")
+                    val scopesInfo = if (user.scopes.isNotEmpty()) " (scopes: ${user.scopes})" else ""
+                    addLog("GitHub token validated. Connected as: ${user.name} (@${user.login})$scopesInfo")
                     try {
-                        securePrefs.saveSetting("github_token", githubToken.trim())
+                        securePrefs.saveSetting("github_token", cleanToken)
+                        try {
+                            ai.deepcode.android.data.repository.DeepCodeRepository.getInstance(appContext).updateGitHubToken(cleanToken)
+                        } catch (e: Exception) {
+                            AppLogger.e("ConnectionsViewModel", "Failed to update repository GitHub token", e)
+                        }
                         val integration = repository.getIntegrationByAppId("github")
                         if (integration != null) {
                             val updated = integration.copy(
                                 status = "connected",
-                                accessToken = githubToken.trim(),
+                                displayName = if (user.name.isNotBlank() && user.name != user.login) "GitHub (${user.name} - @${user.login})" else "GitHub (@${user.login})",
+                                iconUrl = user.avatarUrl.ifEmpty { integration.iconUrl },
+                                accessToken = cleanToken,
+                                scopes = user.scopes,
                                 connectedAt = System.currentTimeMillis(),
                                 lastSyncedAt = System.currentTimeMillis()
                             )
                             repository.insertIntegration(updated)
                         }
-                        addLog("GitHub integration saved successfully.")
+                        addLog("GitHub integration saved & live synced across AI tools successfully.")
                     } catch (e: Exception) {
                         addLog("Error saving GitHub integration: ${e.message}")
                     }

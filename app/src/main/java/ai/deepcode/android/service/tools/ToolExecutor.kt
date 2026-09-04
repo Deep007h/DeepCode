@@ -235,6 +235,25 @@ class ToolExecutor(private val context: Context? = null) {
     var gitHubService: GitHubService? = null
     var driveHandler: DriveHandler? = null
 
+    fun getOrInitGitHubService(): GitHubService? {
+        gitHubService?.let { return it }
+        val ctx = context ?: return null
+        val token = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx).getSetting("github_token", "").trim()
+            .ifEmpty {
+                try {
+                    kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                        ai.deepcode.android.ui.connections.IntegrationRepository(ctx).getIntegrationByAppId("github")?.accessToken?.trim()
+                    } ?: ""
+                } catch (_: Exception) { "" }
+            }
+        if (token.isNotEmpty()) {
+            val svc = GitHubService(token)
+            gitHubService = svc
+            return svc
+        }
+        return null
+    }
+
     private fun optString(a: JsonObject, k: String): String? =
         try { a.get(k)?.takeIf { !it.isJsonNull }?.asString?.trim()?.takeIf { it.isNotEmpty() } } catch (_: Exception) { null }
 
@@ -376,14 +395,28 @@ class ToolExecutor(private val context: Context? = null) {
                         "notion_list_databases failed: ${e.message}"
                     }
                 }
+                "github_get_user" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected. Connect your GitHub token in the Connections screen first."
+                        val username = optString(args, "username")
+                        svc.getUser(username).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub get user failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_get_user failed: ${e.message}"
+                    }
+                }
                 "github_list_repos" -> {
                     try {
-                        val svc = gitHubService ?: return "GitHub not connected. Connect your GitHub token first."
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected. Connect your GitHub token in the Connections screen first."
                         val type = optString(args, "type") ?: "all"
-                        svc.listRepos(type).fold(
+                        val perPage = optInt(args, "per_page", 50)
+                        svc.listRepos(type, perPage).fold(
                             onSuccess = { repos ->
-                                repos.joinToString("\n") { r ->
-                                    "${if (r.private) "🔒" else "🌍"} ${r.fullName} (${r.defaultBranch}) — ${r.description}"
+                                if (repos.isEmpty()) "No repositories found."
+                                else repos.joinToString("\n") { r ->
+                                    "${if (r.private) "🔒" else "🌍"} ${r.fullName} (${r.defaultBranch})${if (r.fork) " [fork]" else ""}${if (r.description.isNotEmpty()) " — ${r.description}" else ""}"
                                 }
                             },
                             onFailure = { "GitHub list repos failed: ${it.message}" }
@@ -392,15 +425,69 @@ class ToolExecutor(private val context: Context? = null) {
                         "github_list_repos failed: ${e.message}"
                     }
                 }
-                "github_list_contents" -> {
+                "github_get_repo" -> {
                     try {
-                        val svc = gitHubService ?: return "GitHub not connected."
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
                         val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
                         val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
-                        if (!owner.matches(Regex("^[a-zA-Z0-9_.-]{1,100}$"))) return "Invalid owner parameter"
-                        if (!repo.matches(Regex("^[a-zA-Z0-9_.-]{1,100}$"))) return "Invalid repo parameter"
+                        svc.getRepo(owner, repo).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub get repo failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_get_repo failed: ${e.message}"
+                    }
+                }
+                "github_create_repo" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val name = optString(args, "name")?.trim() ?: return "Missing name"
+                        val description = optString(args, "description") ?: ""
+                        val isPrivate = try { args.get("private")?.asBoolean } catch (_: Exception) { true } ?: true
+                        val autoInit = try { args.get("auto_init")?.asBoolean } catch (_: Exception) { false } ?: false
+                        svc.createRepo(name, description, isPrivate, autoInit).fold(
+                            onSuccess = { "Repository created successfully: $it" },
+                            onFailure = { "GitHub create repo failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_create_repo failed: ${e.message}"
+                    }
+                }
+                "github_delete_repo" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        svc.deleteRepo(owner, repo).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub delete repo failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_delete_repo failed: ${e.message}"
+                    }
+                }
+                "github_fork_repo" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val org = optString(args, "organization")
+                        svc.forkRepo(owner, repo, org).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub fork repo failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_fork_repo failed: ${e.message}"
+                    }
+                }
+                "github_list_contents" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
                         val path = optString(args, "path") ?: ""
-                        svc.listRepoContents(owner, repo, path).fold(
+                        val ref = optString(args, "ref")
+                        svc.listRepoContents(owner, repo, path, ref).fold(
                             onSuccess = { it },
                             onFailure = { "GitHub list contents failed: ${it.message}" }
                         )
@@ -410,13 +497,12 @@ class ToolExecutor(private val context: Context? = null) {
                 }
                 "github_read_file" -> {
                     try {
-                        val svc = gitHubService ?: return "GitHub not connected."
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
                         val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
                         val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
-                        if (!owner.matches(Regex("^[a-zA-Z0-9_.-]{1,100}$"))) return "Invalid owner parameter"
-                        if (!repo.matches(Regex("^[a-zA-Z0-9_.-]{1,100}$"))) return "Invalid repo parameter"
                         val path = optString(args, "path") ?: return "Missing path"
-                        svc.getFileTextContent(owner, repo, path).fold(
+                        val ref = optString(args, "ref")
+                        svc.getFileTextContent(owner, repo, path, ref).fold(
                             onSuccess = { it },
                             onFailure = { "GitHub read file failed: ${it.message}" }
                         )
@@ -426,16 +512,14 @@ class ToolExecutor(private val context: Context? = null) {
                 }
                 "github_write_file" -> {
                     try {
-                        val svc = gitHubService ?: return "GitHub not connected."
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
                         val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
                         val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
-                        if (!owner.matches(Regex("^[a-zA-Z0-9_.-]{1,100}$"))) return "Invalid owner parameter"
-                        if (!repo.matches(Regex("^[a-zA-Z0-9_.-]{1,100}$"))) return "Invalid repo parameter"
                         val path = optString(args, "path") ?: return "Missing path"
                         val content = optString(args, "content") ?: return "Missing content"
                         val message = optString(args, "message") ?: "Update $path via DeepCode"
                         val sha = optString(args, "sha")
-                        val branch = optString(args, "branch")
+                        val branch = optString(args, "branch") ?: "main"
                         svc.createOrUpdateFile(owner, repo, path, content, message, sha, branch).fold(
                             onSuccess = { "GitHub file written: $it" },
                             onFailure = { "GitHub write file failed: ${it.message}" }
@@ -444,13 +528,46 @@ class ToolExecutor(private val context: Context? = null) {
                         "github_write_file failed: ${e.message}"
                     }
                 }
+                "github_delete_file" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val path = optString(args, "path") ?: return "Missing path"
+                        val sha = optString(args, "sha") ?: return "Missing sha (required for deleting a file)"
+                        val message = optString(args, "message") ?: "Delete $path via DeepCode"
+                        val branch = optString(args, "branch") ?: "main"
+                        svc.deleteFile(owner, repo, path, message, sha, branch).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub delete file failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_delete_file failed: ${e.message}"
+                    }
+                }
+                "github_list_branches" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        svc.listBranches(owner, repo).fold(
+                            onSuccess = { branches ->
+                                if (branches.isEmpty()) "No branches found."
+                                else branches.joinToString("\n") { "- ${it.name} (${it.sha.take(7)})" }
+                            },
+                            onFailure = { "GitHub list branches failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_list_branches failed: ${e.message}"
+                    }
+                }
                 "github_create_branch" -> {
                     try {
-                        val svc = gitHubService ?: return "GitHub not connected."
-                        val owner = args.get("owner")?.asString ?: return "Missing owner"
-                        val repo = args.get("repo")?.asString ?: return "Missing repo"
-                        val branch = args.get("branch")?.asString ?: return "Missing branch"
-                        val source = args.get("source")?.asString ?: "main"
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val branch = optString(args, "branch")?.trim() ?: return "Missing branch"
+                        val source = optString(args, "source") ?: "main"
                         svc.createBranch(owner, repo, branch, source).fold(
                             onSuccess = { it },
                             onFailure = { "GitHub create branch failed: ${it.message}" }
@@ -459,30 +576,47 @@ class ToolExecutor(private val context: Context? = null) {
                         "github_create_branch failed: ${e.message}"
                     }
                 }
-                "github_list_branches" -> {
+                "github_list_commits" -> {
                     try {
-                        val svc = gitHubService ?: return "GitHub not connected."
-                        val owner = args.get("owner")?.asString ?: return "Missing owner"
-                        val repo = args.get("repo")?.asString ?: return "Missing repo"
-                        svc.listBranches(owner, repo).fold(
-                            onSuccess = { branches ->
-                                branches.joinToString("\n") { "- ${it.name} (${it.sha.take(7)})" }
-                            },
-                            onFailure = { "GitHub list branches failed: ${it.message}" }
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val sha = optString(args, "sha")
+                        val path = optString(args, "path")
+                        val perPage = optInt(args, "per_page", 15)
+                        svc.listCommits(owner, repo, sha, path, perPage).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub list commits failed: ${it.message}" }
                         )
                     } catch (e: Exception) {
-                        "github_list_branches failed: ${e.message}"
+                        "github_list_commits failed: ${e.message}"
+                    }
+                }
+                "github_get_commit" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val ref = optString(args, "ref")?.trim() ?: return "Missing ref/sha"
+                        svc.getCommit(owner, repo, ref).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub get commit failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_get_commit failed: ${e.message}"
                     }
                 }
                 "github_list_prs" -> {
                     try {
-                        val svc = gitHubService ?: return "GitHub not connected."
-                        val owner = args.get("owner")?.asString ?: return "Missing owner"
-                        val repo = args.get("repo")?.asString ?: return "Missing repo"
-                        val state = args.get("state")?.asString ?: "open"
-                        svc.listPullRequests(owner, repo, state).fold(
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val state = optString(args, "state") ?: "open"
+                        val perPage = optInt(args, "per_page", 20)
+                        svc.listPullRequests(owner, repo, state, perPage).fold(
                             onSuccess = { prs ->
-                                prs.joinToString("\n") { "#${it.number} [${it.state}] ${it.title}" }
+                                if (prs.isEmpty()) "No pull requests found in $owner/$repo ($state)."
+                                else prs.joinToString("\n") { "#${it.number} [${it.state}] ${it.title} (${it.url})" }
                             },
                             onFailure = { "GitHub list PRs failed: ${it.message}" }
                         )
@@ -490,32 +624,102 @@ class ToolExecutor(private val context: Context? = null) {
                         "github_list_prs failed: ${e.message}"
                     }
                 }
+                "github_get_pr" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val number = optInt(args, "number", 0)
+                        if (number <= 0) return "Invalid PR number"
+                        svc.getPullRequest(owner, repo, number).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub get PR failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_get_pr failed: ${e.message}"
+                    }
+                }
+                "github_get_pr_diff" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val number = optInt(args, "number", 0)
+                        if (number <= 0) return "Invalid PR number"
+                        svc.getPullRequestDiff(owner, repo, number).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub get PR diff failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_get_pr_diff failed: ${e.message}"
+                    }
+                }
                 "github_create_pr" -> {
                     try {
-                        val svc = gitHubService ?: return "GitHub not connected."
-                        val owner = args.get("owner")?.asString ?: return "Missing owner"
-                        val repo = args.get("repo")?.asString ?: return "Missing repo"
-                        val title = args.get("title")?.asString ?: return "Missing title"
-                        val head = args.get("head")?.asString ?: return "Missing head branch"
-                        val base = args.get("base")?.asString ?: "main"
-                        val body = args.get("body")?.asString ?: ""
-                        svc.createPullRequest(owner, repo, title, head, base, body).fold(
-                            onSuccess = { "PR created: $it" },
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val title = optString(args, "title")?.trim() ?: return "Missing title"
+                        val head = optString(args, "head")?.trim() ?: return "Missing head branch"
+                        val base = optString(args, "base") ?: "main"
+                        val body = optString(args, "body") ?: ""
+                        val draft = try { args.get("draft")?.asBoolean } catch (_: Exception) { false } ?: false
+                        svc.createPullRequest(owner, repo, title, head, base, body, draft).fold(
+                            onSuccess = { "PR created successfully: $it" },
                             onFailure = { "GitHub create PR failed: ${it.message}" }
                         )
                     } catch (e: Exception) {
                         "github_create_pr failed: ${e.message}"
                     }
                 }
+                "github_update_pr" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val number = optInt(args, "number", 0)
+                        if (number <= 0) return "Invalid PR number"
+                        val title = optString(args, "title")
+                        val body = optString(args, "body")
+                        val state = optString(args, "state")
+                        val base = optString(args, "base")
+                        svc.updatePullRequest(owner, repo, number, title, body, state, base).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub update PR failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_update_pr failed: ${e.message}"
+                    }
+                }
+                "github_merge_pr" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val number = optInt(args, "number", 0)
+                        if (number <= 0) return "Invalid PR number"
+                        val commitTitle = optString(args, "commit_title")
+                        val commitMessage = optString(args, "commit_message")
+                        val mergeMethod = optString(args, "merge_method") ?: "merge"
+                        svc.mergePullRequest(owner, repo, number, commitTitle, commitMessage, mergeMethod).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub merge PR failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_merge_pr failed: ${e.message}"
+                    }
+                }
                 "github_list_issues" -> {
                     try {
-                        val svc = gitHubService ?: return "GitHub not connected."
-                        val owner = args.get("owner")?.asString ?: return "Missing owner"
-                        val repo = args.get("repo")?.asString ?: return "Missing repo"
-                        val state = args.get("state")?.asString ?: "open"
-                        svc.listIssues(owner, repo, state).fold(
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val state = optString(args, "state") ?: "open"
+                        val perPage = optInt(args, "per_page", 20)
+                        svc.listIssues(owner, repo, state, perPage).fold(
                             onSuccess = { issues ->
-                                issues.joinToString("\n") { "#${it.number} [${it.state}] ${it.title}" }
+                                if (issues.isEmpty()) "No issues found in $owner/$repo ($state)."
+                                else issues.joinToString("\n") { "#${it.number} [${it.state}] ${it.title} (${it.url})" }
                             },
                             onFailure = { "GitHub list issues failed: ${it.message}" }
                         )
@@ -523,26 +727,246 @@ class ToolExecutor(private val context: Context? = null) {
                         "github_list_issues failed: ${e.message}"
                     }
                 }
+                "github_get_issue" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val number = optInt(args, "number", 0)
+                        if (number <= 0) return "Invalid issue number"
+                        svc.getIssue(owner, repo, number).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub get issue failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_get_issue failed: ${e.message}"
+                    }
+                }
                 "github_create_issue" -> {
                     try {
-                        val svc = gitHubService ?: return "GitHub not connected."
-                        val owner = args.get("owner")?.asString ?: return "Missing owner"
-                        val repo = args.get("repo")?.asString ?: return "Missing repo"
-                        val title = args.get("title")?.asString ?: return "Missing title"
-                        val body = args.get("body")?.asString ?: ""
-                        svc.createIssue(owner, repo, title, body).fold(
-                            onSuccess = { "Issue created: $it" },
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val title = optString(args, "title")?.trim() ?: return "Missing title"
+                        val body = optString(args, "body") ?: ""
+                        val labelsStr = optString(args, "labels")
+                        val labels = labelsStr?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+                        svc.createIssue(owner, repo, title, body, labels).fold(
+                            onSuccess = { "Issue created successfully: $it" },
                             onFailure = { "GitHub create issue failed: ${it.message}" }
                         )
                     } catch (e: Exception) {
                         "github_create_issue failed: ${e.message}"
                     }
                 }
+                "github_update_issue" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val number = optInt(args, "number", 0)
+                        if (number <= 0) return "Invalid issue number"
+                        val title = optString(args, "title")
+                        val body = optString(args, "body")
+                        val state = optString(args, "state")
+                        val labelsStr = optString(args, "labels")
+                        val labels = labelsStr?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+                        svc.updateIssue(owner, repo, number, title, body, state, labels).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub update issue failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_update_issue failed: ${e.message}"
+                    }
+                }
+                "github_list_comments" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val issueNumber = optInt(args, "issue_number", 0)
+                        if (issueNumber <= 0) return "Invalid issue/PR number"
+                        val perPage = optInt(args, "per_page", 20)
+                        svc.listIssueComments(owner, repo, issueNumber, perPage).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub list comments failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_list_comments failed: ${e.message}"
+                    }
+                }
+                "github_create_comment" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val issueNumber = optInt(args, "issue_number", 0)
+                        if (issueNumber <= 0) return "Invalid issue/PR number"
+                        val body = optString(args, "body") ?: return "Missing comment body"
+                        svc.createIssueComment(owner, repo, issueNumber, body).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub create comment failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_create_comment failed: ${e.message}"
+                    }
+                }
+                "github_list_releases" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val perPage = optInt(args, "per_page", 10)
+                        svc.listReleases(owner, repo, perPage).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub list releases failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_list_releases failed: ${e.message}"
+                    }
+                }
+                "github_get_latest_release" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        svc.getLatestRelease(owner, repo).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub get latest release failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_get_latest_release failed: ${e.message}"
+                    }
+                }
+                "github_create_release" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val tagName = optString(args, "tag_name")?.trim() ?: return "Missing tag_name"
+                        val name = optString(args, "name") ?: tagName
+                        val body = optString(args, "body") ?: ""
+                        val target = optString(args, "target_commitish") ?: "main"
+                        val draft = try { args.get("draft")?.asBoolean } catch (_: Exception) { false } ?: false
+                        val prerelease = try { args.get("prerelease")?.asBoolean } catch (_: Exception) { false } ?: false
+                        svc.createRelease(owner, repo, tagName, name, body, target, draft, prerelease).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub create release failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_create_release failed: ${e.message}"
+                    }
+                }
+                "github_list_workflows" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        svc.listWorkflows(owner, repo).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub list workflows failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_list_workflows failed: ${e.message}"
+                    }
+                }
+                "github_trigger_workflow" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val workflowId = optString(args, "workflow_id")?.trim() ?: return "Missing workflow_id (ID or filename like 'build.yml')"
+                        val ref = optString(args, "ref") ?: "main"
+                        val inputs = mutableMapOf<String, Any>()
+                        args.getAsJsonObject("inputs")?.entrySet()?.forEach { entry ->
+                            inputs[entry.key] = if (entry.value.isJsonPrimitive) entry.value.asString else entry.value.toString()
+                        }
+                        svc.triggerWorkflow(owner, repo, workflowId, ref, inputs).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub trigger workflow failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_trigger_workflow failed: ${e.message}"
+                    }
+                }
+                "github_check_workflow" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val runId = try { args.get("run_id")?.asLong } catch (_: Exception) { null }
+                        if (runId != null && runId > 0) {
+                            svc.checkWorkflowStatus(owner, repo, runId).fold(
+                                onSuccess = { it },
+                                onFailure = { "GitHub check workflow failed: ${it.message}" }
+                            )
+                        } else {
+                            val branch = optString(args, "branch") ?: "main"
+                            val perPage = optInt(args, "per_page", 10)
+                            svc.listWorkflowRuns(owner, repo, branch, perPage).fold(
+                                onSuccess = { it },
+                                onFailure = { "GitHub check workflow failed: ${it.message}" }
+                            )
+                        }
+                    } catch (e: Exception) {
+                        "github_check_workflow failed: ${e.message}"
+                    }
+                }
+                "github_download_artifact" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        val savePath = optString(args, "save_path") ?: return "Missing save_path"
+                        val artifactId = try { args.get("artifact_id")?.asLong } catch (_: Exception) { null }
+                        if (artifactId != null && artifactId > 0) {
+                            svc.downloadArtifact(owner, repo, artifactId, savePath).fold(
+                                onSuccess = { it },
+                                onFailure = { "GitHub download artifact failed: ${it.message}" }
+                            )
+                        } else {
+                            svc.downloadLatestArtifact(owner, repo, savePath).fold(
+                                onSuccess = { it },
+                                onFailure = { "GitHub download artifact failed: ${it.message}" }
+                            )
+                        }
+                    } catch (e: Exception) {
+                        "github_download_artifact failed: ${e.message}"
+                    }
+                }
+                "github_list_gists" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val perPage = optInt(args, "per_page", 20)
+                        svc.listGists(perPage).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub list gists failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_list_gists failed: ${e.message}"
+                    }
+                }
+                "github_create_gist" -> {
+                    try {
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val description = optString(args, "description") ?: ""
+                        val filename = optString(args, "filename") ?: "snippet.txt"
+                        val content = optString(args, "content") ?: return "Missing content"
+                        val isPublic = try { args.get("public")?.asBoolean } catch (_: Exception) { false } ?: false
+                        svc.createGist(description, mapOf(filename to content), isPublic).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub create gist failed: ${it.message}" }
+                        )
+                    } catch (e: Exception) {
+                        "github_create_gist failed: ${e.message}"
+                    }
+                }
                 "github_search_code" -> {
                     try {
-                        val svc = gitHubService ?: return "GitHub not connected."
-                        val query = args.get("query")?.asString ?: return "Missing query"
-                        svc.searchCode(query).fold(
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val query = optString(args, "query") ?: return "Missing query"
+                        val perPage = optInt(args, "per_page", 10)
+                        svc.searchCode(query, perPage).fold(
                             onSuccess = { it },
                             onFailure = { "GitHub search code failed: ${it.message}" }
                         )
@@ -550,45 +974,30 @@ class ToolExecutor(private val context: Context? = null) {
                         "github_search_code failed: ${e.message}"
                     }
                 }
-                "github_create_repo" -> {
+                "github_search_repos" -> {
                     try {
-                        val svc = gitHubService ?: return "GitHub not connected."
-                        val name = args.get("name")?.asString ?: return "Missing name"
-                        val description = args.get("description")?.asString ?: ""
-                        val isPrivate = args.get("private")?.asBoolean ?: true
-                        svc.createRepo(name, description, isPrivate).fold(
-                            onSuccess = { "Repo created: $it" },
-                            onFailure = { "GitHub create repo failed: ${it.message}" }
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val query = optString(args, "query") ?: return "Missing query"
+                        val perPage = optInt(args, "per_page", 10)
+                        svc.searchRepositoriesFormatted(query, perPage).fold(
+                            onSuccess = { it },
+                            onFailure = { "GitHub search repos failed: ${it.message}" }
                         )
                     } catch (e: Exception) {
-                        "github_create_repo failed: ${e.message}"
+                        "github_search_repos failed: ${e.message}"
                     }
                 }
-                "github_delete_repo" -> {
+                "github_search_issues" -> {
                     try {
-                        val svc = gitHubService ?: return "GitHub not connected."
-                        val owner = args.get("owner")?.asString ?: return "Missing owner"
-                        val repo = args.get("repo")?.asString ?: return "Missing repo"
-                        svc.deleteRepo(owner, repo).fold(
+                        val svc = getOrInitGitHubService() ?: return "GitHub not connected."
+                        val query = optString(args, "query") ?: return "Missing query"
+                        val perPage = optInt(args, "per_page", 15)
+                        svc.searchIssues(query, perPage).fold(
                             onSuccess = { it },
-                            onFailure = { "GitHub delete repo failed: ${it.message}" }
+                            onFailure = { "GitHub search issues failed: ${it.message}" }
                         )
                     } catch (e: Exception) {
-                        "github_delete_repo failed: ${e.message}"
-                    }
-                }
-                "github_check_workflow" -> {
-                    try {
-                        val svc = gitHubService ?: return "GitHub not connected."
-                        val owner = args.get("owner")?.asString ?: return "Missing owner"
-                        val repo = args.get("repo")?.asString ?: return "Missing repo"
-                        val branch = args.get("branch")?.asString ?: "main"
-                        svc.listWorkflowRuns(owner, repo, branch).fold(
-                            onSuccess = { it },
-                            onFailure = { "GitHub workflow check failed: ${it.message}" }
-                        )
-                    } catch (e: Exception) {
-                        "github_check_workflow failed: ${e.message}"
+                        "github_search_issues failed: ${e.message}"
                     }
                 }
                 "drive_list" -> {
@@ -644,20 +1053,6 @@ class ToolExecutor(private val context: Context? = null) {
                         }
                     } catch (e: Exception) {
                         "drive_upload failed: ${e.message}"
-                    }
-                }
-                "github_download_artifact" -> {
-                    try {
-                        val svc = gitHubService ?: return "GitHub not connected."
-                        val owner = args.get("owner")?.asString ?: return "Missing owner"
-                        val repo = args.get("repo")?.asString ?: return "Missing repo"
-                        val savePath = args.get("save_path")?.asString ?: return "Missing save_path"
-                        svc.downloadLatestArtifact(owner, repo, savePath).fold(
-                            onSuccess = { it },
-                            onFailure = { "GitHub download artifact failed: ${it.message}" }
-                        )
-                    } catch (e: Exception) {
-                        "github_download_artifact failed: ${e.message}"
                     }
                 }
                 "webbridge_agent" -> {
@@ -3556,28 +3951,73 @@ class ToolExecutor(private val context: Context? = null) {
                 "properties" to mapOf<String, Any>(),
                 "required" to emptyList<String>()
             )),
+            Tool("github_get_user", "Get authenticated GitHub user profile, bio, repo counts, and token permissions/scopes, or inspect any GitHub user by username", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "username" to mapOf("type" to "string", "description" to "Optional GitHub username (omit to get authenticated profile and token scopes)")
+                ),
+                "required" to emptyList<String>()
+            )),
             Tool("github_list_repos", "List repositories accessible to the GitHub token", mapOf(
                 "type" to "object",
                 "properties" to mapOf(
-                    "type" to mapOf("type" to "string", "description" to "Repository type: 'all', 'owner', 'public', 'private' (default: all)")
+                    "type" to mapOf("type" to "string", "description" to "Repository type: 'all', 'owner', 'public', 'private' (default: all)"),
+                    "per_page" to mapOf("type" to "number", "description" to "Results per page (default: 50)")
                 ),
                 "required" to emptyList<String>()
+            )),
+            Tool("github_get_repo", "Get comprehensive details of a GitHub repository (description, stars, forks, issues, branch, language, URLs)", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner (username or org)"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name")
+                ),
+                "required" to listOf("owner", "repo")
+            )),
+            Tool("github_create_repo", "Create a new repository on GitHub under the authenticated user or organization", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "name" to mapOf("type" to "string", "description" to "Repository name"),
+                    "description" to mapOf("type" to "string", "description" to "Optional repository description"),
+                    "private" to mapOf("type" to "boolean", "description" to "Whether the repository should be private (default: true)"),
+                    "auto_init" to mapOf("type" to "boolean", "description" to "Whether to initialize with a README (default: false)")
+                ),
+                "required" to listOf("name")
+            )),
+            Tool("github_delete_repo", "Delete a repository on GitHub (requires delete_repo token scope)", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name")
+                ),
+                "required" to listOf("owner", "repo")
+            )),
+            Tool("github_fork_repo", "Fork an existing repository to the authenticated user or organization", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "organization" to mapOf("type" to "string", "description" to "Optional organization name to fork into")
+                ),
+                "required" to listOf("owner", "repo")
             )),
             Tool("github_list_contents", "List files and directories in a GitHub repo path", mapOf(
                 "type" to "object",
                 "properties" to mapOf(
                     "owner" to mapOf("type" to "string", "description" to "Repository owner (user or org)"),
                     "repo" to mapOf("type" to "string", "description" to "Repository name"),
-                    "path" to mapOf("type" to "string", "description" to "Directory path (default: root)")
+                    "path" to mapOf("type" to "string", "description" to "Directory path (default: root)"),
+                    "ref" to mapOf("type" to "string", "description" to "Branch, tag, or commit SHA (optional)")
                 ),
                 "required" to listOf("owner", "repo")
             )),
-            Tool("github_read_file", "Read the content of a file from a GitHub repository", mapOf(
+            Tool("github_read_file", "Read text content of a file from a public or private GitHub repository", mapOf(
                 "type" to "object",
                 "properties" to mapOf(
                     "owner" to mapOf("type" to "string", "description" to "Repository owner"),
                     "repo" to mapOf("type" to "string", "description" to "Repository name"),
-                    "path" to mapOf("type" to "string", "description" to "File path in the repo")
+                    "path" to mapOf("type" to "string", "description" to "File path in the repo"),
+                    "ref" to mapOf("type" to "string", "description" to "Branch, tag, or commit SHA (optional)")
                 ),
                 "required" to listOf("owner", "repo", "path")
             )),
@@ -3589,9 +4029,30 @@ class ToolExecutor(private val context: Context? = null) {
                     "path" to mapOf("type" to "string", "description" to "File path to create/update"),
                     "content" to mapOf("type" to "string", "description" to "Full file content"),
                     "message" to mapOf("type" to "string", "description" to "Commit message (optional)"),
-                    "sha" to mapOf("type" to "string", "description" to "File SHA (required for updating existing files)")
+                    "sha" to mapOf("type" to "string", "description" to "File SHA (required for updating existing files)"),
+                    "branch" to mapOf("type" to "string", "description" to "Target branch (default: main)")
                 ),
                 "required" to listOf("owner", "repo", "path", "content")
+            )),
+            Tool("github_delete_file", "Delete a file from a GitHub repository", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "path" to mapOf("type" to "string", "description" to "File path to delete"),
+                    "sha" to mapOf("type" to "string", "description" to "Current file blob SHA (required)"),
+                    "message" to mapOf("type" to "string", "description" to "Commit message (optional)"),
+                    "branch" to mapOf("type" to "string", "description" to "Target branch (default: main)")
+                ),
+                "required" to listOf("owner", "repo", "path", "sha")
+            )),
+            Tool("github_list_branches", "List branches in a GitHub repository", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name")
+                ),
+                "required" to listOf("owner", "repo")
             )),
             Tool("github_create_branch", "Create a new branch in a GitHub repository", mapOf(
                 "type" to "object",
@@ -3603,22 +4064,53 @@ class ToolExecutor(private val context: Context? = null) {
                 ),
                 "required" to listOf("owner", "repo", "branch")
             )),
-            Tool("github_list_branches", "List branches in a GitHub repository", mapOf(
+            Tool("github_list_commits", "List commit history for a repository, branch, or file path", mapOf(
                 "type" to "object",
                 "properties" to mapOf(
                     "owner" to mapOf("type" to "string", "description" to "Repository owner"),
-                    "repo" to mapOf("type" to "string", "description" to "Repository name")
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "sha" to mapOf("type" to "string", "description" to "Branch name or commit SHA to start from (optional)"),
+                    "path" to mapOf("type" to "string", "description" to "Only commits containing this file path (optional)"),
+                    "per_page" to mapOf("type" to "number", "description" to "Number of commits (default: 15)")
                 ),
                 "required" to listOf("owner", "repo")
+            )),
+            Tool("github_get_commit", "Get detailed information about a commit including message, stats, and changed files", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "ref" to mapOf("type" to "string", "description" to "Commit SHA or ref")
+                ),
+                "required" to listOf("owner", "repo", "ref")
             )),
             Tool("github_list_prs", "List pull requests in a GitHub repository", mapOf(
                 "type" to "object",
                 "properties" to mapOf(
                     "owner" to mapOf("type" to "string", "description" to "Repository owner"),
                     "repo" to mapOf("type" to "string", "description" to "Repository name"),
-                    "state" to mapOf("type" to "string", "description" to "PR state: 'open', 'closed', 'all' (default: open)")
+                    "state" to mapOf("type" to "string", "description" to "PR state: 'open', 'closed', 'all' (default: open)"),
+                    "per_page" to mapOf("type" to "number", "description" to "Number of PRs (default: 20)")
                 ),
                 "required" to listOf("owner", "repo")
+            )),
+            Tool("github_get_pr", "Get full details of a specific pull request including branches, stats, and mergeability", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "number" to mapOf("type" to "number", "description" to "Pull request number")
+                ),
+                "required" to listOf("owner", "repo", "number")
+            )),
+            Tool("github_get_pr_diff", "Get the unified git diff of a pull request", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "number" to mapOf("type" to "number", "description" to "Pull request number")
+                ),
+                "required" to listOf("owner", "repo", "number")
             )),
             Tool("github_create_pr", "Create a pull request on a GitHub repository", mapOf(
                 "type" to "object",
@@ -3628,18 +4120,54 @@ class ToolExecutor(private val context: Context? = null) {
                     "title" to mapOf("type" to "string", "description" to "Pull request title"),
                     "head" to mapOf("type" to "string", "description" to "Source branch (head)"),
                     "base" to mapOf("type" to "string", "description" to "Target branch (default: main)"),
-                    "body" to mapOf("type" to "string", "description" to "PR description (optional)")
+                    "body" to mapOf("type" to "string", "description" to "PR description (optional)"),
+                    "draft" to mapOf("type" to "boolean", "description" to "Create as draft PR (default: false)")
                 ),
                 "required" to listOf("owner", "repo", "title", "head")
+            )),
+            Tool("github_update_pr", "Update a pull request title, body, state (open/closed), or base branch", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "number" to mapOf("type" to "number", "description" to "Pull request number"),
+                    "title" to mapOf("type" to "string", "description" to "New title (optional)"),
+                    "body" to mapOf("type" to "string", "description" to "New description (optional)"),
+                    "state" to mapOf("type" to "string", "description" to "New state: 'open' or 'closed' (optional)"),
+                    "base" to mapOf("type" to "string", "description" to "New base branch (optional)")
+                ),
+                "required" to listOf("owner", "repo", "number")
+            )),
+            Tool("github_merge_pr", "Merge a pull request using merge, squash, or rebase", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "number" to mapOf("type" to "number", "description" to "Pull request number"),
+                    "commit_title" to mapOf("type" to "string", "description" to "Title for the merge commit (optional)"),
+                    "commit_message" to mapOf("type" to "string", "description" to "Extra detail for the merge commit (optional)"),
+                    "merge_method" to mapOf("type" to "string", "description" to "Merge method: 'merge', 'squash', or 'rebase' (default: merge)")
+                ),
+                "required" to listOf("owner", "repo", "number")
             )),
             Tool("github_list_issues", "List issues in a GitHub repository", mapOf(
                 "type" to "object",
                 "properties" to mapOf(
                     "owner" to mapOf("type" to "string", "description" to "Repository owner"),
                     "repo" to mapOf("type" to "string", "description" to "Repository name"),
-                    "state" to mapOf("type" to "string", "description" to "Issue state: 'open', 'closed', 'all' (default: open)")
+                    "state" to mapOf("type" to "string", "description" to "Issue state: 'open', 'closed', 'all' (default: open)"),
+                    "per_page" to mapOf("type" to "number", "description" to "Number of issues (default: 20)")
                 ),
                 "required" to listOf("owner", "repo")
+            )),
+            Tool("github_get_issue", "Get full details of a specific issue including body, labels, and author", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "number" to mapOf("type" to "number", "description" to "Issue number")
+                ),
+                "required" to listOf("owner", "repo", "number")
             )),
             Tool("github_create_issue", "Create an issue in a GitHub repository", mapOf(
                 "type" to "object",
@@ -3647,14 +4175,153 @@ class ToolExecutor(private val context: Context? = null) {
                     "owner" to mapOf("type" to "string", "description" to "Repository owner"),
                     "repo" to mapOf("type" to "string", "description" to "Repository name"),
                     "title" to mapOf("type" to "string", "description" to "Issue title"),
-                    "body" to mapOf("type" to "string", "description" to "Issue body/description (optional)")
+                    "body" to mapOf("type" to "string", "description" to "Issue body/description (optional)"),
+                    "labels" to mapOf("type" to "string", "description" to "Comma-separated list of labels (optional)")
                 ),
                 "required" to listOf("owner", "repo", "title")
+            )),
+            Tool("github_update_issue", "Update an issue: close, reopen, change title, edit body, or update labels", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "number" to mapOf("type" to "number", "description" to "Issue number"),
+                    "title" to mapOf("type" to "string", "description" to "New title (optional)"),
+                    "body" to mapOf("type" to "string", "description" to "New body (optional)"),
+                    "state" to mapOf("type" to "string", "description" to "New state: 'open' or 'closed' (optional)"),
+                    "labels" to mapOf("type" to "string", "description" to "Comma-separated list of labels (optional)")
+                ),
+                "required" to listOf("owner", "repo", "number")
+            )),
+            Tool("github_list_comments", "List discussion comments on an issue or pull request", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "issue_number" to mapOf("type" to "number", "description" to "Issue or PR number"),
+                    "per_page" to mapOf("type" to "number", "description" to "Number of comments (default: 20)")
+                ),
+                "required" to listOf("owner", "repo", "issue_number")
+            )),
+            Tool("github_create_comment", "Add a comment to an issue or pull request", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "issue_number" to mapOf("type" to "number", "description" to "Issue or PR number"),
+                    "body" to mapOf("type" to "string", "description" to "Comment body in markdown")
+                ),
+                "required" to listOf("owner", "repo", "issue_number", "body")
+            )),
+            Tool("github_list_releases", "List releases for a GitHub repository", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "per_page" to mapOf("type" to "number", "description" to "Number of releases (default: 10)")
+                ),
+                "required" to listOf("owner", "repo")
+            )),
+            Tool("github_get_latest_release", "Get the latest published release and asset download links", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name")
+                ),
+                "required" to listOf("owner", "repo")
+            )),
+            Tool("github_create_release", "Create a new release or tag on GitHub", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "tag_name" to mapOf("type" to "string", "description" to "The git tag name (e.g. 'v1.0.0')"),
+                    "name" to mapOf("type" to "string", "description" to "Release title (default: tag_name)"),
+                    "body" to mapOf("type" to "string", "description" to "Release notes/changelog"),
+                    "target_commitish" to mapOf("type" to "string", "description" to "Branch or commit (default: main)"),
+                    "draft" to mapOf("type" to "boolean", "description" to "Whether to save as draft (default: false)"),
+                    "prerelease" to mapOf("type" to "boolean", "description" to "Whether to mark as pre-release (default: false)")
+                ),
+                "required" to listOf("owner", "repo", "tag_name")
+            )),
+            Tool("github_list_workflows", "List GitHub Actions workflows in a repository", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name")
+                ),
+                "required" to listOf("owner", "repo")
+            )),
+            Tool("github_trigger_workflow", "Trigger a GitHub Actions workflow dispatch run", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "workflow_id" to mapOf("type" to "string", "description" to "Workflow ID or filename (e.g. 'build.yml')"),
+                    "ref" to mapOf("type" to "string", "description" to "Git ref/branch to run against (default: main)"),
+                    "inputs" to mapOf("type" to "object", "description" to "Optional workflow input parameters")
+                ),
+                "required" to listOf("owner", "repo", "workflow_id")
+            )),
+            Tool("github_check_workflow", "Check workflow run status or list recent workflow runs", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "run_id" to mapOf("type" to "number", "description" to "Specific workflow run ID to check (optional)"),
+                    "branch" to mapOf("type" to "string", "description" to "Branch to filter runs (default: main)"),
+                    "per_page" to mapOf("type" to "number", "description" to "Number of runs (default: 10)")
+                ),
+                "required" to listOf("owner", "repo")
+            )),
+            Tool("github_download_artifact", "Download a GitHub Actions build artifact zip file", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "owner" to mapOf("type" to "string", "description" to "Repository owner"),
+                    "repo" to mapOf("type" to "string", "description" to "Repository name"),
+                    "save_path" to mapOf("type" to "string", "description" to "Local file path to save the artifact zip"),
+                    "artifact_id" to mapOf("type" to "number", "description" to "Specific artifact ID (optional, default: latest)")
+                ),
+                "required" to listOf("owner", "repo", "save_path")
+            )),
+            Tool("github_list_gists", "List GitHub Gists owned by the authenticated user", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "per_page" to mapOf("type" to "number", "description" to "Number of gists to list (default: 20)")
+                ),
+                "required" to emptyList<String>()
+            )),
+            Tool("github_create_gist", "Create a new public or secret GitHub Gist", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "description" to mapOf("type" to "string", "description" to "Gist description"),
+                    "filename" to mapOf("type" to "string", "description" to "File name (e.g. 'snippet.py')"),
+                    "content" to mapOf("type" to "string", "description" to "Text content of the file"),
+                    "public" to mapOf("type" to "boolean", "description" to "Whether the gist is public (default: false)")
+                ),
+                "required" to listOf("content")
             )),
             Tool("github_search_code", "Search code across GitHub repositories", mapOf(
                 "type" to "object",
                 "properties" to mapOf(
-                    "query" to mapOf("type" to "string", "description" to "Search query (supports qualifiers like repo:, language:, etc.)")
+                    "query" to mapOf("type" to "string", "description" to "Search query (supports qualifiers like repo:, language:, etc.)"),
+                    "per_page" to mapOf("type" to "number", "description" to "Number of results (default: 10)")
+                ),
+                "required" to listOf("query")
+            )),
+            Tool("github_search_repos", "Search repositories on GitHub by keywords, language, stars, etc.", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "query" to mapOf("type" to "string", "description" to "Search query (e.g. 'android assistant stars:>500 language:kotlin')"),
+                    "per_page" to mapOf("type" to "number", "description" to "Number of results (default: 10)")
+                ),
+                "required" to listOf("query")
+            )),
+            Tool("github_search_issues", "Search issues and pull requests across GitHub or within repositories", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "query" to mapOf("type" to "string", "description" to "Search query (e.g. 'repo:owner/name is:issue is:open bug')"),
+                    "per_page" to mapOf("type" to "number", "description" to "Number of results (default: 15)")
                 ),
                 "required" to listOf("query")
             )),

@@ -62,7 +62,7 @@ val INTEGRATION_BRANDS = mapOf(
     "asana" to BrandConfig("AS", Color(0xFFF06A6A), "Task management platform"),
     "discord" to BrandConfig("DI", Color(0xFF5865F2), "Community communication"),
     "dropbox" to BrandConfig("DR", Color(0xFF0061FE), "Cloud storage solution"),
-    "github" to BrandConfig("GI", Color(0xFF9E9E9E), "Developer platform"),
+    "github" to BrandConfig("GH", Color(0xFFE6EDF3), "Developer platform & git repositories"),
     "gmail" to BrandConfig("GM", Color(0xFFEA4335), "Email integration"),
     "google_sheets" to BrandConfig("GS", Color(0xFF0F9D58), "Spreadsheet management"),
     "google_calendar" to BrandConfig("GC", Color(0xFF4285F4), "Calendar scheduling"),
@@ -711,7 +711,7 @@ fun ConnectionsScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Enter your GitHub Personal Access Token:", fontSize = 13.sp, color = AppMuted)
                     Text(
-                        "Create a token at github.com/settings/tokens with repo, workflow, and user scopes.",
+                        "Create a personal access token at github.com/settings/tokens with repo, workflow, read:org, and user scopes for full access.",
                         fontSize = 11.sp,
                         color = AppMuted.copy(alpha = 0.7f),
                         lineHeight = 14.sp
@@ -720,7 +720,7 @@ fun ConnectionsScreen(
                     OutlinedTextField(
                         value = gitHubTokenInput,
                         onValueChange = { gitHubTokenInput = it },
-                        label = { Text("GitHub Token (ghp_...)") },
+                        label = { Text("GitHub Token (ghp_... or github_pat_...)") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(

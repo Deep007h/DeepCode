@@ -1,6 +1,42 @@
 # 📝 Changelog
 
-All notable changes and milestones for the **DeepCode for Android** port are documented below.
+All notable changes and milestones for **DeepCode for Android** are documented below.
+
+---
+
+## [1.1.0] - 2026-09-04
+
+### Added
+- **Headless ChatGPT Engine**:
+  - Integrated browser session bridge (`ChatGPTHeadlessBridge`) in the Connections tab allowing seamless interaction with OpenAI's consumer web platform at zero API token cost.
+  - Dedicated persistent single-session context preservation across multi-turn queries.
+  - Direct inline DALL-E 3 image rendering with immediate download to the Android media gallery.
+- **Background Automations Engine**:
+  - Exact background execution via `AlarmManager.setExactAndAllowWhileIdle()` and `WAKE_LOCK`.
+  - Single dedicated chat session per scheduled task—eliminating duplicate chat creation on subsequent runs.
+  - Full system reboot and process-kill resilience (`BOOT_COMPLETED` receiver auto-reschedules active tasks).
+  - Interactive Task Editor dialog allowing modification of prompt instructions, execution times, repetition intervals, and predefined workflows.
+- **Antigravity Next-Gen Models**:
+  - Added support for Google's latest Gemini 3.5 Flash (High/Medium/Low), Gemini 3.1 Pro (High/Low), Gemini 3.1 Flash Lite, Gemini 2.5 series, and Anthropic Claude Sonnet 5 / Claude Opus 4.6.
+- **Ollama Cloud Integration**:
+  - Migrated from local host daemon setup to the official high-speed Ollama Cloud endpoint (`https://ollama.com/v1`).
+  - Added cloud-native open-weight models: Gemma 4 31B, GLM 4.7, GPT-OSS 120B, Qwen 3 Coder 480B, MiniMax M3, and Nemotron 3 series.
+- **Zen AI Authentication & Model Catalog**:
+  - Updated access type requiring a Zen API Key (`Settings → API Keys`) with support for both Free tier (DeepSeek V4 Flash Free, MiMo 2.5 Free, Nemotron 3.5 Free) and Pro/Paid models (Claude Sonnet 5, Gemini 3.7 Flash, GPT 5.6 Sol).
+
+---
+
+## [1.0.5] - 2026-09-04
+
+### Added
+- **Multi-Key Ring Auto-Rotation**:
+  - Support for up to 6 API keys per provider in hardware-backed encrypted storage.
+  - Instant transparent failover on HTTP 429 rate limit or quota depletion without interrupting ongoing chats.
+  - 15-second adaptive cooldown windows with intelligent key ring wrap-around.
+- **Decommissioned Models Sanitizer**:
+  - Automated translation of decommissioned or deprecated model identifiers to active counterparts.
+- **Enhanced PDF Studio Presets**:
+  - Added 6 specialized publication-ready templates: `classic`, `modern-minimal`, `corporate-report`, `academic-paper`, `invoice-receipt`, and `resume-cv`.
 
 ---
 
@@ -9,9 +45,8 @@ All notable changes and milestones for the **DeepCode for Android** port are doc
 ### Added
 - **Core Architecture Framework**: Initialized native Android application using MVVM and Clean Architecture patterns under the package name `ai.deepcode.android`.
 - **DeepCode Zen Free Tier**:
-  - Registered the complete suite of Zen free models (including Big Pickle, DeepSeek V4 Pro, MiniMax M2.7, Kimi, GLM, and Qwen) served via `https://api.deepcode.ai/v1`.
-  - Implemented client header `X-DeepCode-Client: android/1.0.0` and authentication parsing.
-  - Added anonymous access mode for the flagship **Big Pickle** model allowing zero-setup usage on first install.
+  - Registered the complete suite of Zen free models served via `https://opencode.ai/zen/v1`.
+  - Implemented client header `X-OpenCode-Client: android/1.0.0` and authentication parsing.
 - **Launcher Icon**: Designed the official adaptive pixel-block vector icon. Foreground incorporates the two-tone `deepcode` letter blocks font, background uses a solid `#0D0D0D` color.
 - **Database & Data Storage**:
   - Implemented Room database (`AppDatabase`) with message and session persistence entities.

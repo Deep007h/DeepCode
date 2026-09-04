@@ -1062,13 +1062,60 @@ class AgentEngine(private val context: Context) {
             "google_calendar" -> executeCalendarAction(action, params)
             "youtube_music", "youtube" -> executeYouTubeMusicAction(action, params)
             "github" -> {
-                """
-                    [GitHub Integration]
-                    Active Pull Requests in repository:
-                    1. PR #104: Fix room FTS4 memory search crash [Status: Open]
-                    2. PR #102: Implement OkHttp SSE streaming callback [Status: Approved]
-                    3. PR #98: Add connections screen layout with Coil [Status: Merged]
-                """.trimIndent()
+                val token = securePrefs.getSetting("github_token", "").trim()
+                    .ifEmpty { integration.accessToken.trim() }
+                if (token.isEmpty()) return "GitHub token is empty. Connect GitHub in Connections screen."
+                val service = ai.deepcode.android.service.github.GitHubService(token)
+                val handler = ai.deepcode.android.service.github.GitHubHandler(context)
+                when (action.lowercase()) {
+                    "user", "profile", "whoami" -> service.getUser(params["username"]).getOrElse { "GitHub error: ${it.message}" }
+                    "repos", "list_repos" -> {
+                        val type = params["type"] ?: "all"
+                        val perPage = params["per_page"]?.toIntOrNull() ?: 50
+                        service.listRepos(type, perPage).fold(
+                            onSuccess = { repos ->
+                                if (repos.isEmpty()) "No repositories found."
+                                else repos.joinToString("\n") { r ->
+                                    "${if (r.private) "🔒" else "🌍"} ${r.fullName} (${r.defaultBranch})${if (r.description.isNotEmpty()) " — ${r.description}" else ""}"
+                                }
+                            },
+                            onFailure = { "GitHub list repos failed: ${it.message}" }
+                        )
+                    }
+                    "repo", "get_repo" -> {
+                        val owner = params["owner"] ?: ""
+                        val repo = params["repo"] ?: ""
+                        if (owner.isNotEmpty() && repo.isNotEmpty()) service.getRepo(owner, repo).getOrElse { "GitHub error: ${it.message}" }
+                        else "Missing owner and repo params."
+                    }
+                    "issues", "list_issues" -> {
+                        val owner = params["owner"] ?: ""
+                        val repo = params["repo"] ?: ""
+                        if (owner.isNotEmpty() && repo.isNotEmpty()) {
+                            service.listIssues(owner, repo, params["state"] ?: "open").fold(
+                                onSuccess = { issues ->
+                                    if (issues.isEmpty()) "No open issues in $owner/$repo."
+                                    else issues.joinToString("\n") { "#${it.number} [${it.state}] ${it.title}" }
+                                },
+                                onFailure = { "GitHub list issues failed: ${it.message}" }
+                            )
+                        } else handler.fetch("list issues ${params.values.joinToString(" ")}")
+                    }
+                    "prs", "pulls", "list_prs" -> {
+                        val owner = params["owner"] ?: ""
+                        val repo = params["repo"] ?: ""
+                        if (owner.isNotEmpty() && repo.isNotEmpty()) {
+                            service.listPullRequests(owner, repo, params["state"] ?: "open").fold(
+                                onSuccess = { prs ->
+                                    if (prs.isEmpty()) "No open pull requests in $owner/$repo."
+                                    else prs.joinToString("\n") { "#${it.number} [${it.state}] ${it.title}" }
+                                },
+                                onFailure = { "GitHub list PRs failed: ${it.message}" }
+                            )
+                        } else handler.fetch("list PRs ${params.values.joinToString(" ")}")
+                    }
+                    else -> handler.fetch("github $action ${params.values.joinToString(" ")}")
+                }
             }
             "google drive", "drive" -> {
                 """
