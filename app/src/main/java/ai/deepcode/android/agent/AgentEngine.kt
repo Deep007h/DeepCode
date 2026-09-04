@@ -1136,23 +1136,35 @@ class AgentEngine(private val context: Context) {
         if (telegramChatId.isNotBlank()) {
             configMap["telegram_chat_id"] = telegramChatId
         }
-        val configJson = gson.toJson(configMap)
 
         val existing = repository.getAllAutomations().find {
             it.name.equals(name, ignoreCase = true)
         }
+        val nextRun = AutomationScheduler.computeNextRunAt(cron)
+
         if (existing != null) {
+            val sessionId = existing.getEffectiveChatSessionId() ?: repository.createSession("🤖 $name")
+            configMap["chat_session_id"] = sessionId
+            val configJson = gson.toJson(configMap)
+
             val updated = existing.copy(
                 description = description,
                 category = category,
                 cronExpression = cron,
-                configJson = configJson
+                nextRunAt = nextRun,
+                configJson = configJson,
+                chatSessionId = sessionId
             )
             repository.insertAutomation(updated)
             AutomationScheduler(context).cancel(existing.id)
-            AutomationScheduler(context).schedule(updated)
-            return "Automation '$name' updated. Schedule: $cron"
+            AutomationScheduler(context).schedule(updated, forceRecalculate = true)
+            return "Automation '$name' updated. Schedule: $cron. Dedicated chat: 🤖 $name"
         }
+
+        val sessionId = repository.createSession("🤖 $name")
+        configMap["chat_session_id"] = sessionId
+        val configJson = gson.toJson(configMap)
+
         val entity = AutomationEntity(
             id = UUID.randomUUID().toString(),
             name = name,
@@ -1161,13 +1173,14 @@ class AgentEngine(private val context: Context) {
             isEnabled = true,
             cronExpression = cron,
             lastRunAt = 0L,
-            nextRunAt = System.currentTimeMillis() + 60000L,
+            nextRunAt = nextRun,
             templateId = "custom",
-            configJson = configJson
+            configJson = configJson,
+            chatSessionId = sessionId
         )
         repository.insertAutomation(entity)
-        AutomationScheduler(context).schedule(entity)
-        return "Automation '$name' created and enabled. Schedule: $cron"
+        AutomationScheduler(context).schedule(entity, forceRecalculate = true)
+        return "Automation '$name' created and enabled. Schedule: $cron. Dedicated chat: 🤖 $name"
     }
 
     private suspend fun executeListAutomations(): String {
@@ -1426,20 +1439,6 @@ class AgentEngine(private val context: Context) {
                     content = userPrompt,
                     timestamp = System.currentTimeMillis()
                 ))
-
-                if (sessionId.startsWith("Scheduled:")) {
-                    val reply = executeOfflineHermesAgent(userPrompt)
-                    repository.insertMessage(Message(
-                        id = UUID.randomUUID().toString(),
-                        sessionId = sessionId,
-                        role = "assistant",
-                        content = reply,
-                        timestamp = System.currentTimeMillis()
-                    ))
-                    trySend(reply)
-                    close()
-                    return@launch
-                }
 
                 // Bypass AI for email/repo requests (AI can't call the integration tool reliably)
                 val gmailHandler = GmailHandler(context)

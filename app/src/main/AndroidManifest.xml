@@ -13,12 +13,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
     <uses-permission android:name="android.permission.USE_CREDENTIALS" />
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- TESTING BUILD: full logcat capture -->
     <uses-permission android:name="android.permission.READ_LOGS" />
 
@@ -73,6 +73,7 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
             <intent-filter>
                 <action android:name="ai.deepcode.android.action.TEST_AUTOMATION" />
@@ -81,7 +82,11 @@
 
         <receiver
             android:name="ai.deepcode.android.ui.automations.AutomationAlarmReceiver"
-            android:exported="false" />
+            android:exported="false">
+            <intent-filter>
+                <action android:name="ai.deepcode.android.action.TRIGGER_AUTOMATION" />
+            </intent-filter>
+        </receiver>
 
         <!-- TESTING BUILD: ADB Command Bridge for AI agent debugging -->
         <receiver

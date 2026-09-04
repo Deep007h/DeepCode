@@ -27,10 +27,21 @@ class AutomationsViewModel(private val context: Context) : ViewModel() {
 
     fun enableTemplate(template: TemplateData) {
         viewModelScope.launch {
+            val sessionId = UUID.randomUUID().toString()
+            val session = ai.deepcode.android.data.local.SessionEntity(
+                id = sessionId,
+                title = "🤖 ${template.name}",
+                createdAt = System.currentTimeMillis()
+            )
+            val db = ai.deepcode.android.data.local.AppDatabase.getDatabase(context)
+            db.sessionDao().insertSession(session)
+
             val config = JsonObject().apply {
                 addProperty("action_prompt", template.description)
+                addProperty("chat_session_id", sessionId)
                 defaultTelegramChatId()?.let { addProperty("telegram_chat_id", it) }
             }
+            val nextRun = AutomationScheduler.computeNextRunAt(template.cron)
             val entity = AutomationEntity(
                 id = UUID.randomUUID().toString(),
                 name = template.name,
@@ -39,12 +50,13 @@ class AutomationsViewModel(private val context: Context) : ViewModel() {
                 isEnabled = true,
                 cronExpression = template.cron,
                 lastRunAt = 0L,
-                nextRunAt = System.currentTimeMillis() + calculateIntervalMs(template.cron),
+                nextRunAt = nextRun,
                 templateId = template.id,
-                configJson = Gson().toJson(config)
+                configJson = Gson().toJson(config),
+                chatSessionId = sessionId
             )
             repository.insertAutomation(entity)
-            scheduler.schedule(entity)
+            scheduler.schedule(entity, forceRecalculate = true)
         }
     }
 
@@ -54,7 +66,7 @@ class AutomationsViewModel(private val context: Context) : ViewModel() {
             val automation = repository.getAutomationById(id)
             if (automation != null) {
                 if (isEnabled) {
-                    scheduler.schedule(automation)
+                    scheduler.schedule(automation, forceRecalculate = false)
                 } else {
                     scheduler.cancel(automation.id)
                 }
@@ -71,10 +83,21 @@ class AutomationsViewModel(private val context: Context) : ViewModel() {
 
     fun addCustomRule(name: String, description: String, category: String, cron: String, actionPrompt: String) {
         viewModelScope.launch {
+            val sessionId = UUID.randomUUID().toString()
+            val session = ai.deepcode.android.data.local.SessionEntity(
+                id = sessionId,
+                title = "🤖 $name",
+                createdAt = System.currentTimeMillis()
+            )
+            val db = ai.deepcode.android.data.local.AppDatabase.getDatabase(context)
+            db.sessionDao().insertSession(session)
+
             val config = JsonObject().apply {
                 addProperty("action_prompt", actionPrompt)
+                addProperty("chat_session_id", sessionId)
                 defaultTelegramChatId()?.let { addProperty("telegram_chat_id", it) }
             }
+            val nextRun = AutomationScheduler.computeNextRunAt(cron)
             val entity = AutomationEntity(
                 id = UUID.randomUUID().toString(),
                 name = name,
@@ -83,21 +106,78 @@ class AutomationsViewModel(private val context: Context) : ViewModel() {
                 isEnabled = true,
                 cronExpression = cron,
                 lastRunAt = 0L,
-                nextRunAt = System.currentTimeMillis() + calculateIntervalMs(cron),
+                nextRunAt = nextRun,
                 templateId = "custom",
-                configJson = Gson().toJson(config)
+                configJson = Gson().toJson(config),
+                chatSessionId = sessionId
             )
             repository.insertAutomation(entity)
-            scheduler.schedule(entity)
+            scheduler.schedule(entity, forceRecalculate = true)
         }
     }
 
-    private fun calculateIntervalMs(cron: String): Long {
-        return when {
-            cron.contains("*/30") -> 30 * 60000L
-            cron.contains("0 */6") -> 6 * 3600000L
-            cron.contains("0 8") || cron.contains("0 7") || cron.contains("0 9") -> 24 * 3600000L
-            else -> 60 * 60000L
+    fun updateAutomation(
+        id: String,
+        name: String,
+        description: String,
+        category: String,
+        cron: String,
+        actionPrompt: String
+    ) {
+        viewModelScope.launch {
+            val existing = repository.getAutomationById(id) ?: return@launch
+            val db = ai.deepcode.android.data.local.AppDatabase.getDatabase(context)
+            val sessionDao = db.sessionDao()
+
+            var sessionId = existing.getEffectiveChatSessionId()
+            if (sessionId.isNullOrBlank()) {
+                val newSessionId = UUID.randomUUID().toString()
+                val session = ai.deepcode.android.data.local.SessionEntity(
+                    id = newSessionId,
+                    title = "🤖 $name",
+                    createdAt = System.currentTimeMillis()
+                )
+                sessionDao.insertSession(session)
+                sessionId = newSessionId
+            } else {
+                sessionDao.renameSession(sessionId, "🤖 $name")
+            }
+
+            val configObj = try {
+                com.google.gson.JsonParser.parseString(existing.configJson).asJsonObject
+            } catch (_: Exception) {
+                JsonObject()
+            }.apply {
+                addProperty("action_prompt", actionPrompt)
+                addProperty("chat_session_id", sessionId)
+                if (!has("telegram_chat_id")) {
+                    defaultTelegramChatId()?.let { addProperty("telegram_chat_id", it) }
+                }
+            }
+
+            val nextRun = AutomationScheduler.computeNextRunAt(cron)
+            val updated = existing.copy(
+                name = name,
+                description = description,
+                category = category,
+                cronExpression = cron,
+                nextRunAt = nextRun,
+                configJson = Gson().toJson(configObj),
+                chatSessionId = sessionId
+            )
+
+            repository.insertAutomation(updated)
+            if (updated.isEnabled) {
+                scheduler.schedule(updated, forceRecalculate = true)
+            } else {
+                scheduler.cancel(updated.id)
+            }
+        }
+    }
+
+    fun runAutomationNow(id: String) {
+        viewModelScope.launch {
+            AutomationScheduler.triggerImmediately(context, id)
         }
     }
 }

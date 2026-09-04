@@ -845,7 +845,11 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                             onOpenApiKeys = { appState.setShowApiKeys(true) }
                         )
                         2 -> AutomationsScreen(
-                            onBack = { appState.selectTab(0) }
+                            onBack = { appState.selectTab(0) },
+                            onOpenChat = { sessionId ->
+                                activeSessionId = sessionId
+                                appState.selectTab(1)
+                            }
                         )
                         3 -> ConnectionsScreen(
                             repository = repository,

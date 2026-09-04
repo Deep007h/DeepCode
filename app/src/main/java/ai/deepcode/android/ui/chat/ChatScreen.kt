@@ -980,7 +980,7 @@ fun ChatScreen(
                             .size(50.dp)
                             .clip(CircleShape)
                             .background(if (isStreaming) Color(0xFFDC2626) else Color.White)
-                            .clickable {
+                            .bouncyClickable(provideHaptic = true) {
                                 if (isStreaming) {
                                     viewModel.cancelActiveChat()
                                 } else if (inputMsg.isNotEmpty() || attachedFiles.isNotEmpty()) {
@@ -1003,7 +1003,7 @@ fun ChatScreen(
                             .size(50.dp)
                             .clip(CircleShape)
                             .background(Brush.linearGradient(listOf(AppPrimary, AppPrimaryGradientEnd)))
-                            .clickable {
+                            .bouncyClickable(provideHaptic = true) {
                                 Toast.makeText(context, "Voice mode activated", Toast.LENGTH_SHORT).show()
                             },
                         contentAlignment = Alignment.Center
@@ -1218,23 +1218,33 @@ fun MessageBubble(
 
     if (message.isToolCall || message.role == "tool") return
 
-    val cleanedContent = remember(message.id, message.content, isUser) {
+    val (thoughtContent, cleanedContent) = remember(message.id, message.content, isUser) {
         val raw = if (message.content.endsWith("[INTERRUPTED]")) message.content.substringBeforeLast("[INTERRUPTED]").trim()
         else message.content
-        if (isUser) raw.trim() else stripThinkingProcess(raw, isStreaming = false)
+        if (isUser) {
+            Pair("", raw.trim())
+        } else {
+            extractThoughtAndCleanText(raw, isStreaming = false)
+        }
     }
 
-    if (cleanedContent.isEmpty()) return
+    if (cleanedContent.isEmpty() && thoughtContent.isEmpty()) return
 
     val isInterrupted = message.content.endsWith("[INTERRUPTED]")
     val parsedParts = remember(cleanedContent, isUser) { parseMessageContent(cleanedContent, isUser) }
 
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalAlignment = alignment) {
-        if (!isInterrupted || cleanedContent.isNotEmpty()) {
+        if (!isInterrupted || cleanedContent.isNotEmpty() || thoughtContent.isNotEmpty()) {
             if (isUser) {
                 UserBubble(cleanedContent = cleanedContent, parsedParts = parsedParts, message = message, context = context)
             } else {
-                AiBubble(cleanedContent = cleanedContent, parsedParts = parsedParts, message = message, imageCache = imageCache, onSelectLayout = onSelectLayout, onSendSuggestion = onSendSuggestion)
+                if (thoughtContent.isNotEmpty()) {
+                    ThoughtBlock(thought = thoughtContent)
+                    Spacer(Modifier.height(4.dp))
+                }
+                if (cleanedContent.isNotEmpty()) {
+                    AiBubble(cleanedContent = cleanedContent, parsedParts = parsedParts, message = message, imageCache = imageCache, onSelectLayout = onSelectLayout, onSendSuggestion = onSendSuggestion)
+                }
             }
         }
         if (isInterrupted) InterruptedIndicator()
@@ -1707,7 +1717,8 @@ fun StreamingBubble(text: String, imageCache: Map<String, ImageBitmap> = emptyMa
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp),
+            .padding(vertical = 6.dp)
+            .animateContentSize(animationSpec = MotionTokens.LayoutSpring),
         horizontalAlignment = Alignment.Start
     ) {
         if (cleanText.isEmpty()) {
@@ -1717,26 +1728,11 @@ fun StreamingBubble(text: String, imageCache: Map<String, ImageBitmap> = emptyMa
                     .padding(vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Thinking status pill
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Color(0xFF16181D))
-                        .border(1.dp, Color(0xFF262933), RoundedCornerShape(14.dp))
-                        .padding(horizontal = 14.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    PulsatingBrainIcon()
-                    Text(
-                        text = if (liveThought.isNotEmpty()) "Reasoning through solution..." else "Thinking...",
-                        color = Color(0xFFFF6D00),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(Modifier.width(2.dp))
-                    ThreeDotLoader()
-                }
+                // transitions.dev P28: Ambient breathing thinking status pill
+                AnimatedThinkingPill(
+                    statusText = if (liveThought.isNotEmpty()) "Reasoning through solution..." else "Thinking...",
+                    accentColor = AppPrimary
+                )
 
                 // If the model is outputting live reasoning tokens, stream them live
                 if (liveThought.isNotEmpty()) {
@@ -1751,13 +1747,15 @@ fun StreamingBubble(text: String, imageCache: Map<String, ImageBitmap> = emptyMa
                 Spacer(Modifier.height(8.dp))
             }
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize(animationSpec = MotionTokens.LayoutSpring),
                 verticalAlignment = Alignment.Bottom
             ) {
                 Box(modifier = Modifier.weight(1f, fill = false)) {
                     MarkdownText(text = cleanText, imageCache = imageCache)
                 }
-                BlinkingCursor()
+                StreamingActiveCursor(color = AppPrimary)
             }
         }
     }
@@ -1822,59 +1820,18 @@ fun BlinkingCursor() {
 
 @Composable
 fun LiveThoughtCard(thought: String) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, Color(0xFF262933), RoundedCornerShape(12.dp)),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF13151A)),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Column(Modifier.padding(12.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(Icons.Default.Info, null, tint = Color(0xFFFF6D00), modifier = Modifier.size(15.dp))
-                Text(
-                    "Thought Process",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color(0xFF9E9EA7),
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                thought.trim(),
-                style = MaterialTheme.typography.bodySmall,
-                color = Color(0xFFCCCCCC),
-                fontStyle = FontStyle.Italic,
-                lineHeight = 18.sp
-            )
-        }
-    }
+    ReasoningAccordion(
+        thought = thought,
+        isExpanded = true,
+        onToggle = {},
+        isLiveStreaming = true,
+        accentColor = AppPrimary
+    )
 }
 
 @Composable
 fun ThreeDotLoader() {
-    val infiniteTransition = rememberInfiniteTransition(label = "dotAnim")
-    @Composable
-    fun anim(delay: Int) = infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(400, delayMillis = delay, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "dot"
-    )
-    val dot1 = anim(0); val dot2 = anim(200); val dot3 = anim(400)
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(6.dp).alpha(dot1.value).background(Color(0xFFFF6D00), CircleShape))
-        Spacer(Modifier.width(4.dp))
-        Box(Modifier.size(6.dp).alpha(dot2.value).background(Color(0xFFFF6D00), CircleShape))
-        Spacer(Modifier.width(4.dp))
-        Box(Modifier.size(6.dp).alpha(dot3.value).background(Color(0xFFFF6D00), CircleShape))
-    }
+    TravelingWaveLoader(dotColor = AppPrimary)
 }
 
 @Composable
@@ -1883,29 +1840,18 @@ fun BlinkingRobotIcon() {
 }
 
 // ═══════════════════════════════════════════════
-// Thought Block
+// Thought Block (transitions.dev P21 Accordion & P28 Reasoning stream)
 // ═══════════════════════════════════════════════
 @Composable
 fun ThoughtBlock(thought: String) {
-    var expanded by remember { mutableStateOf(true) }
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-        .border(0.5.dp, AppBorder, RoundedCornerShape(8.dp)),
-        colors = CardDefaults.cardColors(containerColor = AppDivider.copy(alpha = 0.5f)),
-        shape = RoundedCornerShape(8.dp)) {
-        Column(Modifier.padding(10.dp)) {
-            Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }, verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Info, null, tint = AppPrimary, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Thinking Process", style = MaterialTheme.typography.labelMedium, color = Color.Gray, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.weight(1f))
-                Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
-            }
-            if (expanded || thought.length < 50) {
-                Spacer(Modifier.height(6.dp))
-                Text(thought.trim(), style = MaterialTheme.typography.bodyMedium, color = Color.LightGray, fontStyle = FontStyle.Italic)
-            }
-        }
-    }
+    var expanded by remember { mutableStateOf(false) }
+    ReasoningAccordion(
+        thought = thought,
+        isExpanded = expanded,
+        onToggle = { expanded = !expanded },
+        isLiveStreaming = false,
+        accentColor = AppPrimary
+    )
 }
 
 // ═══════════════════════════════════════════════

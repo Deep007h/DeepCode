@@ -8,16 +8,21 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.FlashOff
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ai.deepcode.android.ui.components.NeoBrutalistButton
 import ai.deepcode.android.ui.components.NeoBrutalistCard
@@ -42,6 +48,7 @@ import ai.deepcode.android.ui.theme.*
 @Composable
 fun AutomationsScreen(
     onBack: () -> Unit,
+    onOpenChat: ((sessionId: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -49,12 +56,14 @@ fun AutomationsScreen(
     val activeRules by viewModel.automations.collectAsStateWithLifecycle()
 
     var showAddRuleBottomSheet by remember { mutableStateOf(false) }
+    var editingRuleId by remember { mutableStateOf<String?>(null) }
 
     // Bottom Sheet Fields
     var newRuleName by remember { mutableStateOf("") }
     var newRuleDesc by remember { mutableStateOf("") }
     var newRuleCategory by remember { mutableStateOf("MESSAGING") }
     var newRuleSchedulePreset by remember { mutableStateOf("Every hour") }
+    var customCronInput by remember { mutableStateOf("0 * * * *") }
     var newRuleActionPrompt by remember { mutableStateOf("") }
 
     val categories = listOf("MESSAGING", "CONTENT", "SYSTEM", "DEVELOPER")
@@ -109,7 +118,16 @@ fun AutomationsScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(24.dp))
                         .background(AppPrimary)
-                        .clickable { showAddRuleBottomSheet = true }
+                        .clickable {
+                            editingRuleId = null
+                            newRuleName = ""
+                            newRuleDesc = ""
+                            newRuleCategory = "MESSAGING"
+                            newRuleSchedulePreset = "Every hour"
+                            customCronInput = "0 * * * *"
+                            newRuleActionPrompt = ""
+                            showAddRuleBottomSheet = true
+                        }
                         .padding(horizontal = 18.dp, vertical = 10.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -189,7 +207,16 @@ fun AutomationsScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(12.dp))
-                                .clickable { showAddRuleBottomSheet = true }
+                                .clickable {
+                                    editingRuleId = null
+                                    newRuleName = ""
+                                    newRuleDesc = ""
+                                    newRuleCategory = "MESSAGING"
+                                    newRuleSchedulePreset = "Every hour"
+                                    customCronInput = "0 * * * *"
+                                    newRuleActionPrompt = ""
+                                    showAddRuleBottomSheet = true
+                                }
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Icon(
@@ -236,19 +263,121 @@ fun AutomationsScreen(
                             )
                         }
                         Spacer(modifier = Modifier.height(10.dp))
+
+                        val nextRunText = remember(rule.nextRunAt) {
+                            if (rule.nextRunAt > System.currentTimeMillis()) {
+                                val diff = rule.nextRunAt - System.currentTimeMillis()
+                                val m = diff / 60000L
+                                val h = m / 60L
+                                val remM = m % 60L
+                                if (h > 0) "Next: in ${h}h ${remM}m" else "Next: in ${m}m"
+                            } else if (rule.nextRunAt > 0L) {
+                                "Next: due now"
+                            } else {
+                                "Next: pending"
+                            }
+                        }
+
+                        Text(
+                            text = "Schedule: ${rule.cronExpression} • $nextRunText",
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = AppPrimary.copy(alpha = 0.85f)
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Schedule: ${rule.cronExpression} | Last run: ${if (rule.lastRunAt > 0L) java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(rule.lastRunAt)) else "never"}",
+                                text = "Last run: ${if (rule.lastRunAt > 0L) java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(rule.lastRunAt)) else "never"}",
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = AppMuted.copy(alpha = 0.7f)
                             )
-                            IconButton(onClick = { viewModel.deleteAutomation(rule.id) }, modifier = Modifier.size(24.dp)) {
-                                Icon(Icons.Default.Delete, "Delete", tint = AppDestructive.copy(alpha = 0.8f), modifier = Modifier.size(16.dp))
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val chatId = rule.getEffectiveChatSessionId()
+                                if (!chatId.isNullOrBlank() && onOpenChat != null) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(AppSurfaceVariant.copy(alpha = 0.6f))
+                                            .border(1.dp, AppBorder, RoundedCornerShape(8.dp))
+                                            .clickable { onOpenChat(chatId) }
+                                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(Icons.AutoMirrored.Filled.Chat, "Chat", tint = AppPrimary, modifier = Modifier.size(13.dp))
+                                            Text("Chat", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AppPrimary)
+                                        }
+                                    }
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(AppSurfaceVariant.copy(alpha = 0.6f))
+                                        .border(1.dp, AppBorder, RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            editingRuleId = rule.id
+                                            newRuleName = rule.name
+                                            newRuleDesc = rule.description
+                                            newRuleCategory = rule.category
+                                            newRuleActionPrompt = rule.getEffectiveActionPrompt() ?: ""
+                                            val matchedPreset = presets.firstOrNull { it.second == rule.cronExpression }
+                                            if (matchedPreset != null) {
+                                                newRuleSchedulePreset = matchedPreset.first
+                                                customCronInput = rule.cronExpression
+                                            } else {
+                                                newRuleSchedulePreset = "Custom"
+                                                customCronInput = rule.cronExpression
+                                            }
+                                            showAddRuleBottomSheet = true
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(Icons.Default.Edit, "Edit", tint = AppWhite, modifier = Modifier.size(13.dp))
+                                        Text("Edit", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AppWhite)
+                                    }
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF34D399).copy(alpha = 0.15f))
+                                        .border(1.dp, Color(0xFF34D399).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            viewModel.runAutomationNow(rule.id)
+                                            Toast.makeText(context, "Running '${rule.name}'...", Toast.LENGTH_SHORT).show()
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(Icons.Default.PlayArrow, "Run Now", tint = Color(0xFF34D399), modifier = Modifier.size(13.dp))
+                                        Text("Run Now", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
+                                    }
+                                }
+
+                                IconButton(onClick = { viewModel.deleteAutomation(rule.id) }, modifier = Modifier.size(24.dp)) {
+                                    Icon(Icons.Default.Delete, "Delete", tint = AppDestructive.copy(alpha = 0.8f), modifier = Modifier.size(16.dp))
+                                }
                             }
                         }
                     }
@@ -283,6 +412,17 @@ fun AutomationsScreen(
                         cron = "0 9 * * 1",
                         actionPrompt = "Forward summary of weekly chats to email"
                     )
+                    Toast.makeText(context, "Added 'Forward to Email'", Toast.LENGTH_SHORT).show()
+                },
+                onEdit = {
+                    editingRuleId = null
+                    newRuleName = "Forward to Email"
+                    newRuleDesc = "Send chat history to your inbox weekly"
+                    newRuleCategory = "MESSAGING"
+                    newRuleSchedulePreset = "Weekly Monday"
+                    customCronInput = "0 9 * * 1"
+                    newRuleActionPrompt = "Forward summary of weekly chats to email"
+                    showAddRuleBottomSheet = true
                 }
             )
         }
@@ -303,6 +443,48 @@ fun AutomationsScreen(
                         cron = "0 * * * *",
                         actionPrompt = "Check pending inquiries and reply automatically"
                     )
+                    Toast.makeText(context, "Added 'Auto-Responder'", Toast.LENGTH_SHORT).show()
+                },
+                onEdit = {
+                    editingRuleId = null
+                    newRuleName = "Auto-Responder"
+                    newRuleDesc = "Quick reply to common inquiries"
+                    newRuleCategory = "MESSAGING"
+                    newRuleSchedulePreset = "Every hour"
+                    customCronInput = "0 * * * *"
+                    newRuleActionPrompt = "Check pending inquiries and reply automatically"
+                    showAddRuleBottomSheet = true
+                }
+            )
+        }
+
+        // Template 3: Daily Morning Briefing
+        item {
+            TemplateItemCard(
+                title = "Daily Morning Briefing",
+                subtitle = "Weather, schedule, and device battery daily at 8AM",
+                icon = Icons.Default.PlayArrow,
+                iconBgColor = Color(0xFF064E3B),
+                iconColor = Color(0xFF34D399),
+                onAdd = {
+                    viewModel.addCustomRule(
+                        name = "Daily Morning Briefing",
+                        description = "Weather, schedule, and device battery daily at 8AM",
+                        category = "CONTENT",
+                        cron = "0 8 * * *",
+                        actionPrompt = "Generate a daily morning briefing for {{datetime}}. Report battery status: {{battery}} and network: {{network}}."
+                    )
+                    Toast.makeText(context, "Added 'Daily Morning Briefing'", Toast.LENGTH_SHORT).show()
+                },
+                onEdit = {
+                    editingRuleId = null
+                    newRuleName = "Daily Morning Briefing"
+                    newRuleDesc = "Weather, schedule, and device battery daily at 8AM"
+                    newRuleCategory = "CONTENT"
+                    newRuleSchedulePreset = "Daily 8AM"
+                    customCronInput = "0 8 * * *"
+                    newRuleActionPrompt = "Generate a daily morning briefing for {{datetime}}. Report battery status: {{battery}} and network: {{network}}."
+                    showAddRuleBottomSheet = true
                 }
             )
         }
@@ -311,7 +493,10 @@ fun AutomationsScreen(
 
     if (showAddRuleBottomSheet) {
         ModalBottomSheet(
-            onDismissRequest = { showAddRuleBottomSheet = false },
+            onDismissRequest = {
+                showAddRuleBottomSheet = false
+                editingRuleId = null
+            },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = AppSurface,
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
@@ -320,11 +505,14 @@ fun AutomationsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState())
                     .padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
-                    text = "Add Automation Rule",
+                    text = if (editingRuleId != null) "Edit Automation Task"
+                           else if (newRuleName.isNotBlank()) "Customize Task: $newRuleName"
+                           else "Add Automation Rule",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = AppWhite
@@ -333,7 +521,8 @@ fun AutomationsScreen(
                 OutlinedTextField(
                     value = newRuleName,
                     onValueChange = { newRuleName = it },
-                    label = { Text("Name") },
+                    label = { Text("Task Name") },
+                    placeholder = { Text("e.g. Daily Standup Notes") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp)
@@ -343,6 +532,7 @@ fun AutomationsScreen(
                     value = newRuleDesc,
                     onValueChange = { newRuleDesc = it },
                     label = { Text("Description") },
+                    placeholder = { Text("Brief description of this automation") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp)
@@ -387,7 +577,7 @@ fun AutomationsScreen(
                     OutlinedTextField(
                         value = newRuleSchedulePreset,
                         onValueChange = {},
-                        label = { Text("Schedule") },
+                        label = { Text("Schedule Preset") },
                         readOnly = true,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -402,11 +592,14 @@ fun AutomationsScreen(
                         onDismissRequest = { presetExpanded = false },
                         modifier = Modifier.fillMaxWidth(0.9f)
                     ) {
-                        presets.forEach { (label, _) ->
+                        presets.forEach { (label, cronValue) ->
                             DropdownMenuItem(
-                                text = { Text(label, fontFamily = FontFamily.Monospace) },
+                                text = { Text("$label  ($cronValue)", fontFamily = FontFamily.Monospace) },
                                 onClick = {
                                     newRuleSchedulePreset = label
+                                    if (label != "Custom") {
+                                        customCronInput = cronValue
+                                    }
                                     presetExpanded = false
                                 }
                             )
@@ -414,13 +607,58 @@ fun AutomationsScreen(
                     }
                 }
 
-                OutlinedTextField(
-                    value = newRuleActionPrompt,
-                    onValueChange = { newRuleActionPrompt = it },
-                    label = { Text("Action Prompt") },
-                    modifier = Modifier.fillMaxWidth().height(100.dp),
-                    shape = RoundedCornerShape(12.dp)
-                )
+                // Custom Cron input field (shown always if Custom is selected or editable)
+                if (newRuleSchedulePreset == "Custom") {
+                    OutlinedTextField(
+                        value = customCronInput,
+                        onValueChange = { customCronInput = it },
+                        label = { Text("Cron Expression") },
+                        placeholder = { Text("e.g. */15 * * * * or 0 9 * * 1-5") },
+                        supportingText = { Text("Format: min hour dom month dow (e.g. */30 * * * *)", fontSize = 10.sp, color = AppMuted) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedTextField(
+                        value = newRuleActionPrompt,
+                        onValueChange = { newRuleActionPrompt = it },
+                        label = { Text("Action Prompt") },
+                        placeholder = { Text("Prompt given to the AI agent on every scheduled run...") },
+                        modifier = Modifier.fillMaxWidth().height(110.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    // Dynamic parameter chips
+                    Text(
+                        text = "Dynamic parameters (tap to insert):",
+                        fontSize = 11.sp,
+                        color = AppMuted,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val chips = listOf("{{datetime}}", "{{date}}", "{{time}}", "{{battery}}", "{{network}}")
+                        chips.forEach { tag ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(AppSurfaceVariant.copy(alpha = 0.8f))
+                                    .border(1.dp, AppBorder, RoundedCornerShape(6.dp))
+                                    .clickable {
+                                        newRuleActionPrompt = if (newRuleActionPrompt.isBlank()) tag else "$newRuleActionPrompt $tag"
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                            ) {
+                                Text(tag, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = AppPrimary)
+                            }
+                        }
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -429,15 +667,35 @@ fun AutomationsScreen(
                     NeoBrutalistButton(
                         onClick = {
                             if (newRuleName.isNotBlank() && newRuleActionPrompt.isNotBlank()) {
-                                val cron = presets.firstOrNull { it.first == newRuleSchedulePreset }?.second ?: "0 * * * *"
-                                viewModel.addCustomRule(
-                                    name = newRuleName.trim(),
-                                    description = newRuleDesc.trim().ifEmpty { "Custom automation rule" },
-                                    category = newRuleCategory,
-                                    cron = cron,
-                                    actionPrompt = newRuleActionPrompt.trim()
-                                )
+                                val cron = if (newRuleSchedulePreset == "Custom") {
+                                    customCronInput.trim().ifEmpty { "0 * * * *" }
+                                } else {
+                                    presets.firstOrNull { it.first == newRuleSchedulePreset }?.second ?: "0 * * * *"
+                                }
+
+                                if (editingRuleId != null) {
+                                    viewModel.updateAutomation(
+                                        id = editingRuleId!!,
+                                        name = newRuleName.trim(),
+                                        description = newRuleDesc.trim().ifEmpty { "Automation task" },
+                                        category = newRuleCategory,
+                                        cron = cron,
+                                        actionPrompt = newRuleActionPrompt.trim()
+                                    )
+                                    Toast.makeText(context, "Updated '${newRuleName.trim()}'", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    viewModel.addCustomRule(
+                                        name = newRuleName.trim(),
+                                        description = newRuleDesc.trim().ifEmpty { "Custom automation rule" },
+                                        category = newRuleCategory,
+                                        cron = cron,
+                                        actionPrompt = newRuleActionPrompt.trim()
+                                    )
+                                    Toast.makeText(context, "Created '${newRuleName.trim()}'", Toast.LENGTH_SHORT).show()
+                                }
+
                                 // Clear inputs & dismiss
+                                editingRuleId = null
                                 newRuleName = ""
                                 newRuleDesc = ""
                                 newRuleActionPrompt = ""
@@ -452,11 +710,18 @@ fun AutomationsScreen(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("Save Rule", color = AppWhite, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (editingRuleId != null) "Update Task" else "Save Rule",
+                            color = AppWhite,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
 
                     NeoBrutalistButton(
-                        onClick = { showAddRuleBottomSheet = false },
+                        onClick = {
+                            showAddRuleBottomSheet = false
+                            editingRuleId = null
+                        },
                         backgroundColor = AppSurface,
                         borderColor = AppDarkGray.copy(alpha = 0.4f),
                         shadowColor = Color.Transparent,
@@ -480,7 +745,8 @@ private fun TemplateItemCard(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     iconBgColor: Color,
     iconColor: Color,
-    onAdd: () -> Unit
+    onAdd: () -> Unit,
+    onEdit: () -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -488,6 +754,7 @@ private fun TemplateItemCard(
             .clip(RoundedCornerShape(16.dp))
             .background(AppCard)
             .border(1.dp, AppBorder, RoundedCornerShape(16.dp))
+            .clickable { onEdit() }
             .padding(14.dp)
     ) {
         Row(
@@ -518,21 +785,56 @@ private fun TemplateItemCard(
                 }
             }
 
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(AppSurfaceVariant.copy(alpha = 0.5f))
-                    .border(1.dp, AppBorder.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-                    .clickable { onAdd() },
-                contentAlignment = Alignment.Center
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Add Template",
-                    tint = Color(0xFF34D399),
-                    modifier = Modifier.size(20.dp)
-                )
+                // Edit / Customize button
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(AppSurfaceVariant.copy(alpha = 0.5f))
+                        .border(1.dp, AppBorder.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                        .clickable { onEdit() }
+                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Edit Template",
+                            tint = AppWhite,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "Edit",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AppWhite
+                        )
+                    }
+                }
+
+                // Quick Add button
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(AppSurfaceVariant.copy(alpha = 0.5f))
+                        .border(1.dp, AppBorder.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                        .clickable { onAdd() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Add Template",
+                        tint = Color(0xFF34D399),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
     }

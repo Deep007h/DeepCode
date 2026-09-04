@@ -139,11 +139,24 @@ class AutomationHandler(private val context: Context) {
     suspend fun create(text: String, telegramChatId: String = ""): String {
         val intent = parse(text) ?: return ""
 
-        val configMap = mutableMapOf("action_prompt" to intent.actionPrompt)
+        val db = ai.deepcode.android.data.local.AppDatabase.getDatabase(context)
+        val sessionId = UUID.randomUUID().toString()
+        val session = ai.deepcode.android.data.local.SessionEntity(
+            id = sessionId,
+            title = "🤖 ${intent.name}",
+            createdAt = System.currentTimeMillis()
+        )
+        db.sessionDao().insertSession(session)
+
+        val configMap = mutableMapOf(
+            "action_prompt" to intent.actionPrompt,
+            "chat_session_id" to sessionId
+        )
         if (telegramChatId.isNotBlank()) {
             configMap["telegram_chat_id"] = telegramChatId
         }
         val configJson = Gson().toJson(configMap)
+        val nextRun = AutomationScheduler.computeNextRunAt(intent.cron)
 
         val entity = AutomationEntity(
             id = UUID.randomUUID().toString(),
@@ -153,16 +166,17 @@ class AutomationHandler(private val context: Context) {
             isEnabled = true,
             cronExpression = intent.cron,
             lastRunAt = 0L,
-            nextRunAt = System.currentTimeMillis() + 60000L,
+            nextRunAt = nextRun,
             templateId = "custom",
-            configJson = configJson
+            configJson = configJson,
+            chatSessionId = sessionId
         )
 
         val repo = AutomationRepository(context)
         repo.insertAutomation(entity)
-        AutomationScheduler(context).schedule(entity)
+        AutomationScheduler(context).schedule(entity, forceRecalculate = true)
 
-        val msg = "✅ Automation **${intent.name}** created! Runs on schedule: `${intent.cron}`\n\nI'll ${intent.actionPrompt.lowercase()} automatically."
+        val msg = "✅ Automation **${intent.name}** created! Runs on schedule: `${intent.cron}`\n\nI'll ${intent.actionPrompt.lowercase()} automatically in dedicated chat: **🤖 ${intent.name}**."
         AppLogger.d("AutomationHandler", msg)
         return msg
     }

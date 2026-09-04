@@ -23,25 +23,24 @@ class AutomationScheduler(private val context: Context) {
         null
     }
 
-    fun schedule(automation: AutomationEntity) {
+    fun schedule(automation: AutomationEntity, forceRecalculate: Boolean = false) {
         try {
-            val delayMs = computeDelayMs(automation.cronExpression)
-            val nextRun = System.currentTimeMillis() + delayMs
-
-            // Use AlarmManager for <1min delays (more reliable on MIUI) or when WorkManager is unavailable
-            // Check for exact alarm permission on Android 12+
-            val canUseExactAlarm = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-                context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
-
-            if (delayMs < 60000L || workManager == null) {
-                if (canUseExactAlarm || workManager == null) {
-                    scheduleWithAlarm(automation.id, delayMs)
-                    AppLogger.i("AutomationScheduler", "Alarm scheduled '${automation.name}' in ${delayMs}ms")
-                } else {
-                    AppLogger.w("AutomationScheduler", "Exact alarm permission not granted, falling back to WorkManager for '${automation.name}'")
-                    scheduleWithWorkManager(automation, delayMs)
-                }
+            val now = System.currentTimeMillis()
+            val nextRun = if (!forceRecalculate && automation.nextRunAt > now) {
+                automation.nextRunAt
             } else {
+                now + computeDelayMs(automation.cronExpression, now)
+            }
+            val delayMs = (nextRun - now).coerceAtLeast(100L)
+
+            // Primary: Use AlarmManager setExactAndAllowWhileIdle so the device wakes up even when app is killed
+            scheduleWithAlarm(automation.id, nextRun)
+
+            // Keep WorkManager as backup if exact alarm permission is not granted
+            val canUseExactAlarm = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                (context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager)?.canScheduleExactAlarms() == true
+
+            if (!canUseExactAlarm && workManager != null) {
                 scheduleWithWorkManager(automation, delayMs)
             }
 
@@ -52,7 +51,7 @@ class AutomationScheduler(private val context: Context) {
                 try { repo.insertAutomation(updated) } catch (_: Exception) {}
             }
 
-            AppLogger.i("AutomationScheduler", "Scheduled '${automation.name}' trigger at ${delayMs}ms (cron=${automation.cronExpression})")
+            AppLogger.i("AutomationScheduler", "Scheduled '${automation.name}' trigger in ${delayMs}ms at $nextRun (cron=${automation.cronExpression})")
         } catch (e: Exception) {
             AppLogger.e("AutomationScheduler", "schedule failed for '${automation.name}'", e)
         }
@@ -75,13 +74,15 @@ class AutomationScheduler(private val context: Context) {
             ExistingWorkPolicy.REPLACE,
             request
         )
-        AppLogger.i("AutomationScheduler", "WorkManager scheduled '${automation.name}' with delay ${delayMs / 60000}min")
+        AppLogger.i("AutomationScheduler", "WorkManager fallback scheduled '${automation.name}' with delay ${delayMs / 60000}min")
     }
 
-    private fun scheduleWithAlarm(automationId: String, delayMs: Long) {
+    private fun scheduleWithAlarm(automationId: String, triggerAtMillis: Long) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
         val intent = Intent(context, AutomationAlarmReceiver::class.java).apply {
+            action = "ai.deepcode.android.action.TRIGGER_AUTOMATION"
             putExtra("automation_id", automationId)
+            setPackage(context.packageName)
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
@@ -89,17 +90,16 @@ class AutomationScheduler(private val context: Context) {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val triggerAt = System.currentTimeMillis() + delayMs
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
             } else {
-                alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+                alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
             }
-            AppLogger.i("AutomationScheduler", "Exact alarm set for $automationId in ${delayMs}ms")
+            AppLogger.i("AutomationScheduler", "Exact alarm set for $automationId at $triggerAtMillis")
         } catch (e: SecurityException) {
             AppLogger.w("AutomationScheduler", "setExact not allowed, using setWindow: ${e.message}")
-            alarmManager.setWindow(AlarmManager.RTC_WAKEUP, triggerAt, 5000, pendingIntent)
+            alarmManager.setWindow(AlarmManager.RTC_WAKEUP, triggerAtMillis, 5000, pendingIntent)
         }
     }
 
@@ -112,7 +112,9 @@ class AutomationScheduler(private val context: Context) {
         // Cancel any AlarmManager alarms
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
         val intent = Intent(context, AutomationAlarmReceiver::class.java).apply {
+            action = "ai.deepcode.android.action.TRIGGER_AUTOMATION"
             putExtra("automation_id", id)
+            setPackage(context.packageName)
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
@@ -126,21 +128,25 @@ class AutomationScheduler(private val context: Context) {
     }
 
     companion object {
-        fun computeDelayMs(cron: String): Long {
+        fun computeNextRunAt(cron: String, fromTime: Long = System.currentTimeMillis()): Long {
+            return fromTime + computeDelayMs(cron, fromTime)
+        }
+
+        fun computeDelayMs(cron: String, fromTime: Long = System.currentTimeMillis()): Long {
             val cronTrimmed = cron.trim()
             
             // Handle special cron shortcuts
             return when (cronTrimmed) {
-                "@yearly", "@annually" -> computeDelayForCron("0 0 1 1 *")
-                "@monthly" -> computeDelayForCron("0 0 1 * *")
-                "@weekly" -> computeDelayForCron("0 0 * * 0")
-                "@daily", "@midnight" -> computeDelayForCron("0 0 * * *")
-                "@hourly" -> computeDelayForCron("0 * * * *")
-                else -> computeDelayForCron(cronTrimmed)
+                "@yearly", "@annually" -> computeDelayForCron("0 0 1 1 *", fromTime)
+                "@monthly" -> computeDelayForCron("0 0 1 * *", fromTime)
+                "@weekly" -> computeDelayForCron("0 0 * * 0", fromTime)
+                "@daily", "@midnight" -> computeDelayForCron("0 0 * * *", fromTime)
+                "@hourly" -> computeDelayForCron("0 * * * *", fromTime)
+                else -> computeDelayForCron(cronTrimmed, fromTime)
             }
         }
 
-        private fun computeDelayForCron(cron: String): Long {
+        private fun computeDelayForCron(cron: String, fromTime: Long): Long {
             val parts = cron.trim().split("\\s+".toRegex())
 
             // Detect 6-field cron (with seconds) vs 5-field
@@ -159,7 +165,7 @@ class AutomationScheduler(private val context: Context) {
             val cronMonth = parts.getOrElse(idxMonth) { "*" }
             val cronDow = parts.getOrElse(idxDow) { "*" }
 
-            val now = Calendar.getInstance()
+            val now = Calendar.getInstance().apply { timeInMillis = fromTime }
 
             // Sub-minute: `*/N * * * * *` → schedule every N seconds
             if (hasSeconds && cronSec.startsWith("*/")) {
@@ -226,17 +232,24 @@ class AutomationScheduler(private val context: Context) {
 
         private fun fieldMatches(field: String, value: Int, min: Int, max: Int): Boolean {
             if (field == "*") return true
-            if (field.startsWith("*/")) {
-                val step = field.removePrefix("*/").toIntOrNull() ?: return false
-                if (step <= 0) return false
-                return value % step == 0
-            }
-            if (field.all { it.isDigit() }) {
-                val num = field.toInt()
-                return num in min..max && value == num
-            }
             if (field.contains(",")) {
                 return field.split(",").any { f -> fieldMatches(f.trim(), value, min, max) }
+            }
+            if (field.contains("/")) {
+                val parts = field.split("/")
+                val step = parts.getOrNull(1)?.toIntOrNull() ?: return false
+                if (step <= 0) return false
+                val rangePart = parts[0]
+                val (rangeMin, rangeMax) = if (rangePart == "*" || rangePart.isEmpty()) {
+                    min to max
+                } else if (rangePart.contains("-")) {
+                    val rParts = rangePart.split("-")
+                    (rParts.getOrNull(0)?.toIntOrNull() ?: min) to (rParts.getOrNull(1)?.toIntOrNull() ?: max)
+                } else {
+                    (rangePart.toIntOrNull() ?: min) to max
+                }
+                if (value !in rangeMin..rangeMax) return false
+                return (value - rangeMin) % step == 0
             }
             if (field.contains("-")) {
                 val range = field.split("-")
@@ -244,13 +257,26 @@ class AutomationScheduler(private val context: Context) {
                 val end = range.getOrNull(1)?.toIntOrNull() ?: return false
                 return value in start..end
             }
+            if (field.all { it.isDigit() }) {
+                val num = field.toInt()
+                return num in min..max && value == num
+            }
             return false
         }
 
         private fun dowMatches(field: String, calDow: Int): Boolean {
             if (field == "*") return true
-            val cronDow = (calDow + 6) % 7 // Calendar 1=Sun..7=Sat → 0=Sun..6=Sat
-            return fieldMatches(field, cronDow, 0, 6)
+            val normalized = field.uppercase()
+                .replace("SUN", "0")
+                .replace("MON", "1")
+                .replace("TUE", "2")
+                .replace("WED", "3")
+                .replace("THU", "4")
+                .replace("FRI", "5")
+                .replace("SAT", "6")
+            val cronDow = (calDow + 6) % 7 // Calendar 1=Sun..7=Sat -> 0=Sun..6=Sat
+            if (cronDow == 0 && (fieldMatches(normalized, 0, 0, 7) || fieldMatches(normalized, 7, 0, 7))) return true
+            return fieldMatches(normalized, cronDow, 0, 7)
         }
 
         suspend fun scheduleNext(context: Context, automationId: String, cron: String) {
@@ -258,10 +284,19 @@ class AutomationScheduler(private val context: Context) {
                 val repo = AutomationRepository(context)
                 val automation = repo.getAutomationById(automationId) ?: return
                 if (!automation.isEnabled) return
-                AutomationScheduler(context).schedule(automation)
+                AutomationScheduler(context).schedule(automation, forceRecalculate = true)
             } catch (e: Exception) {
                 AppLogger.e("AutomationScheduler", "scheduleNext failed for $automationId", e)
             }
+        }
+
+        fun triggerImmediately(context: Context, automationId: String) {
+            val intent = Intent(context, AutomationAlarmReceiver::class.java).apply {
+                action = "ai.deepcode.android.action.TRIGGER_AUTOMATION"
+                putExtra("automation_id", automationId)
+                setPackage(context.packageName)
+            }
+            context.sendBroadcast(intent)
         }
 
         suspend fun rescheduleAll(context: Context) {
@@ -269,10 +304,16 @@ class AutomationScheduler(private val context: Context) {
                 val repository = AutomationRepository(context)
                 val scheduler = AutomationScheduler(context)
                 val automations = repository.getAllAutomations()
+                val now = System.currentTimeMillis()
                 var count = 0
                 for (automation in automations) {
                     if (automation.isEnabled) {
-                        scheduler.schedule(automation)
+                        if (automation.nextRunAt in 1..now) {
+                            AppLogger.i("AutomationScheduler", "Automation '${automation.name}' was overdue (nextRun=${automation.nextRunAt}, now=$now). Triggering immediately.")
+                            triggerImmediately(context, automation.id)
+                        } else {
+                            scheduler.schedule(automation, forceRecalculate = false)
+                        }
                         count++
                     }
                 }
