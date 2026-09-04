@@ -76,7 +76,11 @@ fun AnimatedThinkingPill(
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "ThinkingPillAura")
 
-    // Ambient glow pulse between 0.35f and 0.85f
+    // Ambient glow pulse between 0.35f and 0.85f.
+    // NOTE: single infinite animation only. The previous second sweepOffset
+    // animation (600px linear sweep) forced a Brush.linearGradient recreation
+    // on every frame -> recomposition at 60fps + shader recompile = jank.
+    // A static alpha-pulsed border is visually identical and ~free.
     val glowAlpha by infiniteTransition.animateFloat(
         initialValue = 0.35f,
         targetValue = 0.85f,
@@ -87,26 +91,13 @@ fun AnimatedThinkingPill(
         label = "GlowAlpha"
     )
 
-    // Dynamic sweep offset for subtle border shimmer
-    val sweepOffset by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 600f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2400, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "SweepOffset"
-    )
-
-    val borderBrush = remember(glowAlpha, sweepOffset, accentColor) {
+    val borderBrush = remember(glowAlpha, accentColor) {
         Brush.linearGradient(
             colors = listOf(
                 accentColor.copy(alpha = glowAlpha * 0.4f),
                 accentColor.copy(alpha = glowAlpha),
                 accentColor.copy(alpha = glowAlpha * 0.2f)
-            ),
-            start = Offset(sweepOffset - 200f, 0f),
-            end = Offset(sweepOffset + 200f, 0f)
+            )
         )
     }
 
@@ -320,15 +311,23 @@ fun ReasoningAccordion(
         label = "AccordionChevron"
     )
 
-    val railAlpha by rememberInfiniteTransition(label = "RailPulse").animateFloat(
-        initialValue = if (isLiveStreaming) 0.4f else 1.0f,
-        targetValue = if (isLiveStreaming) 1.0f else 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 800, easing = MotionTokens.EaseInOut),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "LiveRailAlpha"
-    )
+    // Only run a pulse loop while actually live-streaming. Previously this
+    // rememberInfiniteTransition ran unconditionally (even with identical
+    // 1.0f->1.0f bounds), keeping a choreographer callback alive for every
+    // collapsed thought card in history.
+    val railAlpha: Float = if (isLiveStreaming) {
+        rememberInfiniteTransition(label = "RailPulse").animateFloat(
+            initialValue = 0.4f,
+            targetValue = 1.0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 800, easing = MotionTokens.EaseInOut),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "LiveRailAlpha"
+        ).value
+    } else {
+        1f
+    }
 
     Card(
         modifier = modifier

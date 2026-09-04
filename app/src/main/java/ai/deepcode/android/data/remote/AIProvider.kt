@@ -117,7 +117,7 @@ private fun genProvider(name: String, baseUrl: String, modelIds: List<Pair<Strin
     )
 }
 
-private val OPENAI_PROVIDERS = listOf(
+val OPENAI_PROVIDERS = listOf(
     genProvider("OpenAI", "https://api.openai.com/v1", listOf(
         "gpt-4o" to "GPT-4o", "gpt-4o-mini" to "GPT-4o Mini", "o1" to "OpenAI o1", "o1-mini" to "OpenAI o1 Mini",
         "o3-mini" to "OpenAI o3 Mini", "gpt-4.5-preview" to "GPT-4.5 Preview", "gpt-4-turbo" to "GPT-4 Turbo", "gpt-3.5-turbo" to "GPT-3.5 Turbo"
@@ -128,9 +128,14 @@ private val OPENAI_PROVIDERS = listOf(
         "claude-4.5-sonnet" to "Claude Sonnet 4.5", "claude-4.5-opus" to "Claude Opus 4.5"
     )),
     genProvider("Groq", "https://api.groq.com/openai/v1", listOf(
-        "llama-3.3-70b-versatile" to "Llama 3.3 70B Versatile", "llama-3.3-70b-specdec" to "Llama 3.3 70B SpecDec",
-        "llama-3.1-8b-instant" to "Llama 3.1 8B Instant", "qwen-2.5-coder-32b" to "Qwen 2.5 Coder 32B",
-        "deepseek-r1-distill-llama-70b" to "DeepSeek R1 Distill 70B", "mixtral-8x7b-32768" to "Mixtral 8x7B", "gemma2-9b-it" to "Gemma 2 9B"
+        "llama-3.3-70b-versatile" to "Llama 3.3 70B Versatile",
+        "llama-3.1-8b-instant" to "Llama 3.1 8B Instant",
+        "openai/gpt-oss-120b" to "GPT OSS 120B",
+        "openai/gpt-oss-20b" to "GPT OSS 20B",
+        "qwen/qwen3.6-27b" to "Qwen 3.6 27B",
+        "deepseek-r1-distill-llama-70b" to "DeepSeek R1 Distill 70B",
+        "groq/compound" to "Groq Compound",
+        "gemma2-9b-it" to "Gemma 2 9B"
     )),
     genProvider("Mistral AI", "https://api.mistral.ai/v1", listOf(
         "mistral-large-latest" to "Mistral Large", "mistral-small-latest" to "Mistral Small",
@@ -201,6 +206,14 @@ private val OPENAI_PROVIDERS = listOf(
         "claude-opus-5" to "Claude Opus 5", "claude-opus-4-7" to "Claude Opus 4.7",
         "claude-opus-4-6" to "Claude Opus 4.6", "glm-5.2" to "GLM 5.2", "gpt-5.5" to "GPT 5.5"
     )),
+    genProvider("GMI Cloud", "https://api.gmi-serving.com/v1", listOf(
+        "Qwen/Qwen3.8-Flash" to "Qwen 3.8 Flash", "deepseek-ai/DeepSeek-V4-Flash" to "DeepSeek V4 Flash",
+        "google/gemini-3.8-flash" to "Gemini 3.8 Flash", "moonshotai/kimi-k3" to "Kimi K3",
+        "zai-org/GLM-5.3-Flash" to "GLM 5.3 Flash", "openai/gpt-5.4" to "GPT 5.4",
+        "anthropic/claude-sonnet-4.6" to "Claude Sonnet 4.6", "MiniMaxAI/MiniMax-M3" to "MiniMax M3",
+        "MiniMaxAI/MiniMax-M2.7" to "MiniMax M2.7",
+        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16" to "Nemotron 3.5 Lightning"
+    )),
 )
 
 object RateLimitTracker {
@@ -269,6 +282,7 @@ class AIProviderFactory {
             GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "Hyperbolic" }!!),
             GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "GitHub Models" }!!),
             GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "Agent Router" }!!),
+            GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "GMI Cloud" }!!),
         )
     }
 }
@@ -419,20 +433,15 @@ class ZenProvider : AIProvider {
         val baseUrl = resolveBaseUrl(customBaseUrl, "https://opencode.ai/zen/v1")
         var lastException: Throwable? = null
 
-        val isFreeModel = model.contains("free", ignoreCase = true)
+        val sanitized = ZenModels.sanitize(model, models)
+        val isFreeModel = sanitized.contains("free", ignoreCase = true)
         val candidateModels = linkedSetOf<String>().apply {
-            add(model)
+            add(sanitized)
             if (isFreeModel) {
-                add("deepseek-v4-flash-free")
-                add("nemotron-3-ultra-free")
-                add("gemini-2.0-flash")
-                add("gpt-4o-mini")
-                add("deepseek-chat")
+                addAll(ZenModels.KNOWN_FREE_IDS)
             } else {
-                add("claude-sonnet-4-6")
-                add("gemini-3.5-flash")
-                add("gpt-5.4")
-                add("deepseek-v4-flash-free")
+                addAll(ZenModels.KNOWN_PAID_IDS)
+                addAll(ZenModels.KNOWN_FREE_IDS)
             }
         }
 
@@ -450,10 +459,22 @@ class ZenProvider : AIProvider {
             }
 
             val errStr = lastException?.message ?: ""
-            val isHttpError = lastException is RateLimitException || errStr.contains("503") || errStr.contains("502") ||
-                errStr.contains("500") || errStr.contains("404") || errStr.contains("429") ||
+            val isAuthOrRateLimit = lastException is RateLimitException ||
+                errStr.contains("401") || errStr.contains("403") || errStr.contains("429") ||
+                errStr.contains("FreeUsageLimitError", ignoreCase = true) ||
+                errStr.contains("quota", ignoreCase = true) ||
+                errStr.contains("rate limit", ignoreCase = true)
+
+            if (isAuthOrRateLimit) {
+                val ex = (lastException as? RateLimitException) ?: RateLimitException("Zen AI", 429, errStr)
+                onError(ex)
+                return
+            }
+
+            val isHttpError = errStr.contains("503") || errStr.contains("502") ||
+                errStr.contains("500") || errStr.contains("400") || errStr.contains("404") ||
                 errStr.contains("Endpoint is unavailable") || errStr.contains("server_error") ||
-                errStr.contains("FreeUsageLimitError")
+                errStr.contains("model_not_found", ignoreCase = true)
 
             // 2. Only try HttpURLConnection backup if it was a transport/connection error, not server refusal
             if (!isHttpError) {
@@ -466,15 +487,16 @@ class ZenProvider : AIProvider {
                 }
             }
 
-            val isUpstreamOrRateLimit = isHttpError || errStr.contains("RateLimit")
-            if (!isUpstreamOrRateLimit) {
-                break
+            val errStr2 = lastException?.message ?: errStr
+            val isNotFound = errStr2.contains("404") || errStr2.contains("model_not_found", ignoreCase = true)
+            if (isNotFound) {
+                continue // Try next candidate model
             }
         }
 
         val errMsg = "Zen API error: ${lastException?.message ?: "All transports failed"}"
         ai.deepcode.android.util.AppLogger.e("ZenProvider", errMsg)
-        onError(java.net.ConnectException(errMsg))
+        onError(lastException ?: java.net.ConnectException(errMsg))
     }
 
     private fun buildZenPayload(messages: List<Message>, model: String, tools: List<Tool>?): com.google.gson.JsonObject {
@@ -484,40 +506,22 @@ class ZenProvider : AIProvider {
         payload.add("messages", messagesArray)
         payload.addProperty("stream", true)
 
-        // Only include tool schemas if the conversation history or user query indicates tools are relevant.
-        // Skipping 15+ complex JSON schemas on standard chat queries cuts Time-To-First-Token (TTFT) by seconds.
-        if (shouldIncludeTools(messages, tools)) {
+        if (!tools.isNullOrEmpty()) {
             val toolsArray = com.google.gson.JsonArray()
-            val filteredTools = if (tools!!.size > 10) {
-                val priorityNames = setOf("edge_tts", "web_search", "web_fetch", "create_pdf", "generate_image", "generate_video", "read_file", "list_directory", "grep_search", "write_file", "replace_in_file", "execute_command")
-                tools.filter { it.name in priorityNames }
-            } else tools
-
-            for (tool in filteredTools) {
+            for (tool in tools) {
                 val tObj = com.google.gson.JsonObject()
                 tObj.addProperty("type", "function")
                 val funcObj = com.google.gson.JsonObject()
                 funcObj.addProperty("name", tool.name)
-                funcObj.addProperty("description", tool.description.take(120))
-                val params = com.google.gson.JsonObject()
-                params.addProperty("type", "object")
-                val properties = com.google.gson.JsonObject()
-                val requiredArr = com.google.gson.JsonArray()
-                val schemaProps = tool.inputSchema["properties"] as? Map<*, *>
-                schemaProps?.forEach { (k, v) ->
-                    val propKey = k.toString()
-                    val propVal = v as? Map<*, *>
-                    val propObj = com.google.gson.JsonObject()
-                    propObj.addProperty("type", (propVal?.get("type") ?: "string").toString())
-                    val desc = (propVal?.get("description") ?: "").toString()
-                    if (desc.isNotEmpty()) propObj.addProperty("description", desc.take(80))
-                    properties.add(propKey, propObj)
-                    val isReq = (tool.inputSchema["required"] as? List<*>)?.contains(propKey) ?: false
-                    if (isReq) requiredArr.add(propKey)
+                funcObj.addProperty("description", tool.description)
+                try {
+                    val schemaJson = gson.toJsonTree(tool.inputSchema)
+                    funcObj.add("parameters", schemaJson)
+                } catch (e: Exception) {
+                    val params = com.google.gson.JsonObject()
+                    params.addProperty("type", "object")
+                    funcObj.add("parameters", params)
                 }
-                params.add("properties", properties)
-                if (requiredArr.size() > 0) params.add("required", requiredArr)
-                funcObj.add("parameters", params)
                 tObj.add("function", funcObj)
                 toolsArray.add(tObj)
             }
@@ -559,7 +563,7 @@ class ZenProvider : AIProvider {
                 val responseCode = conn.responseCode
                 if (responseCode != 200) {
                     val errBody = try { conn.errorStream?.bufferedReader()?.readText()?.take(500) ?: "" } catch (_: Exception) { "" }
-                    if (responseCode == 429 || errBody.contains("FreeUsageLimitError", ignoreCase = true) || errBody.contains("rate limit", ignoreCase = true) || errBody.contains("quota", ignoreCase = true)) {
+                    if (responseCode in listOf(401, 403, 429) || errBody.contains("FreeUsageLimitError", ignoreCase = true) || errBody.contains("rate limit", ignoreCase = true) || errBody.contains("quota", ignoreCase = true)) {
                         throw RateLimitException("Zen AI", responseCode, "Zen API Error $responseCode: $errBody")
                     }
                     throw Exception("Zen API Error $responseCode: $errBody")
@@ -602,11 +606,15 @@ class ZenProvider : AIProvider {
                 .addHeader("X-OpenCode-Client", "android/1.0.0")
                 .build()
 
-            val response = httpClient.newCall(request).execute()
+            val call = httpClient.newCall(request)
+            coroutineContext[kotlinx.coroutines.Job]?.invokeOnCompletion {
+                call.cancel()
+            }
+            val response = call.execute()
             response.use { resp ->
                 if (!resp.isSuccessful) {
                     val errBody = resp.body?.string()?.take(500) ?: ""
-                    if (resp.code == 429 || errBody.contains("FreeUsageLimitError", ignoreCase = true) || errBody.contains("rate limit", ignoreCase = true) || errBody.contains("quota", ignoreCase = true)) {
+                    if (resp.code in listOf(401, 403, 429) || errBody.contains("FreeUsageLimitError", ignoreCase = true) || errBody.contains("rate limit", ignoreCase = true) || errBody.contains("quota", ignoreCase = true)) {
                         throw RateLimitException("Zen AI", resp.code, "Zen API Error ${resp.code}: $errBody")
                     }
                     throw Exception("Zen API Error ${resp.code}: $errBody")
@@ -659,22 +667,23 @@ class ZenProvider : AIProvider {
                 }
 
                 val respBody = conn.inputStream.bufferedReader().readText()
-                val json = com.google.gson.JsonParser.parseString(respBody).asJsonObject
-                val choice = json.getAsJsonArray("choices")?.firstOrNull()?.asJsonObject
-                val msgObj = choice?.getAsJsonObject("message")
-                val text = msgObj?.get("content")?.asString ?: ""
+                val json = try { com.google.gson.JsonParser.parseString(respBody).asJsonObject } catch (_: Exception) { com.google.gson.JsonObject() }
+                val choice = try { json.getAsJsonArray("choices")?.firstOrNull()?.asJsonObject } catch (_: Exception) { null }
+                val msgObj = try { choice?.getAsJsonObject("message") } catch (_: Exception) { null } ?: choice
+                var text = if (msgObj != null) safeStr(msgObj, "content") ?: "" else ""
                 if (text.isNotEmpty()) {
                     onToken(text)
                 }
                 // Parse tool calls from non-streaming response
-                val tcArray = msgObj?.getAsJsonArray("tool_calls")
+                val tcArray = try { msgObj?.getAsJsonArray("tool_calls") } catch (_: Exception) { null }
                 if (tcArray != null) {
                     for (i in 0 until tcArray.size()) {
                         val tcElem = try { tcArray.get(i).asJsonObject } catch (_: Exception) { continue }
-                        val id = try { tcElem.get("id")?.asString ?: "call_$i" } catch (_: Exception) { "call_$i" }
-                        val func = tcElem.getAsJsonObject("function") ?: continue
-                        val name = func.get("name")?.asString ?: continue
-                        val args = func.get("arguments")?.asString ?: "{}"
+                        val id = safeStr(tcElem, "id") ?: "call_$i"
+                        val func = try { tcElem.getAsJsonObject("function") } catch (_: Exception) { null } ?: continue
+                        val name = safeStr(func, "name") ?: continue
+                        if (name.isBlank()) continue
+                        val args = safeStr(func, "arguments") ?: "{}"
                         onToolCall?.invoke(ToolCall(id, name, args))
                     }
                 }
@@ -685,6 +694,15 @@ class ZenProvider : AIProvider {
         }
     }
 
+    private fun safeStr(obj: com.google.gson.JsonObject?, key: String): String? {
+        if (obj == null || !obj.has(key)) return null
+        val el = try { obj.get(key) } catch (_: Exception) { return null }
+        if (el == null || el.isJsonNull) return null
+        return try {
+            if (el.isJsonPrimitive) el.asString else gson.toJson(el)
+        } catch (_: Exception) { null }
+    }
+
     private fun parseNonStreamingResponse(
         body: String,
         onToken: (String) -> Unit,
@@ -692,32 +710,39 @@ class ZenProvider : AIProvider {
         onComplete: (String) -> Unit,
         onUsage: ((TurnTokenUsage) -> Unit)?
     ) {
-        val json = com.google.gson.JsonParser.parseString(body).asJsonObject
-        val choice = json.getAsJsonArray("choices")?.firstOrNull()?.asJsonObject ?: run { onComplete(""); return }
-        val msg = choice.getAsJsonObject("message") ?: run { onComplete(""); return }
-        val text = msg.get("content")?.asString ?: ""
-        val reasoning = msg.get("reasoning_content")?.asString ?: ""
-        val tcArray = msg.getAsJsonArray("tool_calls")
+        val json = try { com.google.gson.JsonParser.parseString(body).asJsonObject } catch (_: Exception) { onComplete(""); return }
+        val choice = try { json.getAsJsonArray("choices")?.firstOrNull()?.asJsonObject } catch (_: Exception) { null } ?: run { onComplete(""); return }
+        // Some providers return delta-shaped choices even in non-streaming mode.
+        val msg = try { choice.getAsJsonObject("message") } catch (_: Exception) { null }
+            ?: try { choice.getAsJsonObject("delta") } catch (_: Exception) { null }
+            ?: choice
+        var text = safeStr(msg, "content") ?: ""
+        val tcArray = try { msg.getAsJsonArray("tool_calls") } catch (_: Exception) { null }
 
         if (tcArray != null && tcArray.size() > 0) {
             for (i in 0 until tcArray.size()) {
-                val tc = tcArray.get(i).asJsonObject
-                val id = tc.get("id")?.asString ?: UUID.randomUUID().toString()
-                val func = tc.getAsJsonObject("function")
-                val name = func?.get("name")?.asString ?: ""
-                val args = func?.get("arguments")?.asString ?: "{}"
-                onToolCall(ToolCall(id, name, args))
+                try {
+                    val tc = tcArray.get(i).asJsonObject
+                    val id = safeStr(tc, "id") ?: UUID.randomUUID().toString()
+                    val func = try { tc.getAsJsonObject("function") } catch (_: Exception) { null } ?: continue
+                    val name = safeStr(func, "name") ?: continue
+                    if (name.isBlank()) continue
+                    val args = safeStr(func, "arguments") ?: "{}"
+                    onToolCall(ToolCall(id, name, args))
+                } catch (_: Exception) { continue }
             }
         }
 
         if (text.isNotEmpty()) onToken(text)
 
         if (json.has("usage") && !json.get("usage").isJsonNull) {
-            val u = json.getAsJsonObject("usage")
-            val input = u.get("prompt_tokens")?.asInt ?: 0
-            val output = u.get("completion_tokens")?.asInt ?: 0
-            val reasoningTokens = u.get("reasoning_tokens")?.asInt ?: 0
-            if (input > 0 || output > 0) onUsage?.invoke(TurnTokenUsage(input, output, reasoningTokens))
+            try {
+                val u = json.getAsJsonObject("usage")
+                val input = try { u.get("prompt_tokens")?.asInt } catch (_: Exception) { 0 } ?: 0
+                val output = try { u.get("completion_tokens")?.asInt } catch (_: Exception) { 0 } ?: 0
+                val reasoningTokens = try { u.get("reasoning_tokens")?.asInt } catch (_: Exception) { 0 } ?: 0
+                if (input > 0 || output > 0) onUsage?.invoke(TurnTokenUsage(input, output, reasoningTokens))
+            } catch (_: Exception) {}
         }
         onComplete(text)
     }
@@ -732,83 +757,128 @@ class ZenProvider : AIProvider {
         val accumulatedReasoning = StringBuilder()
         val accumulatedContent = StringBuilder()
         val toolCallBuilders = mutableMapOf<Int, ToolCallBuilder>()
-        var startedReasoning = false
-        var endedReasoning = false
         var usageInput = 0
         var usageOutput = 0
         var usageReasoning = 0
 
         var line: String?
-        while (source.readUtf8Line().also { line = it } != null) {
+        while (true) {
+            try {
+                val raw = source.readUtf8Line() ?: break
+                line = raw
+            } catch (_: Exception) { break }
             val cleaned = line!!.trim()
-            if (cleaned.startsWith("data: ")) {
-                val dataVal = cleaned.substring(6).trim()
-                if (dataVal == "[DONE]") break
-                if (dataVal.isEmpty()) continue
-                try {
-                    val chunk = gson.fromJson(dataVal, com.google.gson.JsonObject::class.java)
-                    if (chunk.has("usage") && !chunk.get("usage").isJsonNull) {
+            if (cleaned.isEmpty() || cleaned.startsWith(":")) continue
+            // Tolerate "data:", "data: ", "event:", and bare JSON lines.
+            if (cleaned.startsWith("event:")) continue
+            val dataVal = if (cleaned.startsWith("data:")) cleaned.substring(5).trim() else cleaned
+            if (dataVal == "[DONE]") break
+            if (dataVal.isEmpty()) continue
+            // Server-sent error payloads look like {"error": {...}} without choices.
+            try {
+                val chunk = gson.fromJson(dataVal, com.google.gson.JsonObject::class.java) ?: continue
+                if (chunk.has("error") && !chunk.get("error").isJsonNull) {
+                    val errMsg = try { gson.toJson(chunk.get("error")).take(500) } catch (_: Exception) { "unknown error" }
+                    throw Exception("Zen stream error: $errMsg")
+                }
+                if (chunk.has("usage") && !chunk.get("usage").isJsonNull) {
+                    try {
                         val u = chunk.getAsJsonObject("usage")
-                        usageInput = u.get("prompt_tokens")?.asInt ?: 0
-                        usageOutput = u.get("completion_tokens")?.asInt ?: 0
-                        usageReasoning = u.get("reasoning_tokens")?.asInt ?: 0
+                        usageInput = try { u.get("prompt_tokens")?.asInt } catch (_: Exception) { 0 } ?: 0
+                        usageOutput = try { u.get("completion_tokens")?.asInt } catch (_: Exception) { 0 } ?: 0
+                        usageReasoning = try { u.get("reasoning_tokens")?.asInt } catch (_: Exception) { 0 } ?: 0
+                    } catch (_: Exception) {}
+                }
+                val choices = try { chunk.getAsJsonArray("choices") } catch (_: Exception) { null }
+                if (choices != null && choices.size() > 0) {
+                    val choice = try { choices.get(0).asJsonObject } catch (_: Exception) { continue }
+                    // Support both streaming (delta) and non-streaming (message) shapes.
+                    val delta = try { choice.getAsJsonObject("delta") } catch (_: Exception) { null }
+                        ?: try { choice.getAsJsonObject("message") } catch (_: Exception) { null }
+                        ?: choice
+                    val reasoningText = safeStr(delta, "reasoning_content") ?: safeStr(delta, "reasoning")
+                    if (reasoningText != null) {
+                        accumulatedReasoning.append(reasoningText)
                     }
-                    val choices = chunk.getAsJsonArray("choices")
-                    if (choices != null && choices.size() > 0) {
-                        val choice = choices.get(0).asJsonObject
-                        val delta = choice.getAsJsonObject("delta") ?: continue
-                        val reasoningField = when {
-                            delta.has("reasoning_content") && !delta.get("reasoning_content").isJsonNull -> "reasoning_content"
-                            delta.has("reasoning") && !delta.get("reasoning").isJsonNull -> "reasoning"
-                            else -> null
-                        }
-                        if (reasoningField != null) {
-                            val t = delta.get(reasoningField).asString
-                            accumulatedReasoning.append(t)
-                            if (!startedReasoning) {
-                                startedReasoning = true
-                                onToken("<think>")
-                            }
-                            onToken(t)
-                        }
-                        if (delta.has("content") && !delta.get("content").isJsonNull) {
-                            if (startedReasoning && !endedReasoning) {
-                                endedReasoning = true
-                                onToken("</think>\n\n")
-                            }
-                            val t = delta.get("content").asString
-                            accumulatedContent.append(t)
-                            onToken(t)
-                        }
-                        if (delta.has("tool_calls") && !delta.get("tool_calls").isJsonNull) {
-                            val tcArray = delta.getAsJsonArray("tool_calls") ?: continue
-                            for (i in 0 until tcArray.size()) {
-                                val tcElem = try { tcArray.get(i).asJsonObject } catch (_: Exception) { continue }
-                                val index = try { tcElem.get("index")?.asInt ?: 0 } catch (_: Exception) { 0 }
-                                val builder = toolCallBuilders.getOrPut(index) { ToolCallBuilder() }
-                                if (tcElem.has("id") && !tcElem.get("id").isJsonNull) builder.id = tcElem.get("id").asString
-                                val func = tcElem.getAsJsonObject("function") ?: continue
-                                if (func.has("name") && !func.get("name").isJsonNull) builder.name = func.get("name").asString
-                                if (func.has("arguments") && !func.get("arguments").isJsonNull) builder.arguments.append(func.get("arguments").asString)
-                            }
+                    val contentText = safeStr(delta, "content")
+                    if (contentText != null) {
+                        accumulatedContent.append(contentText)
+                        val curr = accumulatedContent.toString()
+                        val hasEmbeddedToolCallStart = curr.contains("]<]minimax") || curr.contains("<tool_call")
+                        if (!hasEmbeddedToolCallStart) {
+                            try { onToken(contentText) } catch (_: Exception) {}
                         }
                     }
-                } catch (_: Exception) {}
+                    if (delta.has("tool_calls") && !delta.get("tool_calls").isJsonNull) {
+                        val tcArray = try { delta.getAsJsonArray("tool_calls") } catch (_: Exception) { null } ?: continue
+                        for (i in 0 until tcArray.size()) {
+                            val tcElem = try { tcArray.get(i).asJsonObject } catch (_: Exception) { continue }
+                            val index = try { tcElem.get("index")?.asInt ?: 0 } catch (_: Exception) { 0 }
+                            val builder = toolCallBuilders.getOrPut(index) { ToolCallBuilder() }
+                            safeStr(tcElem, "id")?.let { builder.id = it }
+                            val func = try { tcElem.getAsJsonObject("function") } catch (_: Exception) { null } ?: continue
+                            safeStr(func, "name")?.let { if (it.isNotBlank()) builder.name = it }
+                            // arguments may arrive as string chunks OR as JSON object — handle both.
+                            if (func.has("arguments") && !func.get("arguments").isJsonNull) {
+                                val argEl = func.get("arguments")
+                                val argChunk = try {
+                                    if (argEl.isJsonPrimitive) argEl.asString else gson.toJson(argEl)
+                                } catch (_: Exception) { "" }
+                                builder.arguments.append(argChunk)
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Preserve real server errors; ignore only malformed keep-alive chunks.
+                val msg = e.message ?: ""
+                if (msg.startsWith("Zen stream error:")) throw e
             }
         }
-        source.close()
+        try { source.close() } catch (_: Exception) {}
+
+        if (toolCallBuilders.isEmpty()) {
+            val contentStr = accumulatedContent.toString()
+            val rawToolCallPattern = Regex("""(?s)(?:\]<\]minimax\[>\[\s*)?<tool_call>\s*(\{[^<]+\})\s*(?:</tool_call>)?""")
+            val m = rawToolCallPattern.find(contentStr)
+            if (m != null) {
+                val jsonStr = m.groupValues[1].trim()
+                try {
+                    val jsonObj = com.google.gson.JsonParser.parseString(jsonStr).asJsonObject
+                    val name = jsonObj.get("name")?.asString ?: ""
+                    val argsObj = jsonObj.get("arguments")
+                    val argsStr = when {
+                        argsObj == null -> "{}"
+                        argsObj.isJsonPrimitive -> argsObj.asString
+                        else -> gson.toJson(argsObj)
+                    }
+                    if (name.isNotEmpty()) {
+                        val tcId = "call_" + UUID.randomUUID().toString().take(8)
+                        val cleanRemaining = contentStr.removeRange(m.range).trim()
+                        accumulatedContent.setLength(0)
+                        accumulatedContent.append(cleanRemaining)
+                        try { onToolCall(ToolCall(tcId, name, argsStr)) } catch (_: Exception) {}
+                    }
+                } catch (e: Exception) {
+                    AppLogger.w("AIProvider", "Failed to parse raw embedded tool call: ${e.message}")
+                }
+            }
+        }
 
         toolCallBuilders.values.forEach { builder ->
-            if (builder.name.isNotEmpty()) onToolCall(ToolCall(builder.getValidId(), builder.name, builder.arguments.toString()))
+            if (builder.name.isNotEmpty()) {
+                try { onToolCall(ToolCall(builder.getValidId(), builder.name, builder.arguments.toString())) } catch (_: Exception) {}
+            }
         }
         if (usageInput > 0 || usageOutput > 0) {
-            onUsage?.invoke(TurnTokenUsage(usageInput, usageOutput, usageReasoning))
+            try { onUsage?.invoke(TurnTokenUsage(usageInput, usageOutput, usageReasoning)) } catch (_: Exception) {}
         } else if (onUsage != null) {
             val estimatedOutput = (accumulatedContent.length / 4).coerceAtLeast(1)
             val estimatedReasoning = (accumulatedReasoning.length / 4)
             val estimatedInput = ((accumulatedReasoning.length + accumulatedContent.length) / 4 + 120).coerceAtLeast(10)
-            onUsage.invoke(TurnTokenUsage(estimatedInput, estimatedOutput, estimatedReasoning))
+            try { onUsage.invoke(TurnTokenUsage(estimatedInput, estimatedOutput, estimatedReasoning)) } catch (_: Exception) {}
         }
+        // Thinking stripped entirely — complete with answer only, never reasoning.
         onComplete(accumulatedContent.toString())
     }
 }
@@ -950,7 +1020,8 @@ class GeminiProvider : AIProvider {
                                 val fnCallPart = JsonObject().apply {
                                     val fnCallObj = JsonObject().apply {
                                         addProperty("name", tcObj.get("name")?.asString ?: "")
-                                        val argsStr = tcObj.get("arguments")?.asString ?: "{}"
+                                        val argEl = tcObj.get("arguments")
+                                        val argsStr = if (argEl != null && argEl.isJsonPrimitive) argEl.asString else argEl?.toString() ?: "{}"
                                         val argsJson = try { JsonParser.parseString(argsStr).asJsonObject } catch (_: Exception) { JsonObject() }
                                         add("args", argsJson)
                                     }
@@ -1070,7 +1141,7 @@ class GeminiProvider : AIProvider {
                                         val args = fc.getAsJsonObject("args")?.toString() ?: "{}"
                                         val callId = UUID.randomUUID().toString()
                                         onToolCall(ToolCall(callId, name, args))
-                                    } else if (firstPart.has("text") && !firstPart.get("text").isJsonNull) {
+                                    } else if (firstPart.has("text") && !firstPart.get("text").isJsonNull && !firstPart.has("thought") && !firstPart.has("thoughtSignature") && firstPart.get("thought")?.asBoolean != true) {
                                         val text = firstPart.get("text").asString
                                         collectedGeminiText.append(text)
                                         onToken(text)
@@ -1184,12 +1255,13 @@ class GroqProvider : AIProvider {
     override val name = "Groq"
     override val isFree = false
     override val models = listOf(
-        AIModel("llama-3.3-70b-specdec", "Llama 3.3 70B SpecDec (Ultra Fast LPU)", "Groq", true, "8k tokens", "Free"),
         AIModel("llama-3.3-70b-versatile", "Llama 3.3 70B Versatile", "Groq", true, "128k tokens", "Free"),
         AIModel("llama-3.1-8b-instant", "Llama 3.1 8B Instant (Fast LPU)", "Groq", true, "128k tokens", "Free"),
-        AIModel("qwen-2.5-coder-32b", "Qwen 2.5 Coder 32B (LPU)", "Groq", true, "128k tokens", "Free"),
+        AIModel("openai/gpt-oss-120b", "GPT OSS 120B", "Groq", true, "128k tokens", "Free"),
+        AIModel("openai/gpt-oss-20b", "GPT OSS 20B", "Groq", true, "128k tokens", "Free"),
+        AIModel("qwen/qwen3.6-27b", "Qwen 3.6 27B", "Groq", true, "128k tokens", "Free"),
         AIModel("deepseek-r1-distill-llama-70b", "DeepSeek R1 Distill 70B", "Groq", true, "128k tokens", "Free"),
-        AIModel("mixtral-8x7b-32768", "Mixtral 8x7B", "Groq", true, "32k tokens", "Free"),
+        AIModel("groq/compound", "Groq Compound (Agentic)", "Groq", true, "128k tokens", "Free"),
         AIModel("gemma2-9b-it", "Gemma 2 9B", "Groq", true, "8k tokens", "Free")
     )
 
@@ -1205,9 +1277,10 @@ class GroqProvider : AIProvider {
         onError: (Throwable) -> Unit,
         onUsage: ((TurnTokenUsage) -> Unit)?
     ) {
+        val effectiveModel = DecommissionedModels.sanitize(model)
         streamOpenAiCompatible(
             messages = messages,
-            model = model,
+            model = effectiveModel,
             tools = tools,
             apiKey = apiKey,
             baseUrl = resolveBaseUrl(customBaseUrl, "https://api.groq.com/openai/v1"),
@@ -1478,7 +1551,8 @@ class AnthropicProvider : AIProvider {
                                     addProperty("type", "tool_use")
                                     addProperty("id", tcObj.get("id")?.asString ?: "call_$i")
                                     addProperty("name", tcObj.get("name")?.asString ?: "")
-                                    val argsStr = tcObj.get("arguments")?.asString ?: "{}"
+                                    val argEl = tcObj.get("arguments")
+                                    val argsStr = if (argEl != null && argEl.isJsonPrimitive) argEl.asString else argEl?.toString() ?: "{}"
                                     val argsJson = try { JsonParser.parseString(argsStr).asJsonObject } catch (_: Exception) { JsonObject() }
                                     add("input", argsJson)
                                 }
@@ -1820,10 +1894,13 @@ private fun normalizeMessagesForApi(messages: List<Message>): JsonArray {
                                 addProperty("type", "function")
                                 val funcObj = JsonObject().apply {
                                     if (tcObj.has("name") && !tcObj.get("name").isJsonNull) {
-                                        addProperty("name", tcObj.get("name").asString)
+                                        val nameEl = tcObj.get("name")
+                                        addProperty("name", if (nameEl.isJsonPrimitive) nameEl.asString else nameEl.toString())
                                     }
                                     if (tcObj.has("arguments") && !tcObj.get("arguments").isJsonNull) {
-                                        addProperty("arguments", tcObj.get("arguments").asString)
+                                        val argEl = tcObj.get("arguments")
+                                        val argStr = if (argEl.isJsonPrimitive) argEl.asString else gson.toJson(argEl)
+                                        addProperty("arguments", argStr)
                                     }
                                 }
                                 add("function", funcObj)
@@ -1837,7 +1914,8 @@ private fun normalizeMessagesForApi(messages: List<Message>): JsonArray {
                     // This is a text assistant message
                     if (!msg.content.isNullOrEmpty()) {
                         val existingContent = if (targetObj.has("content") && !targetObj.get("content").isJsonNull) {
-                            targetObj.get("content").asString
+                            val cEl = targetObj.get("content")
+                            if (cEl.isJsonPrimitive) cEl.asString else cEl.toString()
                         } else {
                             ""
                         }
@@ -1864,7 +1942,8 @@ private fun normalizeMessagesForApi(messages: List<Message>): JsonArray {
     var idx = 0
     while (idx < messagesArray.size()) {
         val currentObj = messagesArray.get(idx).asJsonObject
-        val role = currentObj.get("role")?.asString ?: ""
+        val rEl = currentObj.get("role")
+        val role = if (rEl != null && rEl.isJsonPrimitive) rEl.asString else rEl?.toString() ?: ""
 
         if (role == "assistant") {
             if (currentObj.has("tool_calls") && !currentObj.has("content")) {
@@ -1880,15 +1959,19 @@ private fun normalizeMessagesForApi(messages: List<Message>): JsonArray {
                 val requiredIds = mutableSetOf<String>()
                 for (k in 0 until toolCalls.size()) {
                     val tc = toolCalls.get(k)?.asJsonObject ?: continue
-                    tc.get("id")?.asString?.let { requiredIds.add(it) }
+                    val idEl = tc.get("id")
+                    val tcId = if (idEl != null && idEl.isJsonPrimitive) idEl.asString else idEl?.toString()
+                    if (!tcId.isNullOrEmpty()) requiredIds.add(tcId)
                 }
 
                 var nextIdx = idx + 1
                 while (nextIdx < messagesArray.size()) {
                     val nextObj = messagesArray.get(nextIdx).asJsonObject
-                    val nextRole = nextObj.get("role")?.asString ?: ""
+                    val nrEl = nextObj.get("role")
+                    val nextRole = if (nrEl != null && nrEl.isJsonPrimitive) nrEl.asString else nrEl?.toString() ?: ""
                     if (nextRole == "tool") {
-                        val toolCallId = nextObj.get("tool_call_id")?.asString ?: ""
+                        val tIdEl = nextObj.get("tool_call_id")
+                        val toolCallId = if (tIdEl != null && tIdEl.isJsonPrimitive) tIdEl.asString else tIdEl?.toString() ?: ""
                         requiredIds.remove(toolCallId)
                         cleanArray.add(nextObj)
                         nextIdx++
@@ -1933,6 +2016,10 @@ private suspend fun streamOpenAiCompatible(
     withContext(Dispatchers.IO) {
         try {
             val url = "$baseUrl/chat/completions"
+            val effectiveModel = DecommissionedModels.sanitize(model)
+            if (effectiveModel != model) {
+                ai.deepcode.android.util.AppLogger.w("AIProvider", "Proactively mapped decommissioned model '$model' to '$effectiveModel'")
+            }
 
             val messagesArray = normalizeMessagesForApi(messages)
 
@@ -1947,7 +2034,7 @@ private suspend fun streamOpenAiCompatible(
             for (i in 0 until messagesArray.size()) finalMessages.add(messagesArray.get(i))
 
             val payload = JsonObject()
-            payload.addProperty("model", model)
+            payload.addProperty("model", effectiveModel)
             payload.add("messages", finalMessages)
             payload.addProperty("stream", true)
 
@@ -2005,9 +2092,6 @@ private suspend fun streamOpenAiCompatible(
             val accumulatedContent = StringBuilder()
             val toolCallBuilders = mutableMapOf<Int, ToolCallBuilder>()
 
-            var startedReasoning = false
-            var endedReasoning = false
-
             val call = client.newCall(request)
             coroutineContext[kotlinx.coroutines.Job]?.invokeOnCompletion {
                 call.cancel()
@@ -2016,7 +2100,32 @@ private suspend fun streamOpenAiCompatible(
                 if (!response.isSuccessful) {
                     val errBody = response.body?.string()?.take(1024) ?: ""
                     if (response.code == 429 || errBody.contains("rate_limit", ignoreCase = true) || errBody.contains("quota", ignoreCase = true)) {
-                        throw RateLimitException(model, response.code, "API Error ${response.code}: $errBody")
+                        throw RateLimitException(effectiveModel, response.code, "API Error ${response.code}: $errBody")
+                    }
+                    // Auto-recovery for model_decommissioned (e.g. Groq HTTP 400)
+                    if (response.code == 400 && (errBody.contains("model_decommissioned", ignoreCase = true) || errBody.contains("decommissioned", ignoreCase = true))) {
+                        val replacement = DecommissionedModels.sanitize(effectiveModel)
+                        val finalReplacement = if (replacement != effectiveModel) {
+                            replacement
+                        } else {
+                            if (baseUrl.contains("groq", ignoreCase = true)) "llama-3.3-70b-versatile" else null
+                        }
+                        if (finalReplacement != null && finalReplacement != effectiveModel) {
+                            ai.deepcode.android.util.AppLogger.w("AIProvider", "Model '$effectiveModel' decommissioned (HTTP 400). Transparently retrying with '$finalReplacement'...")
+                            streamOpenAiCompatible(
+                                messages = messages,
+                                model = finalReplacement,
+                                tools = tools,
+                                apiKey = apiKey,
+                                baseUrl = baseUrl,
+                                onToken = onToken,
+                                onToolCall = onToolCall,
+                                onComplete = onComplete,
+                                onError = onError,
+                                onUsage = onUsage
+                            )
+                            return@withContext
+                        }
                     }
                     throw Exception("API Error ${response.code}: $errBody")
                 }
@@ -2029,8 +2138,6 @@ private suspend fun streamOpenAiCompatible(
                         val choice = json.getAsJsonArray("choices")?.firstOrNull()?.asJsonObject
                         val msg = choice?.getAsJsonObject("message")
                         val text = msg?.get("content")?.asString ?: ""
-                        val reasoning = msg?.get("reasoning_content")?.asString ?: msg?.get("reasoning")?.asString ?: ""
-                        if (reasoning.isNotEmpty()) onToken("<think>$reasoning</think>\n\n")
                         if (text.isNotEmpty()) onToken(text)
                         val tcArray = msg?.getAsJsonArray("tool_calls")
                         if (tcArray != null) {
@@ -2083,20 +2190,13 @@ private suspend fun streamOpenAiCompatible(
                                         else -> null
                                     }
                                     if (reasoningField != null) {
-                                        val reasoningToken = delta.get(reasoningField).asString
+                                        val rEl = delta.get(reasoningField)
+                                        val reasoningToken = if (rEl.isJsonPrimitive) rEl.asString else rEl.toString()
                                         accumulatedReasoning.append(reasoningToken)
-                                        if (!startedReasoning) {
-                                            startedReasoning = true
-                                            onToken("<think>")
-                                        }
-                                        onToken(reasoningToken)
                                     }
                                     if (delta.has("content") && !delta.get("content").isJsonNull) {
-                                        if (startedReasoning && !endedReasoning) {
-                                            endedReasoning = true
-                                            onToken("</think>\n\n")
-                                        }
-                                        val contentToken = delta.get("content").asString
+                                        val cEl = delta.get("content")
+                                        val contentToken = if (cEl.isJsonPrimitive) cEl.asString else cEl.toString()
                                         onToken(contentToken)
                                         accumulatedContent.append(contentToken)
                                     }
@@ -2109,15 +2209,19 @@ private suspend fun streamOpenAiCompatible(
                                             val builder = toolCallBuilders.getOrPut(index) { ToolCallBuilder() }
                                             
                                             if (tcElement.has("id") && !tcElement.get("id").isJsonNull) {
-                                                builder.id = tcElement.get("id").asString
+                                                val idEl = tcElement.get("id")
+                                                builder.id = if (idEl.isJsonPrimitive) idEl.asString else idEl.toString()
                                             }
                                             val function = tcElement.getAsJsonObject("function")
                                             if (function != null) {
                                                 if (function.has("name") && !function.get("name").isJsonNull) {
-                                                    builder.name = function.get("name").asString
+                                                    val nameEl = function.get("name")
+                                                    builder.name = if (nameEl.isJsonPrimitive) nameEl.asString else nameEl.toString()
                                                 }
                                                 if (function.has("arguments") && !function.get("arguments").isJsonNull) {
-                                                    builder.arguments.append(function.get("arguments").asString)
+                                                    val argEl = function.get("arguments")
+                                                    val argChunk = if (argEl.isJsonPrimitive) argEl.asString else gson.toJson(argEl)
+                                                    builder.arguments.append(argChunk)
                                                 }
                                             }
                                         }
@@ -2152,414 +2256,6 @@ private suspend fun streamOpenAiCompatible(
     }
 }
 
-private suspend fun streamZenCompatible(
-    messages: List<Message>,
-    model: String,
-    tools: List<Tool>?,
-    apiKey: String,
-    baseUrl: String,
-    httpClient: OkHttpClient = client,
-    onToken: (String) -> Unit,
-    onToolCall: (ToolCall) -> Unit,
-    onComplete: (String) -> Unit,
-    onError: (Throwable) -> Unit,
-    onUsage: ((TurnTokenUsage) -> Unit)? = null
-) {
-    withContext(Dispatchers.IO) {
-        try {
-            val url = "$baseUrl/chat/completions"
-
-            val messagesArray = normalizeMessagesForApi(messages)
-
-            val driveInstr = JsonObject().apply {
-                addProperty("role", "system")
-                addProperty("content", "IMPORTANT: By default, all files you create with write_file are stored to Telegram Drive (cloud). Only use storage='local' when the user explicitly asks to save to their device. When listing files, use .tgdrive path to see cloud-stored files. When a file is not found locally, it is automatically checked on Telegram Drive.")
-            }
-            val finalMessages = JsonArray()
-            finalMessages.add(driveInstr)
-            for (i in 0 until messagesArray.size()) finalMessages.add(messagesArray.get(i))
-
-            val payload = JsonObject()
-            payload.addProperty("model", model)
-            payload.add("messages", finalMessages)
-            payload.addProperty("stream", true)
-
-            if (shouldIncludeTools(messages, tools)) {
-                val toolsArray = JsonArray()
-                for (tool in tools!!) {
-                    val tObj = JsonObject()
-                    tObj.addProperty("type", "function")
-                    
-                    val funcObj = JsonObject()
-                    funcObj.addProperty("name", tool.name)
-                    funcObj.addProperty("description", tool.description)
-                    
-                    val params = JsonObject()
-                    params.addProperty("type", "object")
-                    val properties = JsonObject()
-                    val required = JsonArray()
-                    
-                    val schemaProps = tool.inputSchema["properties"] as? Map<*, *>
-                    schemaProps?.forEach { (k, v) ->
-                        val propKey = k.toString()
-                        val propVal = v as? Map<*, *>
-                        val propObj = JsonObject()
-                        propObj.addProperty("type", (propVal?.get("type") ?: "string").toString())
-                        propObj.addProperty("description", (propVal?.get("description") ?: "").toString())
-                        properties.add(propKey, propObj)
-                        
-                        val isReq = (tool.inputSchema["required"] as? List<*>)?.contains(propKey) ?: false
-                        if (isReq) {
-                            required.add(propKey)
-                        }
-                    }
-                    params.add("properties", properties)
-                    if (required.size() > 0) {
-                        params.add("required", required)
-                    }
-                    
-                    funcObj.add("parameters", params)
-                    tObj.add("function", funcObj)
-                    toolsArray.add(tObj)
-                }
-                payload.add("tools", toolsArray)
-            }
-
-            val requestBody = gson.toJson(payload).toRequestBody("application/json".toMediaType())
-            val requestBuilder = Request.Builder()
-                .url(url)
-                .post(requestBody)
-                .addHeader("Content-Type", "application/json")
-                .addHeader("X-OpenCode-Client", "android/1.0.0")
-
-            val token = apiKey.ifEmpty { "public" }
-            requestBuilder.addHeader("Authorization", "Bearer $token")
-
-            val request = requestBuilder.build()
-
-            val accumulatedReasoning = StringBuilder()
-            val accumulatedContent = StringBuilder()
-            val toolCallBuilders = mutableMapOf<Int, ToolCallBuilder>()
-
-            var startedReasoning = false
-            var endedReasoning = false
-
-            val call = httpClient.newCall(request)
-            coroutineContext[kotlinx.coroutines.Job]?.invokeOnCompletion {
-                call.cancel()
-            }
-            val requestBodyStr = gson.toJson(payload)
-            val loggableBody = requestBodyStr.take(500)
-            call.execute().use { response ->
-                if (!response.isSuccessful) {
-                    val errBody = response.body?.string()?.take(1024) ?: ""
-                    ai.deepcode.android.util.AppLogger.w("AIProvider", "Zen API Error ${response.code}: $errBody | request(truncated): $loggableBody")
-                    if (response.code == 429 || errBody.contains("rate_limit", ignoreCase = true) || errBody.contains("quota", ignoreCase = true)) {
-                        throw RateLimitException("Zen AI", response.code, "Zen API Error ${response.code}: $errBody")
-                    }
-                    throw Exception("Zen API Error ${response.code}: $errBody")
-                }
-                val contentType = response.header("Content-Type") ?: ""
-                val body = response.body ?: throw Exception("Empty response body")
-                if (!contentType.contains("text/event-stream") && !contentType.contains("application/x-ndjson") && !contentType.contains("application/stream+json")) {
-                    val bodyString = body.string().take(1024)
-                    ai.deepcode.android.util.AppLogger.w("AIProvider", "Unexpected content-type: $contentType | body: $bodyString | request(truncated): $loggableBody")
-                    throw Exception("Expected event stream but got: $contentType\nResponse: $bodyString")
-                }
-                val source = body.source()
-                var line: String?
-                var usageInput = 0
-                var usageOutput = 0
-                var usageReasoning = 0
-
-                while (source.readUtf8Line().also { line = it } != null) {
-                    val cleaned = line!!.trim()
-                    if (cleaned.startsWith("data: ")) {
-                        val dataVal = cleaned.substring(6).trim()
-                        if (dataVal == "[DONE]") {
-                            break
-                        }
-                        if (dataVal.isEmpty()) continue
-
-                        try {
-                            val chunk = gson.fromJson(dataVal, JsonObject::class.java)
-                            if (chunk.has("usage") && !chunk.get("usage").isJsonNull) {
-                                val u = chunk.getAsJsonObject("usage")
-                                usageInput = u.get("prompt_tokens")?.asInt ?: 0
-                                usageOutput = u.get("completion_tokens")?.asInt ?: 0
-                                usageReasoning = u.get("reasoning_tokens")?.asInt ?: 0
-                            }
-                            val choices = chunk.getAsJsonArray("choices")
-                            if (choices != null && choices.size() > 0) {
-                                val choice = choices.get(0).asJsonObject
-                                val delta = choice.getAsJsonObject("delta")
-                                if (delta != null) {
-                                    val reasoningField = when {
-                                        delta.has("reasoning_content") && !delta.get("reasoning_content").isJsonNull -> "reasoning_content"
-                                        delta.has("reasoning") && !delta.get("reasoning").isJsonNull -> "reasoning"
-                                        else -> null
-                                    }
-                                    if (reasoningField != null) {
-                                        val reasoningToken = delta.get(reasoningField).asString
-                                        accumulatedReasoning.append(reasoningToken)
-                                        if (!startedReasoning) {
-                                            startedReasoning = true
-                                            onToken("<think>")
-                                        }
-                                        onToken(reasoningToken)
-                                    }
-                                    if (delta.has("content") && !delta.get("content").isJsonNull) {
-                                        if (startedReasoning && !endedReasoning) {
-                                            endedReasoning = true
-                                            onToken("</think>\n\n")
-                                        }
-                                        val contentToken = delta.get("content").asString
-                                        onToken(contentToken)
-                                        accumulatedContent.append(contentToken)
-                                    }
-                                    
-                                    if (delta.has("tool_calls") && !delta.get("tool_calls").isJsonNull) {
-                                        val tcArray = delta.getAsJsonArray("tool_calls") ?: continue
-                                        for (i in 0 until tcArray.size()) {
-                                            val tcElement = try { tcArray.get(i).asJsonObject } catch (_: Exception) { continue }
-                                            val index = try { tcElement.get("index")?.asInt ?: 0 } catch (_: Exception) { 0 }
-                                            val builder = toolCallBuilders.getOrPut(index) { ToolCallBuilder() }
-                                            
-                                            if (tcElement.has("id") && !tcElement.get("id").isJsonNull) {
-                                                builder.id = tcElement.get("id").asString
-                                            }
-                                            val function = tcElement.getAsJsonObject("function")
-                                            if (function != null) {
-                                                if (function.has("name") && !function.get("name").isJsonNull) {
-                                                    builder.name = function.get("name").asString
-                                                }
-                                                if (function.has("arguments") && !function.get("arguments").isJsonNull) {
-                                                    builder.arguments.append(function.get("arguments").asString)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } catch (e: Exception) {
-                            // Ignore
-                        }
-                    }
-                }
-                
-                toolCallBuilders.values.forEach { builder ->
-                    if (builder.name.isNotEmpty()) {
-                        onToolCall(ToolCall(builder.getValidId(), builder.name, builder.arguments.toString()))
-                    }
-                }
-                if (usageInput > 0 || usageOutput > 0) {
-                    onUsage?.invoke(TurnTokenUsage(usageInput, usageOutput, usageReasoning))
-                }
-            }
-            if (startedReasoning && !endedReasoning) {
-                onToken("\n</thought>\n")
-            }
-            onComplete(accumulatedContent.toString())
-        } catch (e: Throwable) {
-            ai.deepcode.android.util.AppLogger.e("AIProvider", "streamZenCompatible failed", e)
-            onError(e)
-        }
-    }
-}
-
-private suspend fun streamZenWithHttpUrlConnection(
-    messages: List<Message>,
-    model: String,
-    tools: List<Tool>?,
-    apiKey: String,
-    baseUrl: String,
-    onToken: (String) -> Unit,
-    onToolCall: (ToolCall) -> Unit,
-    onComplete: (String) -> Unit,
-    onError: (Throwable) -> Unit,
-    onUsage: ((TurnTokenUsage) -> Unit)? = null
-) {
-    withContext(Dispatchers.IO) {
-        try {
-            val url = java.net.URL("$baseUrl/chat/completions")
-            val messagesArray = normalizeMessagesForApi(messages)
-
-            val driveInstr = com.google.gson.JsonObject().apply {
-                addProperty("role", "system")
-                addProperty("content", "IMPORTANT: By default, all files you create with write_file are stored to Telegram Drive (cloud). Only use storage='local' when the user explicitly asks to save to their device. When listing files, use .tgdrive path to see cloud-stored files. When a file is not found locally, it is automatically checked on Telegram Drive.")
-            }
-            val finalMessages = com.google.gson.JsonArray()
-            finalMessages.add(driveInstr)
-            for (i in 0 until messagesArray.size()) finalMessages.add(messagesArray.get(i))
-
-            val payload = com.google.gson.JsonObject()
-            payload.addProperty("model", model)
-            payload.add("messages", finalMessages)
-            payload.addProperty("stream", true)
-
-            if (shouldIncludeTools(messages, tools)) {
-                val toolsArray = com.google.gson.JsonArray()
-                for (tool in tools!!) {
-                    val tObj = com.google.gson.JsonObject()
-                    tObj.addProperty("type", "function")
-
-                    val funcObj = com.google.gson.JsonObject()
-                    funcObj.addProperty("name", tool.name)
-                    funcObj.addProperty("description", tool.description)
-
-                    val params = com.google.gson.JsonObject()
-                    params.addProperty("type", "object")
-                    val properties = com.google.gson.JsonObject()
-                    val required = com.google.gson.JsonArray()
-
-                    val schemaProps = tool.inputSchema["properties"] as? Map<*, *>
-                    schemaProps?.forEach { (k, v) ->
-                        val propKey = k.toString()
-                        val propVal = v as? Map<*, *>
-                        val propObj = com.google.gson.JsonObject()
-                        propObj.addProperty("type", (propVal?.get("type") ?: "string").toString())
-                        propObj.addProperty("description", (propVal?.get("description") ?: "").toString())
-                        properties.add(propKey, propObj)
-
-                        val isReq = (tool.inputSchema["required"] as? List<*>)?.contains(propKey) ?: false
-                        if (isReq) {
-                            required.add(propKey)
-                        }
-                    }
-                    params.add("properties", properties)
-                    if (required.size() > 0) {
-                        params.add("required", required)
-                    }
-
-                    funcObj.add("parameters", params)
-                    tObj.add("function", funcObj)
-                    toolsArray.add(tObj)
-                }
-                payload.add("tools", toolsArray)
-            }
-
-            val requestBody = gson.toJson(payload)
-            val token = apiKey.ifEmpty { "public" }
-
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.doOutput = true
-            conn.doInput = true
-            conn.requestMethod = "POST"
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.setRequestProperty("Authorization", "Bearer $token")
-            conn.setRequestProperty("X-OpenCode-Client", "android/1.0.0")
-            conn.connectTimeout = 30000
-            conn.readTimeout = 60000
-
-            val writer = java.io.OutputStreamWriter(conn.outputStream, "UTF-8")
-            writer.write(requestBody)
-            writer.flush()
-            writer.close()
-
-            val responseCode = conn.responseCode
-            if (responseCode != 200) {
-                val errBody = try { conn.errorStream?.bufferedReader()?.readText()?.take(1024) ?: "" } catch (_: Exception) { "" }
-                ai.deepcode.android.util.AppLogger.w("AIProvider", "Zen API Error $responseCode via HttpURLConnection: $errBody | request(truncated): ${requestBody.take(500)}")
-                throw Exception("Zen API Error $responseCode: $errBody")
-            }
-
-            val accumulatedReasoning = StringBuilder()
-            val accumulatedContent = StringBuilder()
-            val toolCallBuilders = mutableMapOf<Int, ToolCallBuilder>()
-            var startedReasoning = false
-            var endedReasoning = false
-            var usageInput = 0
-            var usageOutput = 0
-            var usageReasoning = 0
-
-            val source = conn.inputStream.source().buffer()
-            var line: String?
-            while (source.readUtf8Line().also { line = it } != null) {
-                val cleaned = line!!.trim()
-                if (cleaned.startsWith("data: ")) {
-                    val dataVal = cleaned.substring(6).trim()
-                    if (dataVal == "[DONE]") break
-                    if (dataVal.isEmpty()) continue
-                    try {
-                        val chunk = gson.fromJson(dataVal, com.google.gson.JsonObject::class.java)
-                        if (chunk.has("usage") && !chunk.get("usage").isJsonNull) {
-                            val u = chunk.getAsJsonObject("usage")
-                            usageInput = u.get("prompt_tokens")?.asInt ?: 0
-                            usageOutput = u.get("completion_tokens")?.asInt ?: 0
-                            usageReasoning = u.get("reasoning_tokens")?.asInt ?: 0
-                        }
-                        val choices = chunk.getAsJsonArray("choices")
-                        if (choices != null && choices.size() > 0) {
-                            val choice = choices.get(0).asJsonObject
-                            val delta = choice.getAsJsonObject("delta")
-                            if (delta != null) {
-                                val reasoningField = when {
-                                    delta.has("reasoning_content") && !delta.get("reasoning_content").isJsonNull -> "reasoning_content"
-                                    delta.has("reasoning") && !delta.get("reasoning").isJsonNull -> "reasoning"
-                                    else -> null
-                                }
-                                if (reasoningField != null) {
-                                    val reasoningToken = delta.get(reasoningField).asString
-                                    accumulatedReasoning.append(reasoningToken)
-                                    if (!startedReasoning) {
-                                        startedReasoning = true
-                                        onToken("<think>")
-                                    }
-                                    onToken(reasoningToken)
-                                }
-                                if (delta.has("content") && !delta.get("content").isJsonNull) {
-                                    if (startedReasoning && !endedReasoning) {
-                                        endedReasoning = true
-                                        onToken("</think>\n\n")
-                                    }
-                                    val contentToken = delta.get("content").asString
-                                    onToken(contentToken)
-                                    accumulatedContent.append(contentToken)
-                                }
-                                if (delta.has("tool_calls") && !delta.get("tool_calls").isJsonNull) {
-                                    val tcArray = delta.getAsJsonArray("tool_calls") ?: continue
-                                    for (i in 0 until tcArray.size()) {
-                                        val tcElement = try { tcArray.get(i).asJsonObject } catch (_: Exception) { continue }
-                                        val index = try { tcElement.get("index")?.asInt ?: 0 } catch (_: Exception) { 0 }
-                                        val builder = toolCallBuilders.getOrPut(index) { ToolCallBuilder() }
-                                        if (tcElement.has("id") && !tcElement.get("id").isJsonNull) {
-                                            builder.id = tcElement.get("id").asString
-                                        }
-                                        val function = tcElement.getAsJsonObject("function")
-                                        if (function != null) {
-                                            if (function.has("name") && !function.get("name").isJsonNull) {
-                                                builder.name = function.get("name").asString
-                                            }
-                                            if (function.has("arguments") && !function.get("arguments").isJsonNull) {
-                                                builder.arguments.append(function.get("arguments").asString)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } catch (_: Exception) { }
-                }
-            }
-            source.close()
-
-            toolCallBuilders.values.forEach { builder ->
-                if (builder.name.isNotEmpty()) {
-                    onToolCall(ToolCall(builder.getValidId(), builder.name, builder.arguments.toString()))
-                }
-            }
-            if (usageInput > 0 || usageOutput > 0) {
-                onUsage?.invoke(TurnTokenUsage(usageInput, usageOutput, usageReasoning))
-            }
-            onComplete(accumulatedContent.toString())
-        } catch (e: Throwable) {
-            ai.deepcode.android.util.AppLogger.e("AIProvider", "streamZenWithHttpUrlConnection failed", e)
-            onError(e)
-        }
-    }
-}
-
-// ==========================================
 // 11. ANTIGRAVITY PROVIDER (Google Cloud Code OAuth)
 // ==========================================
 class AntigravityProvider : AIProvider {
@@ -2791,7 +2487,8 @@ class AntigravityProvider : AIProvider {
                                 val tcObj = toolCallsArray[i].asJsonObject
                                 val id = tcObj.get("id")?.asString ?: ""
                                 val name = tcObj.get("name")?.asString ?: ""
-                                val argsStr = tcObj.get("arguments")?.asString ?: "{}"
+                                val argEl = tcObj.get("arguments")
+                                val argsStr = if (argEl != null && argEl.isJsonPrimitive) argEl.asString else argEl?.toString() ?: "{}"
                                 val args = try { gson.fromJson(argsStr, JsonObject::class.java) } catch (e: Exception) { JsonObject() }
                                 val c = JsonObject().apply {
                                     addProperty("role", "model")
@@ -2895,7 +2592,7 @@ val PROVIDER_BASE_URLS = mapOf(
     "Omniroute" to "http://10.0.2.2:20128/v1",
     "OpenRouter" to "https://openrouter.ai/api/v1",
     "Zen AI" to "https://opencode.ai/zen/v1",
-    "Zen" to "https://api.zenprovider.com/v1",
+    "Zen" to "https://opencode.ai/zen/v1",
     "Zen (Free)" to "https://opencode.ai/zen/v1",
     "Groq" to "https://api.groq.com/openai/v1",
     "Cerebrus" to "https://api.cerebrus.com/v1",
@@ -2918,6 +2615,7 @@ val PROVIDER_BASE_URLS = mapOf(
     "Novita AI" to "https://api.novita.ai/v1",
     "SiliconFlow" to "https://api.siliconflow.cn/v1",
     "Agent Router" to "https://agentrouter.org/v1",
+    "GMI Cloud" to "https://api.gmi-serving.com/v1",
     "Ollama Cloud" to "https://ollama.com/v1",
     "Ollama" to "https://ollama.com/v1",
 )
@@ -2956,19 +2654,76 @@ fun providerStorageId(providerName: String): String = when (providerName) {
     "Novita AI" -> "novita"
     "SiliconFlow" -> "siliconflow"
     "Agent Router" -> "agentrouter"
+    "GMI Cloud" -> "gmi"
     else -> providerName.lowercase().replace(" ", "-")
 }
 
 object ModelCatalog {
     private val _models = MutableStateFlow<Map<String, List<AIModel>>>(emptyMap())
     val models: StateFlow<Map<String, List<AIModel>>> = _models
+    private val gson = com.google.gson.Gson()
 
-    fun setModels(providerName: String, fetchedModels: List<AIModel>) {
-        _models.value = _models.value + (providerName to fetchedModels)
+    fun filterValidModels(models: List<AIModel>?): List<AIModel> {
+        return DecommissionedModels.filterValidModels(models)
     }
 
-    fun clearProvider(providerName: String) {
+    fun loadFromPrefs(prefs: ai.deepcode.android.data.local.EncryptedPrefs) {
+        try {
+            val updated = _models.value.toMutableMap()
+            var changed = false
+            for (provider in AIProviderFactory.providers) {
+                if (!updated.containsKey(provider.name)) {
+                    val raw = prefs.getSetting("cached_models_${provider.name}", "")
+                    if (raw.isNotEmpty()) {
+                        val type = object : com.google.gson.reflect.TypeToken<List<AIModel>>() {}.type
+                        val list: List<AIModel>? = gson.fromJson(raw, type)
+                        val filtered = filterValidModels(list)
+                        if (filtered.isNotEmpty()) {
+                            updated[provider.name] = filtered
+                            changed = true
+                        }
+                    }
+                }
+            }
+            if (changed) {
+                _models.value = updated
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun setModels(providerName: String, fetchedModels: List<AIModel>, prefs: ai.deepcode.android.data.local.EncryptedPrefs? = null) {
+        val filtered = filterValidModels(fetchedModels)
+        _models.value = _models.value + (providerName to filtered)
+        if (prefs != null && filtered.isNotEmpty()) {
+            try {
+                prefs.saveSetting("cached_models_$providerName", gson.toJson(filtered))
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun getModelsForProvider(providerName: String, prefs: ai.deepcode.android.data.local.EncryptedPrefs? = null): List<AIModel> {
+        val inMem = filterValidModels(_models.value[providerName])
+        if (inMem.isNotEmpty()) return inMem
+        if (prefs != null) {
+            val raw = prefs.getSetting("cached_models_$providerName", "")
+            if (raw.isNotEmpty()) {
+                try {
+                    val type = object : com.google.gson.reflect.TypeToken<List<AIModel>>() {}.type
+                    val list: List<AIModel>? = gson.fromJson(raw, type)
+                    val filtered = filterValidModels(list)
+                    if (filtered.isNotEmpty()) {
+                        _models.value = _models.value + (providerName to filtered)
+                        return filtered
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+        return emptyList()
+    }
+
+    fun clearProvider(providerName: String, prefs: ai.deepcode.android.data.local.EncryptedPrefs? = null) {
         _models.value = _models.value - providerName
+        prefs?.saveSetting("cached_models_$providerName", "")
     }
 }
 
@@ -3052,6 +2807,7 @@ suspend fun fetchModels(apiKey: String, baseUrl: String, providerName: String): 
                     val obj = modelsArray.getJSONObject(i)
                     val rawName = obj.optString("name", "")
                     val id = rawName.removePrefix("models/")
+                    if (id.isBlank() || DecommissionedModels.isDecommissioned(id)) continue
                     val displayName = obj.optString("displayName", id)
                     val methods = obj.optJSONArray("supportedGenerationMethods")
                     var supportsGen = false
@@ -3063,7 +2819,7 @@ suspend fun fetchModels(apiKey: String, baseUrl: String, providerName: String): 
                             }
                         }
                     }
-                    if (supportsGen && id.isNotBlank()) {
+                    if (supportsGen) {
                         val isFree = id.contains("flash", ignoreCase = true)
                         val inputTokenLimit = obj.optInt("inputTokenLimit", 0)
                         val ctxStr = if (inputTokenLimit > 0) "${inputTokenLimit / 1000}k tokens" else "1M tokens"
@@ -3083,14 +2839,25 @@ suspend fun fetchModels(apiKey: String, baseUrl: String, providerName: String): 
                     val obj = data.getJSONObject(i)
                     val id = obj.optString("id", "")
                     if (id.isBlank()) continue
+                    // Filter out decommissioned, deprecated, inactive, or shutdown models
+                    if (DecommissionedModels.isJsonModelInactiveOrDecommissioned(obj)) {
+                        AppLogger.d("ModelCatalog", "Skipping decommissioned/inactive model: $id for $providerName")
+                        continue
+                    }
                     val isFree = id.contains("free", ignoreCase = true)
                     val formattedName = formatModelTitle(id)
+                    val ctxInt = obj.optInt("context_window", 0).let { if (it > 0) it else obj.optInt("context_length", 0) }
+                    val ctxStr = if (ctxInt > 0) {
+                        if (ctxInt >= 1000000) "${ctxInt / 1000000}M tokens" else "${ctxInt / 1000}k tokens"
+                    } else {
+                        obj.optString("context_length", "")
+                    }
                     result.add(AIModel(
                         id = id,
                         name = formattedName,
                         provider = providerName,
                         isFree = isFree,
-                        contextWindow = obj.optString("context_length", ""),
+                        contextWindow = ctxStr,
                         badge = if (isFree) "Free" else "Paid"
                     ))
                 }
@@ -3124,6 +2891,7 @@ suspend fun fetchAntigravityModels(oauthToken: String): List<AIModel> = withCont
         val result = mutableListOf<AIModel>()
         for (entry in modelsObj.entrySet()) {
             val modelId = entry.key
+            if (DecommissionedModels.isDecommissioned(modelId)) continue
             val info = entry.value.asJsonObject
             val displayName = info.get("displayName")?.asString ?: modelId
             val maxTokens = info.get("maxTokens")?.asInt ?: 0

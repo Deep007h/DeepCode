@@ -1,15 +1,12 @@
 package ai.deepcode.android.ui
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Token
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,46 +15,82 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ai.deepcode.android.data.local.ModelPriceProvider
 import ai.deepcode.android.data.local.TokenUsageEntity
 import ai.deepcode.android.data.repository.DeepCodeRepository
-import ai.deepcode.android.data.repository.TokenUsageRepository
 import ai.deepcode.android.ui.theme.*
-import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TokenUsageScreen(
     repository: DeepCodeRepository,
     onClose: () -> Unit
 ) {
-    val scope = rememberCoroutineScope()
+    // Trigger backfill so existing zero-cost database sessions are updated with listed model rates
+    LaunchedEffect(Unit) {
+        repository.syncAndBackfillTokenUsage()
+    }
+
     val lifetimeTotals by repository.tokenRepository.observeLifetimeTotals().collectAsStateWithLifecycle(null)
     val allSessions by repository.tokenRepository.observeAllSessions().collectAsStateWithLifecycle(initialValue = emptyList())
-    val recentSessions = allSessions.take(20)
+    val recentSessions = allSessions.take(30)
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text("Token Usage", fontWeight = FontWeight.Bold, color = AppWhite)
-                },
-                navigationIcon = {
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.Default.Close, "Close", tint = AppWhite)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+    // Compute live total cost across all sessions, calculating from listed pricing if DB hasn't backfilled yet
+    val calculatedTotalCost = remember(lifetimeTotals, allSessions) {
+        val dbCost = lifetimeTotals?.totalCost ?: 0.0
+        if (dbCost > 0.0) {
+            dbCost
+        } else {
+            allSessions.sumOf { s ->
+                if (s.costUsd > 0.0) s.costUsd
+                else ModelPriceProvider.calculateTurnCost(
+                    modelId = s.modelId,
+                    inputTokens = s.tokensInput.toInt(),
+                    outputTokens = s.tokensOutput.toInt(),
+                    reasoningTokens = s.tokensReasoning.toInt(),
+                    cacheReadTokens = s.tokensCacheRead.toInt(),
+                    cacheWriteTokens = s.tokensCacheWrite.toInt()
+                )
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(AppScreenBg)
+    ) {
+        // App bar header: exact 56.dp standard bar with zero extra top status bar gap
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onClose) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Close",
+                    tint = AppWhite,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "Token Usage",
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                color = AppWhite
             )
-        },
-        containerColor = Color.Transparent
-    ) { padding ->
+        }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)
+            contentPadding = PaddingValues(top = 4.dp, bottom = 28.dp)
         ) {
             lifetimeTotals?.let { totals ->
                 item {
@@ -71,7 +104,7 @@ fun TokenUsageScreen(
                             Spacer(Modifier.height(12.dp))
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                                 Stat(label = "Total Tokens", value = formatTokenCount(totals.totalTokens))
-                                Stat(label = "Total Cost", value = totals.formattedCost())
+                                Stat(label = "Total Cost", value = formatCost(calculatedTotalCost))
                             }
                             Spacer(Modifier.height(8.dp))
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -99,7 +132,7 @@ fun TokenUsageScreen(
             if (recentSessions.isNotEmpty()) {
                 item {
                     Text(
-                        "Recent Sessions",
+                        text = "Recent Sessions",
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = AppWhite,
@@ -120,6 +153,18 @@ private fun SessionUsageCard(session: TokenUsageEntity) {
     val date = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
         .format(java.util.Date(session.timeCreated))
 
+    // Calculate cost based on model's listed price if session has 0.0
+    val sessionCost = if (session.costUsd > 0.0) session.costUsd else {
+        ModelPriceProvider.calculateTurnCost(
+            modelId = session.modelId,
+            inputTokens = session.tokensInput.toInt(),
+            outputTokens = session.tokensOutput.toInt(),
+            reasoningTokens = session.tokensReasoning.toInt(),
+            cacheReadTokens = session.tokensCacheRead.toInt(),
+            cacheWriteTokens = session.tokensCacheWrite.toInt()
+        )
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = AppSurface),
@@ -135,13 +180,11 @@ private fun SessionUsageCard(session: TokenUsageEntity) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("${formatTokenCount(totalTokens)} total", fontSize = 12.sp, color = AppWhite)
                 Text("${session.turnCount} turns", fontSize = 12.sp, color = AppMuted)
-                Text(session.run { SessionTokenSummary(sessionId, modelId, providerName, tokensInput, tokensOutput, tokensReasoning, tokensCacheRead, tokensCacheWrite, costUsd, turnCount, timeCreated, timeUpdated).formattedCost() }, fontSize = 12.sp, color = AppSuccess)
+                Text(formatCost(sessionCost), fontSize = 12.sp, color = AppSuccess, fontWeight = FontWeight.SemiBold)
             }
         }
     }
 }
-
-private fun SessionTokenSummary(sessionId: String, modelId: String, providerName: String, tokensInput: Long, tokensOutput: Long, tokensReasoning: Long, tokensCacheRead: Long, tokensCacheWrite: Long, costUsd: Double, turnCount: Int, timeCreated: Long, timeUpdated: Long) = ai.deepcode.android.data.local.SessionTokenSummary(sessionId, modelId, providerName, tokensInput, tokensOutput, tokensReasoning, tokensCacheRead, tokensCacheWrite, costUsd, turnCount, timeCreated, timeUpdated)
 
 @Composable
 private fun Stat(label: String, value: String) {
@@ -149,6 +192,13 @@ private fun Stat(label: String, value: String) {
         Text(value, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = AppWhite)
         Text(label, fontSize = 11.sp, color = AppMuted)
     }
+}
+
+private fun formatCost(costUsd: Double): String = when {
+    costUsd <= 0.0 -> "$0.00"
+    costUsd < 0.001 -> "< $0.001"
+    costUsd < 1.0 -> "$%.4f".format(costUsd)
+    else -> "$%.2f".format(costUsd)
 }
 
 private fun formatTokenCount(count: Long): String = when {

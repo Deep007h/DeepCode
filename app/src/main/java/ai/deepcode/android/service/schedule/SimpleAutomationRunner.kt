@@ -820,12 +820,12 @@ class SimpleAutomationRunner(private val context: Context) {
     private data class Resolved(val provider: AIProvider, val modelId: String)
 
     private fun resolveProvider(): Resolved {
-        val modelSetting = securePrefs.getSetting("agent_model", "big-pickle")
+        val modelSetting = securePrefs.getSetting("agent_model", "deepseek-v4-flash-free")
         val providerSetting = securePrefs.getSetting("agent_provider", "Zen AI")
         var provider = AIProviderFactory.providers.firstOrNull { it.name == providerSetting }
             ?: AIProviderFactory.providers.firstOrNull { it.name == "Zen AI" }
             ?: AIProviderFactory.providers.firstOrNull()
-            ?: return Resolved(ai.deepcode.android.data.remote.ZenProvider(), "big-pickle")
+            ?: return Resolved(ai.deepcode.android.data.remote.ZenProvider(), "deepseek-v4-flash-free")
 
         val key = getApiKey(provider)
         if (!provider.isFree && key.isEmpty()) {
@@ -848,6 +848,7 @@ class SimpleAutomationRunner(private val context: Context) {
             "Anthropic" -> securePrefs.getApiKey("anthropic")
             "Mistral AI" -> securePrefs.getApiKey("mistral")
             "Agent Router" -> securePrefs.getApiKey("agentrouter")
+            "GMI Cloud" -> securePrefs.getApiKey("gmi")
             else -> ""
         }
     }
@@ -863,6 +864,7 @@ class SimpleAutomationRunner(private val context: Context) {
             "Anthropic" -> "url_anthropic"
             "Mistral AI" -> "url_mistral"
             "Agent Router" -> "url_agentrouter"
+            "GMI Cloud" -> "url_gmi"
             else -> ""
         }
         val url = securePrefs.getSetting(key, "")

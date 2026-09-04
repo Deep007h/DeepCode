@@ -134,8 +134,8 @@ class AgentRuntime(private val context: Context) {
     }
 
     private val toolCallingModels = setOf(
-        "big-pickle", "deepseek-v4-flash-free", "deepseek-chat", "deepseek-v3", "deepseek-r1",
-        "mimo-v2.5-free", "nemotron-3-ultra-free", "north-mini-code-free",
+        "deepseek-v4-flash-free", "deepseek-chat", "deepseek-v3", "deepseek-r1",
+        "mimo-v2.5-free", "nemotron-3-ultra-free", "nemotron-3.5-lightning-free",
         "llama-3.3-70b-versatile", "llama-3.1-8b-instant",
         "gpt-4o", "gpt-4o-mini", "gpt-4-turbo",
         "claude-3-5-sonnet", "claude-3-haiku", "claude-3-sonnet",
@@ -149,7 +149,7 @@ class AgentRuntime(private val context: Context) {
         if (providers.isEmpty()) throw IllegalStateException("No AI providers configured")
 
         val configuredProviderName = prefs.getSetting("agent_provider", "Zen AI")
-        val configuredModel = prefs.getSetting("agent_model", "big-pickle")
+        val configuredModel = prefs.getSetting("agent_model", "deepseek-v4-flash-free")
 
         fun resolveModelAndKey(provider: ai.deepcode.android.data.remote.AIProvider): Pair<String, String> {
             // Prefer the user's configured model if it supports tool-calling
@@ -228,6 +228,7 @@ class AgentRuntime(private val context: Context) {
             name.contains("Mistral", ignoreCase = true) -> "https://api.mistral.ai/v1"
             name.contains("Ollama", ignoreCase = true) -> "https://ollama.com/v1"
             name.contains("Agent Router", ignoreCase = true) -> "https://agentrouter.org/v1"
+            name.contains("GMI Cloud", ignoreCase = true) -> "https://api.gmi-serving.com/v1"
             else -> "https://api.openai.com/v1"
         }
     }
@@ -245,6 +246,7 @@ class AgentRuntime(private val context: Context) {
             name.contains("Mistral", ignoreCase = true) -> prefs.getApiKey("mistral")
             name.contains("Ollama", ignoreCase = true) -> prefs.getApiKey("ollama")
             name.contains("Agent Router", ignoreCase = true) -> prefs.getApiKey("agentrouter")
+            name.contains("GMI Cloud", ignoreCase = true) -> prefs.getApiKey("gmi")
             else -> ""
         }
     }
@@ -322,7 +324,7 @@ class AgentRuntime(private val context: Context) {
                 val request = Request.Builder()
                     .url(url)
                     .addHeader("Content-Type", "application/json")
-                    .addHeader("X-DeepCode-Client", "android/1.0.0")
+                    .addHeader("X-OpenCode-Client", "android/1.0.0")
                     .addHeader("Authorization", "Bearer $token")
                     .post(bodyStr.toRequestBody("application/json".toMediaType()))
                     .build()

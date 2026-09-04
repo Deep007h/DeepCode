@@ -24,6 +24,21 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.window.DialogWindowProvider
+import android.provider.MediaStore
+import android.os.Environment
+import android.os.Build
+import android.content.ContentValues
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Chat
@@ -63,6 +78,7 @@ import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import ai.deepcode.android.ui.theme.*
+import ai.deepcode.android.ui.chat.StreamingActiveCursor
 
 fun Modifier.gridBackground(
     gridSize: Dp = 22.dp,
@@ -302,7 +318,9 @@ fun IntegrationIcon(
             else -> "${appId.lowercase().replace("_", "")}.com"
         }
     }
-    val finalIconUrl = if (!iconUrl.isNullOrBlank()) iconUrl else "https://logo.clearbit.com/$domain"
+    val finalIconUrl = remember(appId, iconUrl, domain) {
+        if (!iconUrl.isNullOrBlank()) iconUrl else "https://logo.clearbit.com/$domain"
+    }
     val brandColors = remember(appId) {
         when (appId.lowercase()) {
             "gmail" -> Pair(Color(0xFFEA4335), Color(0xFFC5221F))
@@ -349,14 +367,27 @@ fun IntegrationIcon(
         ) {
             Text(initials, color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.3f).sp, fontFamily = FontFamily.Monospace)
         }
-        AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
+        // Remembered request: previously rebuilt on EVERY recomposition, which
+        // restarted Coil's async load and flickered the logo in scrolling lists.
+        val context = LocalContext.current
+        val imageRequest = remember(finalIconUrl) {
+            ImageRequest.Builder(context)
                 .data(finalIconUrl)
                 .crossfade(true)
-                .build(),
+                // Clearbit 404s often; keep initials gradient underneath and
+                // don't flash a blank frame on error.
+                .allowHardware(true)
+                .build()
+        }
+        AsyncImage(
+            model = imageRequest,
             contentDescription = appName,
             modifier = Modifier.matchParentSize(),
-            contentScale = ContentScale.Fit
+            contentScale = ContentScale.Fit,
+            // Null placeholder/error = keep initials visible, no flicker.
+            placeholder = null,
+            error = null,
+            fallback = null
         )
     }
 }
@@ -382,7 +413,21 @@ fun BottomNavBar(
             tabs.forEach { tab ->
                 val isActive = tab.index == activeTab
                 val tintColor = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                val scale = if (isActive) 1.15f else 1.0f
+                // Animated (was instant 1.0f<->1.15f jump via graphicsLayer,
+                // which read as a pop on every tab switch).
+                val scale by androidx.compose.animation.core.animateFloatAsState(
+                    targetValue = if (isActive) 1.15f else 1.0f,
+                    animationSpec = androidx.compose.animation.core.spring(
+                        dampingRatio = 0.75f,
+                        stiffness = 350f
+                    ),
+                    label = "navScale_${tab.index}"
+                )
+                val pillAlpha by androidx.compose.animation.core.animateFloatAsState(
+                    targetValue = if (isActive) 1f else 0f,
+                    animationSpec = androidx.compose.animation.core.tween(180),
+                    label = "navPill_${tab.index}"
+                )
 
                 Column(
                     modifier = Modifier
@@ -395,13 +440,14 @@ fun BottomNavBar(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        if (isActive) {
-                            Box(
-                                modifier = Modifier
-                                    .size(width = 44.dp, height = 28.dp)
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
-                            )
-                        }
+                        // Always occupy pill space (was if(isActive) Box) so
+                        // activating a tab doesn't shift icon position by 28dp.
+                        Box(
+                            modifier = Modifier
+                                .size(width = 44.dp, height = 28.dp)
+                                .graphicsLayer { alpha = pillAlpha }
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
+                        )
 
                         Icon(
                             imageVector = tab.icon,
@@ -811,7 +857,16 @@ fun CodeBlock(code: String, language: String, modifier: Modifier = Modifier) {
     }
 }
 
-data class ParsedLine(val rawLine: String, val leadingSpaces: Int, val trimmedLine: String, val indentDp: Dp, val dotIdx: Int, val isNumberedList: Boolean, val styledText: AnnotatedString)
+data class ParsedLine(
+    val rawLine: String,
+    val leadingSpaces: Int,
+    val trimmedLine: String,
+    val indentDp: Dp,
+    val dotIdx: Int,
+    val isNumberedList: Boolean,
+    val headingLevel: Int,
+    val styledText: AnnotatedString
+)
 
 private val MD_LINK_REGEX = Regex("^\\[([^\\]]+)\\]\\(([^\\)]+)\\)")
 private val MD_IMAGE_REGEX = Regex("""!\[(.*?)\]\((.*?)\)""")
@@ -828,35 +883,102 @@ private val MD_VIDEO_URL_REGEX = Regex("""^https?://\S+\.(mp4|webm|avi|mov|mkv|3
 private val MD_FILE_REGEX = Regex("""\[file:([^\]]+)\]""")
 private val MD_LAYOUT_SELECTOR_REGEX = Regex("""\[layout_selector\]""")
 
+private val RE_HEADING = Regex("""^(#{1,6})\s+(.*)$""")
+private val RE_HEADING_ONLY = Regex("""^#{1,6}$""")
+
+private fun isTableSeparator(line: String): Boolean {
+    val trimmed = line.trim()
+    if (!trimmed.contains("-")) return false
+    val stripped = trimmed.replace("|", "").replace(":", "").replace("-", "").replace(" ", "")
+    return stripped.isEmpty() && trimmed.contains("|")
+}
+
+private fun parseTableRow(raw: String): List<String> {
+    val trimmed = raw.trim()
+    val content = trimmed.removePrefix("|").removeSuffix("|")
+    return content.split(MD_PIPE_REGEX).map { it.trim() }
+}
+
 private fun buildInlineStyledString(text: String, codeBg: Color, codeColor: Color, linkColor: Color): AnnotatedString = buildAnnotatedString {
-    val len = text.length; var i = 0; var isBold = false; var isItalic = false; var isCode = false
+    val len = text.length
+    var i = 0
+    var isBold = false
+    var isItalic = false
+    var isCode = false
+    var isStrike = false
+
+    fun appendStyled(chunk: String) {
+        if (chunk.isEmpty()) return
+        if (!isBold && !isItalic && !isCode && !isStrike) {
+            append(chunk)
+        } else {
+            val style = SpanStyle(
+                fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal,
+                fontStyle = if (isItalic) FontStyle.Italic else FontStyle.Normal,
+                fontFamily = if (isCode) FontFamily.Monospace else null,
+                background = if (isCode) codeBg else Color.Unspecified,
+                color = if (isCode) codeColor else Color.Unspecified,
+                textDecoration = if (isStrike) TextDecoration.LineThrough else TextDecoration.None
+            )
+            withStyle(style) { append(chunk) }
+        }
+    }
+
     while (i < len) {
         when {
-            i + 1 < len && text[i] == '*' && text[i + 1] == '*' -> { isBold = !isBold; i += 2 }
-            text[i] == '*' && (i + 1 >= len || text[i + 1] != '*') -> { isItalic = !isItalic; i += 1 }
-            text[i] == '`' -> { isCode = !isCode; i += 1 }
+            // ***bold+italic***
+            i + 2 < len && text[i] == '*' && text[i + 1] == '*' && text[i + 2] == '*' -> {
+                isBold = !isBold; isItalic = !isItalic; i += 3
+            }
+            // **bold**
+            i + 1 < len && text[i] == '*' && text[i + 1] == '*' -> {
+                isBold = !isBold; i += 2
+            }
+            // __bold__
+            i + 1 < len && text[i] == '_' && text[i + 1] == '_' -> {
+                isBold = !isBold; i += 2
+            }
+            // ~~strike~~
+            i + 1 < len && text[i] == '~' && text[i + 1] == '~' -> {
+                isStrike = !isStrike; i += 2
+            }
+            // *italic* (skip if standalone asterisk surrounded by spaces)
+            text[i] == '*' && !(i > 0 && text[i - 1] == ' ' && i + 1 < len && text[i + 1] == ' ') -> {
+                isItalic = !isItalic; i += 1
+            }
+            // _italic_ (skip if inside variable_name like foo_bar)
+            text[i] == '_' && !(i > 0 && text[i - 1].isLetterOrDigit() && i + 1 < len && text[i + 1].isLetterOrDigit()) -> {
+                isItalic = !isItalic; i += 1
+            }
+            // `inline code`
+            text[i] == '`' -> {
+                isCode = !isCode; i += 1
+            }
+            // [link](url)
             text[i] == '[' -> {
                 val rest = text.substring(i)
                 val linkMatch = MD_LINK_REGEX.find(rest)
                 if (linkMatch != null) {
-                    withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) { append(linkMatch.groupValues[1]) }
+                    withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
+                        append(linkMatch.groupValues[1])
+                    }
                     i += linkMatch.value.length
-                } else { append('['); i += 1 }
+                } else {
+                    appendStyled("[")
+                    i += 1
+                }
             }
             else -> {
                 val start = i
-                while (i < len) { if (text[i] == '*' || text[i] == '`' || text[i] == '[') break; i++ }
-                val chunk = text.substring(start, i)
-                val style = when {
-                    isBold && isCode -> SpanStyle(fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, background = codeBg)
-                    isBold && isItalic -> SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
-                    isItalic && isCode -> SpanStyle(fontStyle = FontStyle.Italic, fontFamily = FontFamily.Monospace, background = codeBg, color = codeColor)
-                    isBold -> SpanStyle(fontWeight = FontWeight.Bold)
-                    isItalic -> SpanStyle(fontStyle = FontStyle.Italic)
-                    isCode -> SpanStyle(fontFamily = FontFamily.Monospace, background = codeBg, color = codeColor)
-                    else -> SpanStyle()
+                // Consume at least 1 character to guarantee forward progress
+                i++
+                // Consume subsequent regular characters until the next potential delimiter
+                while (i < len) {
+                    val c = text[i]
+                    if (c == '*' || c == '_' || c == '~' || c == '`' || c == '[') break
+                    i++
                 }
-                withStyle(style) { append(chunk) }
+                appendStyled(text.substring(start, i))
             }
         }
     }
@@ -868,41 +990,199 @@ private fun parseSingleMarkdownLine(rawLine: String, codeBg: Color, codeColor: C
     val indentDp = (leadingSpaces * 6).dp
     val dotIdx = trimmedLine.indexOf(". ")
     val isNumberedList = dotIdx in 1..4 && trimmedLine.substring(0, dotIdx).all { it.isDigit() }
+
+    val headingMatch = RE_HEADING.find(trimmedLine)
+    val isHeadingInProgress = RE_HEADING_ONLY.matches(trimmedLine)
+    val headingLevel = when {
+        headingMatch != null -> headingMatch.groupValues[1].length
+        isHeadingInProgress -> trimmedLine.length
+        else -> 0
+    }
+
     val contentToStyle = when {
         trimmedLine.startsWith("> ") -> trimmedLine.substring(2)
-        trimmedLine.startsWith("### ") -> trimmedLine.substring(4)
-        trimmedLine.startsWith("## ") -> trimmedLine.substring(3)
-        trimmedLine.startsWith("# ") -> trimmedLine.substring(2)
-        trimmedLine.startsWith("- ") || trimmedLine.startsWith("* ") -> trimmedLine.substring(2)
+        headingMatch != null -> headingMatch.groupValues[2]
+        isHeadingInProgress -> ""
+        trimmedLine.startsWith("- ") || trimmedLine.startsWith("* ") || trimmedLine.startsWith("+ ") -> trimmedLine.substring(2)
+        trimmedLine == "-" || trimmedLine == "*" || trimmedLine == "+" -> ""
         isNumberedList -> trimmedLine.substring(dotIdx + 2)
         else -> trimmedLine
     }
     val styled = buildInlineStyledString(contentToStyle, codeBg, codeColor, linkColor)
-    return ParsedLine(rawLine, leadingSpaces, trimmedLine, indentDp, dotIdx, isNumberedList, styled)
+    return ParsedLine(rawLine, leadingSpaces, trimmedLine, indentDp, dotIdx, isNumberedList, headingLevel, styled)
 }
 
 private val RE_FILE_IDS = Regex("""(sediment://file[_-][a-zA-Z0-9_-]+|file-[a-zA-Z0-9_-]{8,}|file_[a-zA-Z0-9_-]{8,})""")
-private val RE_DIRECT_IMAGE_URLS = Regex("""!\[.*?\]\((https?://[^\)]+)\)""")
+private val RE_DIRECT_IMAGE_URLS = Regex("""!\[.*?\]\(([^\)]+)\)""")
 private val RE_TAG_IMAGE_URLS = Regex("""\[image:([^\]]+)\]""")
-private val RE_STRIP_MD_IMAGE = Regex("""!\[.*?\]\((?:sediment://|file[_-]|https?://).*?\)\n?""")
-private val RE_STRIP_TAG_IMAGE = Regex("""\[image:[^\]]+\\]\n?""")
+private val RE_STRIP_MD_IMAGE = Regex("""!\[.*?\]\([^\)]+\)\n?""")
+private val RE_STRIP_TAG_IMAGE = Regex("""\[image:[^\]]+\]\n?""")
 private val RE_STRIP_SEDIMENT = Regex("""sediment://file[_-][a-zA-Z0-9_-]+""")
 private val RE_STRIP_FILE_DASH = Regex("""file-[a-zA-Z0-9_-]{8,}""")
 private val RE_STRIP_FILE_UNDER = Regex("""file_[a-zA-Z0-9_-]{8,}""")
+
+fun buildStreamingMarkdown(
+    text: String,
+    codeBg: Color,
+    codeColor: Color,
+    linkColor: Color = AppPrimary,
+    textColor: Color = Color.White
+): AnnotatedString = buildAnnotatedString {
+    if (text.isEmpty()) return@buildAnnotatedString
+
+    val clean = if (!text.contains("![") && !text.contains("[image:") && !text.contains("sediment") && !text.contains("file-") && !text.contains("file_")) {
+        text
+    } else {
+        text.replace(RE_STRIP_MD_IMAGE, "")
+            .replace(RE_STRIP_TAG_IMAGE, "")
+            .replace(RE_STRIP_SEDIMENT, "")
+            .replace(RE_STRIP_FILE_DASH, "")
+            .replace(RE_STRIP_FILE_UNDER, "")
+    }
+
+    val lines = clean.lines()
+    val totalLines = lines.size
+    var inCodeFence = false
+
+    for (lineIndex in 0 until totalLines) {
+        val line = lines[lineIndex]
+        val trimmed = line.trimStart()
+        val isLast = lineIndex == totalLines - 1
+
+        if (trimmed.startsWith("```")) {
+            inCodeFence = !inCodeFence
+            if (inCodeFence) {
+                val lang = trimmed.removePrefix("```").trim()
+                if (lang.isNotEmpty()) {
+                    withStyle(SpanStyle(color = codeColor.copy(alpha = 0.7f), fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)) {
+                        append("[$lang]\n")
+                    }
+                }
+            }
+            continue
+        }
+
+        if (inCodeFence) {
+            withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = codeBg, color = codeColor, fontSize = 13.5.sp)) {
+                append(line)
+            }
+            if (!isLast) append("\n")
+            continue
+        }
+
+        val headingMatch = RE_HEADING.find(trimmed)
+        val isHeadingInProgress = RE_HEADING_ONLY.matches(trimmed)
+        if (isHeadingInProgress) {
+            continue
+        }
+        if (headingMatch != null) {
+            val level = headingMatch.groupValues[1].length
+            val title = headingMatch.groupValues[2]
+            val (headingSize, weight) = when (level) {
+                1 -> 22.sp to FontWeight.Bold
+                2 -> 19.sp to FontWeight.Bold
+                3 -> 17.sp to FontWeight.Bold
+                4 -> 15.5.sp to FontWeight.SemiBold
+                else -> 14.5.sp to FontWeight.SemiBold
+            }
+            withStyle(SpanStyle(fontSize = headingSize, fontWeight = weight, color = textColor)) {
+                append(buildInlineStyledString(title, codeBg, codeColor, linkColor))
+            }
+            if (!isLast) append("\n")
+            continue
+        }
+
+        if (trimmed.matches(MD_DIVIDER_REGEX) && trimmed.filter { it != ' ' }.toSet().size == 1) {
+            withStyle(SpanStyle(color = textColor.copy(alpha = 0.3f))) {
+                append("──────────\n")
+            }
+            continue
+        }
+
+        if (isTableSeparator(trimmed) || trimmed == "|-") {
+            continue
+        }
+
+        if (trimmed.startsWith("|") && trimmed.endsWith("|") && trimmed.length > 2) {
+            val cols = parseTableRow(trimmed)
+            withStyle(SpanStyle(fontFamily = FontFamily.Monospace, fontSize = 13.5.sp)) {
+                cols.forEachIndexed { ci, col ->
+                    append(col)
+                    if (ci < cols.size - 1) append(" │ ")
+                }
+            }
+            if (!isLast) append("\n")
+            continue
+        }
+
+        if (trimmed.startsWith("> ")) {
+            withStyle(SpanStyle(fontStyle = FontStyle.Italic, color = textColor.copy(alpha = 0.8f))) {
+                append("▎ ")
+                append(buildInlineStyledString(trimmed.substring(2), codeBg, codeColor, linkColor))
+            }
+            if (!isLast) append("\n")
+            continue
+        }
+
+        if (trimmed.startsWith("- ") || trimmed.startsWith("* ") || trimmed.startsWith("+ ")) {
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = AppPrimary)) {
+                append("• ")
+            }
+            append(buildInlineStyledString(trimmed.substring(2), codeBg, codeColor, linkColor))
+            if (!isLast) append("\n")
+            continue
+        }
+        if (trimmed == "-" || trimmed == "*" || trimmed == "+") {
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = AppPrimary)) {
+                append("• ")
+            }
+            if (!isLast) append("\n")
+            continue
+        }
+
+        val dotIdx = trimmed.indexOf(". ")
+        val isNumberedList = dotIdx in 1..4 && trimmed.substring(0, dotIdx).all { it.isDigit() }
+        if (isNumberedList) {
+            val numPrefix = trimmed.substring(0, dotIdx + 2)
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = AppPrimary)) {
+                append(numPrefix)
+            }
+            append(buildInlineStyledString(trimmed.substring(dotIdx + 2), codeBg, codeColor, linkColor))
+            if (!isLast) append("\n")
+            continue
+        }
+
+        if (trimmed.startsWith("📌 ")) {
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = AppPrimary)) {
+                append(trimmed)
+            }
+            if (!isLast) append("\n")
+            continue
+        }
+
+        val leadingSpaces = line.takeWhile { it == ' ' }.length
+        if (leadingSpaces > 0) {
+            append(" ".repeat(leadingSpaces))
+        }
+        append(buildInlineStyledString(trimmed, codeBg, codeColor, linkColor))
+        if (!isLast) append("\n")
+    }
+}
 
 @Composable
 fun MarkdownText(
     text: String,
     modifier: Modifier = Modifier,
     imageCache: Map<String, ImageBitmap>? = null,
-    onSendSuggestion: ((String) -> Unit)? = null
+    onSendSuggestion: ((String) -> Unit)? = null,
+    isStreaming: Boolean = false
 ) {
     val context = LocalContext.current
     val cleanText = remember(text) { text }
 
     // 1. Extract raw file IDs and image URLs with fast-path check
     val allImages = remember(cleanText) {
-        if (!cleanText.contains("image") && !cleanText.contains("http") && !cleanText.contains("file-") && !cleanText.contains("file_") && !cleanText.contains("sediment")) {
+        if (!cleanText.contains("image") && !cleanText.contains("http") && !cleanText.contains("![") && !cleanText.contains("[image:") && !cleanText.contains("file-") && !cleanText.contains("file_") && !cleanText.contains("sediment")) {
             emptyList()
         } else {
             val fileIds = RE_FILE_IDS.findAll(cleanText).map { it.groupValues[1] }.toList()
@@ -932,11 +1212,14 @@ fun MarkdownText(
     val linkColor = Color(0xFF3B82F6)
     val lines = remember(displayableText) { displayableText.lines() }
     val parsedLines = remember(displayableText, codeBg, codeColor, linkColor) { lines.map { parseSingleMarkdownLine(it, codeBg, codeColor, linkColor) } }
+    // Hoisted: previously remember{} inside `if (allImages.isNotEmpty())`
+    // reset preview state whenever the image list toggled 0<->N during
+    // streaming and violates conditional-remember stability.
+    var selectedPreviewUrl by remember(allImages) { mutableStateOf<String?>(null) }
 
     Column(modifier = modifier) {
-        // 3. Render all images matching chatgpt_app grid/stack layout (54.dp for multi, 110.dp for single)
+        // 3. Render all images matching chatgpt_app grid/stack layout (54.dp for multi, 260.dp for single)
         if (allImages.isNotEmpty()) {
-            var selectedPreviewUrl by remember { mutableStateOf<String?>(null) }
 
             if (allImages.size > 1) {
                 val imageRows = remember(allImages) { allImages.chunked(3) }
@@ -969,7 +1252,7 @@ fun MarkdownText(
                     ) {
                         AuthenticatedImageView(
                             imageUrl = imgUrl,
-                            maxDimension = 110.dp
+                            maxDimension = 260.dp
                         )
                     }
                 }
@@ -979,7 +1262,8 @@ fun MarkdownText(
             if (selectedPreviewUrl != null) {
                 FullScreenImagePreviewDialog(
                     imageUrl = selectedPreviewUrl!!,
-                    onDismiss = { selectedPreviewUrl = null }
+                    onDismiss = { selectedPreviewUrl = null },
+                    onSendSuggestion = onSendSuggestion
                 )
             }
         }
@@ -990,89 +1274,193 @@ fun MarkdownText(
             while (i < parsedLines.size) {
                 val parsed = parsedLines[i]
                 val trimmedLine = parsed.trimmedLine
+                val isLastLine = i == parsedLines.size - 1
 
                 if (trimmedLine.matches(MD_DIVIDER_REGEX) && trimmedLine.filter { it != ' ' }.toSet().size == 1) {
-                HorizontalDivider(
-                    color = AppDivider,
-                    thickness = 1.dp,
-                    modifier = Modifier.padding(vertical = 10.dp)
-                )
-                i++
-                continue
-            }
+                    HorizontalDivider(
+                        color = AppDivider,
+                        thickness = 1.dp,
+                        modifier = Modifier.padding(vertical = 10.dp)
+                    )
+                    if (isStreaming && isLastLine) {
+                        StreamingActiveCursor(color = AppPrimary)
+                    }
+                    i++
+                    continue
+                }
 
-            if (trimmedLine.startsWith("|")) {
-                val tableLines = mutableListOf<String>()
-                var j = i
-                while (j < parsedLines.size && parsedLines[j].trimmedLine.startsWith("|")) {
-                    val raw = lines[j].trimEnd()
-                    if (raw != "|-" && !raw.matches(MD_TABLE_SEP_REGEX)) {
-                        tableLines.add(raw)
+                if (trimmedLine.startsWith("|")) {
+                    val tableLines = mutableListOf<String>()
+                    var j = i
+                    while (j < parsedLines.size && parsedLines[j].trimmedLine.startsWith("|")) {
+                        val raw = lines[j].trimEnd()
+                        if (raw != "|-" && !isTableSeparator(raw)) {
+                            tableLines.add(raw)
+                        }
+                        j++
                     }
-                    j++
-                }
-                if (tableLines.size >= 1) {
-                    val rows = tableLines.map { row ->
-                        row.split(MD_PIPE_REGEX).drop(1).dropLastWhile { it.isBlank() }.map { it.trim() }
-                    }
-                    if (rows.isNotEmpty()) {
-                        val maxCols = rows.maxOfOrNull { it.size } ?: 0
-                        TableCard(
-                            rows = rows,
-                            maxCols = maxCols,
-                            codeBg = codeBg,
-                            codeColor = codeColor,
-                            linkColor = linkColor
-                        )
-                    }
-                }
-                i = j
-            } else {
-                val indentDp = parsed.indentDp; val isNumberedList = parsed.isNumberedList; val dotIdx = parsed.dotIdx; val styledText = parsed.styledText
-                when {
-                    trimmedLine.startsWith("> ") -> {
-                        Text(
-                            styledText,
-                            fontSize = 16.sp,
-                            lineHeight = 25.sp,
-                            color = AppWhite.copy(alpha = 0.75f),
-                            modifier = Modifier
-                                .padding(start = indentDp)
-                                .padding(vertical = 5.dp)
-                                .drawBehind {
-                                    drawLine(color = AppPrimary, start = Offset(0f, 0f), end = Offset(0f, size.height), strokeWidth = 3.dp.toPx())
-                                }
-                                .padding(start = 12.dp)
-                        )
-                    }
-                    trimmedLine.startsWith("### ") -> Text(styledText, fontSize = 18.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold, color = AppWhite, modifier = Modifier.padding(start = indentDp).padding(vertical = 8.dp))
-                    trimmedLine.startsWith("## ") -> Text(styledText, fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, color = AppWhite, modifier = Modifier.padding(start = indentDp).padding(vertical = 10.dp))
-                    trimmedLine.startsWith("# ") -> Text(styledText, fontSize = 23.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, color = AppWhite, modifier = Modifier.padding(start = indentDp).padding(vertical = 12.dp))
-                    trimmedLine.startsWith("- ") || trimmedLine.startsWith("* ") -> Row(modifier = Modifier.padding(start = indentDp).padding(vertical = 5.dp)) {
-                        Text("•  ", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        Text(styledText, fontSize = 16.sp, lineHeight = 25.sp, color = Color.White)
-                    }
-                    isNumberedList -> Row(modifier = Modifier.padding(start = indentDp).padding(vertical = 5.dp)) {
-                        Text(trimmedLine.substring(0, dotIdx + 2), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        Text(styledText, fontSize = 16.sp, lineHeight = 25.sp, color = Color.White)
-                    }
-                    else -> {
-                        if (trimmedLine.isNotEmpty()) {
-                            Text(
-                                styledText,
-                                fontSize = 16.sp,
-                                lineHeight = 25.sp,
-                                color = AppWhite,
-                                modifier = Modifier.padding(start = indentDp).padding(vertical = 5.dp)
+                    if (tableLines.isNotEmpty()) {
+                        val rows = tableLines.map { row -> parseTableRow(row) }
+                        if (rows.isNotEmpty()) {
+                            val maxCols = rows.maxOfOrNull { it.size } ?: 0
+                            TableCard(
+                                rows = rows,
+                                maxCols = maxCols,
+                                codeBg = codeBg,
+                                codeColor = codeColor,
+                                linkColor = linkColor
                             )
-                        } else {
-                            Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
+                    val isTableAtEnd = j >= parsedLines.size
+                    if (isStreaming && isTableAtEnd) {
+                        Box(modifier = Modifier.padding(top = 4.dp)) {
+                            StreamingActiveCursor(color = AppPrimary)
+                        }
+                    }
+                    i = j
+                } else {
+                    val indentDp = parsed.indentDp
+                    val isNumberedList = parsed.isNumberedList
+                    val dotIdx = parsed.dotIdx
+                    val styledText = parsed.styledText
+                    val headingLevel = parsed.headingLevel
+
+                    when {
+                        headingLevel > 0 -> {
+                            if (styledText.isNotEmpty()) {
+                                val (fontSize, lineHeight, fontWeight) = when (headingLevel) {
+                                    1 -> Triple(22.sp, 30.sp, FontWeight.Bold)
+                                    2 -> Triple(19.sp, 26.sp, FontWeight.Bold)
+                                    3 -> Triple(17.sp, 24.sp, FontWeight.Bold)
+                                    4 -> Triple(15.5.sp, 22.sp, FontWeight.SemiBold)
+                                    5 -> Triple(14.5.sp, 21.sp, FontWeight.SemiBold)
+                                    else -> Triple(14.sp, 20.sp, FontWeight.SemiBold)
+                                }
+                                Row(
+                                    modifier = Modifier
+                                        .padding(start = indentDp)
+                                        .padding(vertical = (8 - headingLevel).coerceAtLeast(3).dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        styledText,
+                                        fontSize = fontSize,
+                                        lineHeight = lineHeight,
+                                        fontWeight = fontWeight,
+                                        color = AppWhite
+                                    )
+                                    if (isStreaming && isLastLine) {
+                                        Spacer(Modifier.width(4.dp))
+                                        StreamingActiveCursor(color = AppPrimary)
+                                    }
+                                }
+                            } else if (isStreaming && isLastLine) {
+                                StreamingActiveCursor(color = AppPrimary)
+                            }
+                        }
+                        trimmedLine.startsWith("> ") -> {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    styledText,
+                                    fontSize = 15.sp,
+                                    lineHeight = 23.sp,
+                                    color = AppWhite.copy(alpha = 0.8f),
+                                    modifier = Modifier
+                                        .padding(start = indentDp)
+                                        .padding(vertical = 4.dp)
+                                        .drawBehind {
+                                            drawLine(color = AppPrimary, start = Offset(0f, 0f), end = Offset(0f, size.height), strokeWidth = 3.dp.toPx())
+                                        }
+                                        .padding(start = 12.dp)
+                                )
+                                if (isStreaming && isLastLine) {
+                                    Spacer(Modifier.width(4.dp))
+                                    StreamingActiveCursor(color = AppPrimary)
+                                }
+                            }
+                        }
+                        trimmedLine.startsWith("- ") || trimmedLine.startsWith("* ") || trimmedLine.startsWith("+ ") || trimmedLine == "-" || trimmedLine == "*" || trimmedLine == "+" -> {
+                            Row(
+                                modifier = Modifier.padding(start = indentDp).padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("•  ", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                Text(styledText, fontSize = 15.sp, lineHeight = 23.sp, color = Color.White)
+                                if (isStreaming && isLastLine) {
+                                    Spacer(Modifier.width(4.dp))
+                                    StreamingActiveCursor(color = AppPrimary)
+                                }
+                            }
+                        }
+                        isNumberedList -> {
+                            Row(
+                                modifier = Modifier.padding(start = indentDp).padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(trimmedLine.substring(0, dotIdx + 2), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                Text(styledText, fontSize = 15.sp, lineHeight = 23.sp, color = Color.White)
+                                if (isStreaming && isLastLine) {
+                                    Spacer(Modifier.width(4.dp))
+                                    StreamingActiveCursor(color = AppPrimary)
+                                }
+                            }
+                        }
+                        else -> {
+                            var endJ = i
+                            val batchStyled = buildAnnotatedString {
+                                while (endJ < parsedLines.size) {
+                                    val candidate = parsedLines[endJ]
+                                    val cTrimmed = candidate.trimmedLine
+                                    val isSpecial = candidate.headingLevel > 0 ||
+                                            cTrimmed.startsWith("> ") ||
+                                            cTrimmed.startsWith("- ") || cTrimmed.startsWith("* ") || cTrimmed.startsWith("+ ") ||
+                                            cTrimmed == "-" || cTrimmed == "*" || cTrimmed == "+" ||
+                                            candidate.isNumberedList ||
+                                            cTrimmed.startsWith("|") ||
+                                            (cTrimmed.matches(MD_DIVIDER_REGEX) && cTrimmed.filter { it != ' ' }.toSet().size == 1)
+                                    if (isSpecial) break
+                                    if (endJ > i) append("\n")
+                                    if (candidate.leadingSpaces > 0) {
+                                        append(" ".repeat(candidate.leadingSpaces))
+                                    }
+                                    append(candidate.styledText)
+                                    endJ++
+                                }
+                            }
+                            val isLastBatchLine = endJ >= parsedLines.size
+                            if (batchStyled.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier.padding(start = indentDp).padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        batchStyled,
+                                        fontSize = 15.sp,
+                                        lineHeight = 23.sp,
+                                        color = AppWhite
+                                    )
+                                    if (isStreaming && isLastBatchLine) {
+                                        Spacer(Modifier.width(4.dp))
+                                        StreamingActiveCursor(color = AppPrimary)
+                                    }
+                                }
+                            } else {
+                                if (isStreaming && isLastBatchLine) {
+                                    StreamingActiveCursor(color = AppPrimary)
+                                } else if (trimmedLine.isEmpty()) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                }
+                            }
+                            i = if (endJ > i) endJ else i + 1
+                            continue
+                        }
+                    }
+                    i++
                 }
-                }
-                i++
             }
+        } else if (isStreaming) {
+            StreamingActiveCursor(color = AppPrimary)
         }
     }
 }
@@ -1085,6 +1473,8 @@ private fun TableCard(
     codeColor: Color = Color(0xFFF5A623),
     linkColor: Color = Color(0xFF3B82F6)
 ) {
+    if (rows.isEmpty() || maxCols <= 0) return
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -1095,56 +1485,120 @@ private fun TableCard(
         ),
         shape = RoundedCornerShape(10.dp)
     ) {
-        val scrollState = rememberScrollState()
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(scrollState)
-        ) {
-            Column {
-                rows.forEachIndexed { rowIndex, row ->
-                    val paddedRow = if (row.size < maxCols) row + List(maxCols - row.size) { "" } else row
-                    val isHeader = rowIndex == 0
-                    val rowBg = when {
-                        isHeader -> AppSurfaceVariant
-                        rowIndex % 2 == 1 -> AppCard
-                        else -> AppSurface
-                    }
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val availableWidth = maxWidth
 
-                    Row(
-                        modifier = Modifier.background(rowBg),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        paddedRow.forEachIndexed { colIndex, cell ->
-                            Box(
-                                modifier = Modifier
-                                    .widthIn(min = 130.dp, max = 300.dp)
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                                contentAlignment = Alignment.CenterStart
-                            ) {
-                                Text(
-                                    text = remember(cell, codeBg, codeColor, linkColor) { buildInlineStyledString(cell, codeBg, codeColor, linkColor) },
-                                    fontSize = 14.sp,
-                                    lineHeight = 20.sp,
-                                    fontWeight = if (isHeader) FontWeight.Bold else FontWeight.Normal,
-                                    color = AppWhite
-                                )
-                            }
-                            if (colIndex < maxCols - 1) {
+            // 1. Calculate max character length per column across all rows
+            val colMaxChars = remember(rows, maxCols) {
+                (0 until maxCols).map { c ->
+                    rows.maxOfOrNull { r -> r.getOrNull(c)?.length ?: 0 } ?: 0
+                }
+            }
+
+            // 2. Base width per column according to content length
+            val baseColWidths = remember(colMaxChars, maxCols) {
+                (0 until maxCols).map { c ->
+                    val len = colMaxChars[c]
+                    when {
+                        len > 60 -> 260.dp
+                        len > 35 -> 200.dp
+                        len > 18 -> 150.dp
+                        len > 8 -> 120.dp
+                        else -> 90.dp
+                    }
+                }
+            }
+
+            val dividerWidthTotal = ((maxCols - 1).coerceAtLeast(0) * 1).dp
+            val totalBaseWidth = baseColWidths.fold(0.dp) { acc, d -> acc + d } + dividerWidthTotal
+
+            // 3. Proportional expansion if base widths fit inside availableWidth
+            val colWidths = remember(totalBaseWidth, availableWidth, colMaxChars, maxCols) {
+                if (totalBaseWidth <= availableWidth) {
+                    val usableWidth = availableWidth - dividerWidthTotal
+                    val totalWeight = colMaxChars.map { it.coerceIn(10, 80) }.sum().coerceAtLeast(1)
+                    val calculated = (0 until maxCols).map { c ->
+                        val weight = colMaxChars[c].coerceIn(10, 80)
+                        val proportion = weight.toFloat() / totalWeight
+                        (usableWidth * proportion).coerceAtLeast(baseColWidths[c])
+                    }
+                    val sumCalc = calculated.fold(0.dp) { acc, d -> acc + d }
+                    val diff = usableWidth - sumCalc
+                    calculated.mapIndexed { idx, d ->
+                        if (idx == maxCols - 1) (d + diff).coerceAtLeast(60.dp) else d
+                    }
+                } else {
+                    baseColWidths
+                }
+            }
+
+            val tableWidth = colWidths.fold(0.dp) { acc, d -> acc + d } + dividerWidthTotal
+            val isScrollable = tableWidth > availableWidth
+            val scrollState = rememberScrollState()
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (isScrollable) Modifier.horizontalScroll(scrollState) else Modifier)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .width(tableWidth)
+                        .clip(RoundedCornerShape(10.dp))
+                ) {
+                    rows.forEachIndexed { rowIndex, row ->
+                        val paddedRow = if (row.size < maxCols) {
+                            row + List(maxCols - row.size) { "" }
+                        } else {
+                            row.take(maxCols)
+                        }
+                        val isHeader = rowIndex == 0
+                        val rowBg = when {
+                            isHeader -> AppSurfaceVariant
+                            rowIndex % 2 == 1 -> AppCard
+                            else -> AppSurface
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(rowBg)
+                                .height(IntrinsicSize.Min),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            paddedRow.forEachIndexed { colIndex, cell ->
                                 Box(
                                     modifier = Modifier
-                                        .width(1.dp)
-                                        .height(36.dp)
-                                        .background(AppDivider)
-                                )
+                                        .width(colWidths[colIndex])
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    Text(
+                                        text = remember(cell, codeBg, codeColor, linkColor) {
+                                            buildInlineStyledString(cell, codeBg, codeColor, linkColor)
+                                        },
+                                        fontSize = if (isHeader) 13.5.sp else 13.sp,
+                                        lineHeight = 19.sp,
+                                        fontWeight = if (isHeader) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (isHeader) AppWhite else AppWhite.copy(alpha = 0.92f)
+                                    )
+                                }
+                                if (colIndex < maxCols - 1) {
+                                    Box(
+                                        modifier = Modifier
+                                            .width(1.dp)
+                                            .fillMaxHeight()
+                                            .background(AppDivider)
+                                    )
+                                }
                             }
                         }
-                    }
-                    if (rowIndex < rows.size - 1) {
-                        HorizontalDivider(
-                            color = AppDivider,
-                            thickness = 1.dp
-                        )
+                        if (rowIndex < rows.size - 1) {
+                            HorizontalDivider(
+                                color = AppDivider,
+                                thickness = 1.dp
+                            )
+                        }
                     }
                 }
             }
@@ -1208,6 +1662,11 @@ fun parseMessageContentInternal(content: String, isUser: Boolean): List<MessageC
 
     if (!isUser) {
         remaining = ai.deepcode.android.ui.chat.stripThinkingProcess(remaining, isStreaming = false)
+        if (remaining.startsWith("Error: JsonObject\n\n")) {
+            remaining = remaining.removePrefix("Error: JsonObject\n\n").trim()
+        } else if (remaining.startsWith("Error: JsonObject")) {
+            remaining = remaining.removePrefix("Error: JsonObject").trim()
+        }
     }
 
     if (remaining.startsWith("📌 ")) {
@@ -1870,8 +2329,9 @@ fun AuthenticatedImageView(
     var bitmap by remember(imageUrl) { mutableStateOf<android.graphics.Bitmap?>(null) }
     var isLoading by remember(imageUrl) { mutableStateOf(true) }
     var isError by remember(imageUrl) { mutableStateOf(false) }
+    var retryKey by remember(imageUrl) { mutableIntStateOf(0) }
 
-    LaunchedEffect(imageUrl) {
+    LaunchedEffect(imageUrl, retryKey) {
         isLoading = true
         isError = false
         val fetchedBitmap = loadImageBitmapFromUrl(imageUrl)
@@ -1883,7 +2343,7 @@ fun AuthenticatedImageView(
         isLoading = false
     }
 
-    val (widthDp, heightDp) = remember(bitmap, maxDimension) {
+    val (widthDp, heightDp) = remember(bitmap, maxDimension, isError) {
         if (bitmap != null && bitmap!!.width > 0 && bitmap!!.height > 0) {
             val w = bitmap!!.width.toFloat()
             val h = bitmap!!.height.toFloat()
@@ -1892,16 +2352,18 @@ fun AuthenticatedImageView(
             } else {
                 (maxDimension * (w / h)) to maxDimension
             }
+        } else if (isError) {
+            minOf(maxDimension, 220.dp) to 48.dp
         } else {
-            maxDimension to maxDimension
+            maxDimension to minOf(maxDimension, 160.dp)
         }
     }
 
     Box(
         modifier = modifier
             .then(if (!fillContainer) Modifier.size(width = widthDp, height = heightDp) else Modifier)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF1E202B)),
+            .then(if (!fillContainer) Modifier.clip(RoundedCornerShape(12.dp)) else Modifier)
+            .background(if (fillContainer) Color.Black else Color(0xFF1E202B)),
         contentAlignment = Alignment.Center
     ) {
         if (isLoading) {
@@ -1913,15 +2375,29 @@ fun AuthenticatedImageView(
                 contentScale = if (fillContainer) ContentScale.Fit else ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxSize()
-                    .clip(RoundedCornerShape(8.dp))
+                    .then(if (!fillContainer) Modifier.clip(RoundedCornerShape(12.dp)) else Modifier)
             )
         } else {
-            Icon(
-                imageVector = Icons.Default.Image,
-                contentDescription = "Image Error",
-                tint = Color.Red.copy(alpha = 0.7f),
-                modifier = Modifier.size(if (maxDimension <= 35.dp) 14.dp else 20.dp)
-            )
+            Row(
+                modifier = Modifier
+                    .clickable { retryKey++ }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Retry",
+                    tint = Color(0xFFF5A623),
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = "Image failed • Tap to retry",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.SansSerif
+                )
+            }
         }
     }
 }
@@ -1929,70 +2405,508 @@ fun AuthenticatedImageView(
 @Composable
 fun FullScreenImagePreviewDialog(
     imageUrl: String,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onSendSuggestion: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    var activeActionDialog by remember { mutableStateOf<String?>(null) }
+    var commentText by remember { mutableStateOf("") }
+    var eraseText by remember { mutableStateOf("") }
 
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
+        val view = androidx.compose.ui.platform.LocalView.current
+        androidx.compose.runtime.DisposableEffect(view) {
+            val window = (view.parent as? DialogWindowProvider)?.window
+            if (window != null) {
+                window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK))
+                window.statusBarColor = android.graphics.Color.BLACK
+                window.navigationBarColor = android.graphics.Color.BLACK
+                window.setDimAmount(0f)
+            }
+            onDispose {}
+        }
+
         Surface(
             color = Color.Black,
             modifier = Modifier.fillMaxSize()
         ) {
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+            ) {
+                // Centered Image with Fit scale
                 AuthenticatedImageView(
                     imageUrl = imageUrl,
-                    maxDimension = 360.dp,
+                    maxDimension = 400.dp,
                     fillContainer = true,
                     modifier = Modifier.fillMaxSize()
                 )
 
-                Row(
+                // Top Controls: Floating Pill Toolbar (center), Close button (left), Download button (right)
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(top = 16.dp, start = 12.dp, end = 12.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     IconButton(
                         onClick = onDismiss,
                         modifier = Modifier
-                            .size(40.dp)
+                            .align(Alignment.CenterStart)
+                            .size(36.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF1E202B).copy(alpha = 0.7f))
+                            .background(Color(0x99000000))
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Close Preview",
-                            tint = Color.White
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
 
+                    // Floating Pill Toolbar matching reference image
+                    FullScreenImageActionPill(
+                        onComment = { activeActionDialog = "comment" },
+                        onRemoveBg = {
+                            onSendSuggestion?.invoke("Remove background from this image")
+                            Toast.makeText(context, "Requesting background removal...", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        },
+                        onErase = { activeActionDialog = "erase" },
+                        onResize = { activeActionDialog = "resize" },
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+
+                    var isDownloading by remember { mutableStateOf(false) }
+
                     IconButton(
                         onClick = {
-                            try {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                val clip = android.content.ClipData.newPlainText("Image URL", imageUrl)
-                                clipboard.setPrimaryClip(clip)
-                                Toast.makeText(context, "Saved image URL to clipboard", Toast.LENGTH_SHORT).show()
-                            } catch (_: Exception) {}
+                            if (!isDownloading) {
+                                isDownloading = true
+                                Toast.makeText(context, "Downloading full resolution image...", Toast.LENGTH_SHORT).show()
+                                saveImageToDeviceGallery(context, imageUrl) { success ->
+                                    isDownloading = false
+                                    if (success) {
+                                        Toast.makeText(context, "Saved full resolution image to Pictures/DeepCode", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        Toast.makeText(context, "Failed to save image", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
                         },
                         modifier = Modifier
-                            .size(40.dp)
+                            .align(Alignment.CenterEnd)
+                            .size(36.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF1E202B).copy(alpha = 0.7f))
+                            .background(Color(0x99000000))
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = "Save Image",
-                            tint = Color.White
-                        )
+                        if (isDownloading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = "Download Image",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
+                }
+
+                // Sub-dialogs
+                if (activeActionDialog == "comment") {
+                    AlertDialog(
+                        onDismissRequest = { activeActionDialog = null },
+                        containerColor = Color(0xFF1C1C1E),
+                        titleContentColor = Color.White,
+                        textContentColor = Color.White.copy(alpha = 0.8f),
+                        title = { Text("Comment on Image", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+                        text = {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    "Describe any changes or additions you'd like ChatGPT to make to this image:",
+                                    fontSize = 13.sp,
+                                    color = Color.White.copy(alpha = 0.7f)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                OutlinedTextField(
+                                    value = commentText,
+                                    onValueChange = { commentText = it },
+                                    placeholder = { Text("e.g. Add party hat, make background sunset...", fontSize = 13.sp, color = Color.Gray) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White,
+                                        focusedBorderColor = Color.White,
+                                        unfocusedBorderColor = Color.Gray.copy(alpha = 0.5f)
+                                    ),
+                                    maxLines = 3
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    if (commentText.isNotBlank()) {
+                                        onSendSuggestion?.invoke("For this image: ${commentText.trim()}")
+                                        activeActionDialog = null
+                                        onDismiss()
+                                    }
+                                }
+                            ) {
+                                Text("Send", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { activeActionDialog = null }) {
+                                Text("Cancel", color = Color.Gray)
+                            }
+                        }
+                    )
+                }
+
+                if (activeActionDialog == "erase") {
+                    AlertDialog(
+                        onDismissRequest = { activeActionDialog = null },
+                        containerColor = Color(0xFF1C1C1E),
+                        titleContentColor = Color.White,
+                        textContentColor = Color.White.copy(alpha = 0.8f),
+                        title = { Text("Erase Object", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+                        text = {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    "What item or part would you like to erase from this image?",
+                                    fontSize = 13.sp,
+                                    color = Color.White.copy(alpha = 0.7f)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                OutlinedTextField(
+                                    value = eraseText,
+                                    onValueChange = { eraseText = it },
+                                    placeholder = { Text("e.g. leash, collar, person in background...", fontSize = 13.sp, color = Color.Gray) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White,
+                                        focusedBorderColor = Color.White,
+                                        unfocusedBorderColor = Color.Gray.copy(alpha = 0.5f)
+                                    ),
+                                    maxLines = 2
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    if (eraseText.isNotBlank()) {
+                                        onSendSuggestion?.invoke("Erase the ${eraseText.trim()} from this image")
+                                        activeActionDialog = null
+                                        onDismiss()
+                                    }
+                                }
+                            ) {
+                                Text("Erase", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { activeActionDialog = null }) {
+                                Text("Cancel", color = Color.Gray)
+                            }
+                        }
+                    )
+                }
+
+                if (activeActionDialog == "resize") {
+                    AlertDialog(
+                        onDismissRequest = { activeActionDialog = null },
+                        containerColor = Color(0xFF1C1C1E),
+                        titleContentColor = Color.White,
+                        textContentColor = Color.White.copy(alpha = 0.8f),
+                        title = { Text("Resize Aspect Ratio", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+                        text = {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val ratios = listOf(
+                                    "1:1 (Square)" to "1:1 square",
+                                    "16:9 (Landscape)" to "16:9 landscape",
+                                    "9:16 (Portrait / Story)" to "9:16 vertical",
+                                    "4:3 (Standard)" to "4:3 aspect ratio"
+                                )
+                                ratios.forEach { (label, ratioVal) ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color(0xFF2C2C2E))
+                                            .clickable {
+                                                onSendSuggestion?.invoke("Resize and reframe this image into $ratioVal")
+                                                activeActionDialog = null
+                                                onDismiss()
+                                            }
+                                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(label, color = Color.White, fontSize = 14.sp)
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {},
+                        dismissButton = {
+                            TextButton(onClick = { activeActionDialog = null }) {
+                                Text("Cancel", color = Color.Gray)
+                            }
+                        }
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+fun FullScreenImageActionPill(
+    onComment: () -> Unit,
+    onRemoveBg: () -> Unit,
+    onErase: () -> Unit,
+    onResize: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = Color(0xEB1C1C1E),
+        border = BorderStroke(0.75.dp, Color.White.copy(alpha = 0.22f)),
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            PillActionButton(
+                icon = { CommentPillIcon() },
+                label = "Comment",
+                onClick = onComment
+            )
+
+            PillActionButton(
+                icon = { RemoveBgPillIcon() },
+                label = "Remove BG",
+                onClick = onRemoveBg
+            )
+
+            PillActionButton(
+                icon = { ErasePillIcon() },
+                label = "Erase",
+                onClick = onErase
+            )
+
+            PillActionButton(
+                icon = { ResizePillIcon() },
+                label = "Resize",
+                onClick = onResize
+            )
+        }
+    }
+}
+
+@Composable
+private fun PillActionButton(
+    icon: @Composable () -> Unit,
+    label: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        icon()
+        Text(
+            text = label,
+            color = Color.White,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.Medium,
+            fontFamily = FontFamily.SansSerif
+        )
+    }
+}
+
+@Composable
+fun CommentPillIcon(modifier: Modifier = Modifier) {
+    androidx.compose.foundation.Canvas(modifier = modifier.size(15.dp)) {
+        val w = size.width
+        val h = size.height
+        val stroke = 1.3.dp.toPx()
+
+        val r = w * 0.42f
+        val cx = w * 0.46f
+        val cy = h * 0.46f
+        drawCircle(
+            color = Color.White,
+            radius = r,
+            center = androidx.compose.ui.geometry.Offset(cx, cy),
+            style = Stroke(width = stroke)
+        )
+
+        val path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(cx + r * 0.6f, cy + r * 0.7f)
+            lineTo(w * 0.95f, h * 0.95f)
+            lineTo(cx + r * 0.85f, cy + r * 0.35f)
+        }
+        drawPath(path, color = Color.White, style = Stroke(width = stroke))
+
+        val len = r * 0.52f
+        drawLine(
+            color = Color.White,
+            start = androidx.compose.ui.geometry.Offset(cx - len, cy),
+            end = androidx.compose.ui.geometry.Offset(cx + len, cy),
+            strokeWidth = stroke
+        )
+        drawLine(
+            color = Color.White,
+            start = androidx.compose.ui.geometry.Offset(cx, cy - len),
+            end = androidx.compose.ui.geometry.Offset(cx, cy + len),
+            strokeWidth = stroke
+        )
+    }
+}
+
+@Composable
+fun RemoveBgPillIcon(modifier: Modifier = Modifier) {
+    androidx.compose.foundation.Canvas(modifier = modifier.size(15.dp)) {
+        val w = size.width
+        val h = size.height
+        val stroke = 1.3.dp.toPx()
+
+        drawRoundRect(
+            color = Color.White,
+            topLeft = androidx.compose.ui.geometry.Offset(stroke / 2, stroke / 2),
+            size = androidx.compose.ui.geometry.Size(w - stroke, h - stroke),
+            cornerRadius = CornerRadius(3.dp.toPx()),
+            style = Stroke(width = stroke)
+        )
+
+        drawCircle(
+            color = Color.White,
+            radius = w * 0.22f,
+            center = androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.5f),
+            style = Stroke(width = stroke)
+        )
+
+        drawLine(
+            color = Color.White,
+            start = androidx.compose.ui.geometry.Offset(w * 0.12f, h * 0.32f),
+            end = androidx.compose.ui.geometry.Offset(w * 0.32f, h * 0.12f),
+            strokeWidth = stroke
+        )
+        drawLine(
+            color = Color.White,
+            start = androidx.compose.ui.geometry.Offset(w * 0.68f, h * 0.12f),
+            end = androidx.compose.ui.geometry.Offset(w * 0.88f, h * 0.32f),
+            strokeWidth = stroke
+        )
+        drawLine(
+            color = Color.White,
+            start = androidx.compose.ui.geometry.Offset(w * 0.12f, h * 0.68f),
+            end = androidx.compose.ui.geometry.Offset(w * 0.32f, h * 0.88f),
+            strokeWidth = stroke
+        )
+        drawLine(
+            color = Color.White,
+            start = androidx.compose.ui.geometry.Offset(w * 0.68f, h * 0.88f),
+            end = androidx.compose.ui.geometry.Offset(w * 0.88f, h * 0.68f),
+            strokeWidth = stroke
+        )
+    }
+}
+
+@Composable
+fun ErasePillIcon(modifier: Modifier = Modifier) {
+    androidx.compose.foundation.Canvas(modifier = modifier.size(15.dp)) {
+        val w = size.width
+        val h = size.height
+        val stroke = 1.3.dp.toPx()
+
+        withTransform({
+            rotate(45f, pivot = androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.5f))
+        }) {
+            drawRoundRect(
+                color = Color.White,
+                topLeft = androidx.compose.ui.geometry.Offset(w * 0.24f, h * 0.12f),
+                size = androidx.compose.ui.geometry.Size(w * 0.52f, h * 0.76f),
+                cornerRadius = CornerRadius(2.dp.toPx()),
+                style = Stroke(width = stroke)
+            )
+            drawLine(
+                color = Color.White,
+                start = androidx.compose.ui.geometry.Offset(w * 0.24f, h * 0.58f),
+                end = androidx.compose.ui.geometry.Offset(w * 0.76f, h * 0.58f),
+                strokeWidth = stroke
+            )
+        }
+    }
+}
+
+@Composable
+fun ResizePillIcon(modifier: Modifier = Modifier) {
+    androidx.compose.foundation.Canvas(modifier = modifier.size(15.dp)) {
+        val w = size.width
+        val h = size.height
+        val stroke = 1.3.dp.toPx()
+
+        drawRoundRect(
+            color = Color.White,
+            topLeft = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.22f),
+            size = androidx.compose.ui.geometry.Size(w * 0.56f, h * 0.56f),
+            cornerRadius = CornerRadius(2.dp.toPx()),
+            style = Stroke(width = stroke)
+        )
+
+        drawLine(
+            color = Color.White,
+            start = androidx.compose.ui.geometry.Offset(w * 0.65f, stroke / 2),
+            end = androidx.compose.ui.geometry.Offset(w - stroke / 2, stroke / 2),
+            strokeWidth = stroke
+        )
+        drawLine(
+            color = Color.White,
+            start = androidx.compose.ui.geometry.Offset(w - stroke / 2, stroke / 2),
+            end = androidx.compose.ui.geometry.Offset(w - stroke / 2, h * 0.35f),
+            strokeWidth = stroke
+        )
+
+        drawLine(
+            color = Color.White,
+            start = androidx.compose.ui.geometry.Offset(stroke / 2, h * 0.65f),
+            end = androidx.compose.ui.geometry.Offset(stroke / 2, h - stroke / 2),
+            strokeWidth = stroke
+        )
+        drawLine(
+            color = Color.White,
+            start = androidx.compose.ui.geometry.Offset(stroke / 2, h - stroke / 2),
+            end = androidx.compose.ui.geometry.Offset(w * 0.35f, h - stroke / 2),
+            strokeWidth = stroke
+        )
     }
 }
 
@@ -2009,10 +2923,16 @@ private suspend fun loadImageBitmapFromUrl(imageUrl: String): android.graphics.B
             val decoded = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
             return@withContext android.graphics.BitmapFactory.decodeByteArray(decoded, 0, decoded.size)
         } else if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
-            val req = okhttp3.Request.Builder().url(imageUrl).build()
+            val req = okhttp3.Request.Builder()
+                .url(imageUrl)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile; rv:125.0) Gecko/125.0 Firefox/125.0")
+                .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                .build()
             val client = okhttp3.OkHttpClient.Builder()
-                .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
+                .followRedirects(true)
+                .followSslRedirects(true)
                 .build()
             client.newCall(req).execute().use { resp ->
                 val bytes = resp.body?.bytes()
@@ -2023,4 +2943,88 @@ private suspend fun loadImageBitmapFromUrl(imageUrl: String): android.graphics.B
         }
     } catch (_: Exception) {}
     null
+}
+
+fun saveImageToDeviceGallery(context: Context, imageUrl: String, onComplete: (Boolean) -> Unit) {
+    CoroutineScope(Dispatchers.IO).launch {
+        var success = false
+        try {
+            val pair: Pair<ByteArray?, String> = when {
+                imageUrl.startsWith("file://") -> {
+                    val f = java.io.File(imageUrl.removePrefix("file://"))
+                    if (f.exists()) f.readBytes() to (f.extension.ifBlank { "png" }) else null to "png"
+                }
+                imageUrl.startsWith("/") -> {
+                    val f = java.io.File(imageUrl)
+                    if (f.exists()) f.readBytes() to (f.extension.ifBlank { "png" }) else null to "png"
+                }
+                imageUrl.startsWith("data:image/") -> {
+                    val base64Data = imageUrl.substringAfter("base64,")
+                    val decoded = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+                    val mime = imageUrl.substringAfter("data:image/").substringBefore(";")
+                    decoded to (mime.ifBlank { "png" })
+                }
+                imageUrl.startsWith("http://") || imageUrl.startsWith("https://") -> {
+                    val req = okhttp3.Request.Builder()
+                        .url(imageUrl)
+                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile; rv:125.0) Gecko/125.0 Firefox/125.0")
+                        .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                        .build()
+                    val client = okhttp3.OkHttpClient.Builder()
+                        .connectTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
+                        .readTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
+                        .followRedirects(true)
+                        .followSslRedirects(true)
+                        .build()
+                    val data = client.newCall(req).execute().use { resp ->
+                        if (resp.isSuccessful) resp.body?.bytes() else null
+                    }
+                    val ext = imageUrl.substringAfterLast(".", "png").substringBefore("?").takeIf { it.length in 3..5 } ?: "png"
+                    data to ext
+                }
+                else -> null to "png"
+            }
+
+            val (bytes, ext) = pair
+            if (bytes != null && bytes.isNotEmpty()) {
+                val uri = insertImageBytesToMediaStore(context, bytes, ext)
+                success = uri != null
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            success = false
+        }
+        withContext(Dispatchers.Main) {
+            onComplete(success)
+        }
+    }
+}
+
+private fun insertImageBytesToMediaStore(context: Context, bytes: ByteArray, ext: String): String? {
+    val safeExt = if (ext.startsWith(".")) ext else ".$ext"
+    val values = ContentValues().apply {
+        put(MediaStore.Images.Media.DISPLAY_NAME, "DeepCode_${System.currentTimeMillis()}$safeExt")
+        put(MediaStore.Images.Media.MIME_TYPE, "image/${ext.lowercase().replace("jpg", "jpeg")}")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/DeepCode")
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        } else {
+            val dir = java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "DeepCode")
+            if (!dir.exists()) dir.mkdirs()
+            put(MediaStore.Images.Media.DATA, java.io.File(dir, "DeepCode_${System.currentTimeMillis()}$safeExt").absolutePath)
+        }
+    }
+    val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return null
+    return try {
+        context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: return null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            values.clear()
+            values.put(MediaStore.Images.Media.IS_PENDING, 0)
+            context.contentResolver.update(uri, values, null, null)
+        }
+        uri.toString()
+    } catch (e: Exception) {
+        context.contentResolver.delete(uri, null, null)
+        null
+    }
 }

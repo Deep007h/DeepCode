@@ -66,7 +66,7 @@ fun AutomationsScreen(
     var customCronInput by remember { mutableStateOf("0 * * * *") }
     var newRuleActionPrompt by remember { mutableStateOf("") }
 
-    val categories = listOf("MESSAGING", "CONTENT", "SYSTEM", "DEVELOPER")
+    val categories = listOf("MESSAGING", "CONTENT", "CHATGPT", "SYSTEM", "DEVELOPER")
     val presets = listOf(
         "Every hour" to "0 * * * *",
         "Every 6h" to "0 */6 * * *",
@@ -253,7 +253,26 @@ fun AutomationsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(rule.name, fontWeight = FontWeight.Bold, color = AppWhite, fontSize = 15.sp)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(rule.name, fontWeight = FontWeight.Bold, color = AppWhite, fontSize = 15.sp)
+                                    if (rule.category == "CHATGPT" || rule.templateId == "chatgpt_task") {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(Color(0xFF10A37F).copy(alpha = 0.2f))
+                                                .border(1.dp, Color(0xFF10A37F), RoundedCornerShape(4.dp))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "ChatGPT",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF10A37F)
+                                            )
+                                        }
+                                    }
+                                }
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(rule.description, color = AppMuted, fontSize = 12.sp)
                             }

@@ -9,6 +9,14 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.viewinterop.AndroidView
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.webkit.CookieManager
+import ai.deepcode.android.service.chatgpt.ChatGPTHeadlessBridge
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -49,6 +57,7 @@ data class BrandConfig(
 )
 
 val INTEGRATION_BRANDS = mapOf(
+    "chatgpt" to BrandConfig("GPT", Color(0xFF10A37F), "Headless AI engine for images, docs & automations"),
     "airtable" to BrandConfig("AI", Color(0xFF18BFFF), "Powerful data collaboration"),
     "asana" to BrandConfig("AS", Color(0xFFF06A6A), "Task management platform"),
     "discord" to BrandConfig("DI", Color(0xFF5865F2), "Community communication"),
@@ -114,6 +123,13 @@ fun ConnectionsScreen(
     var gitHubTokenInput by remember { mutableStateOf("") }
     var showWhatsAppQRDialog by remember { mutableStateOf(false) }
     var isAutoResponderEnabled by remember { mutableStateOf(false) }
+
+    var showChatGPTDialog by remember { mutableStateOf(false) }
+    var chatGPTTab by remember { mutableIntStateOf(0) }
+    var chatGPTManualToken by remember { mutableStateOf("") }
+    var isCheckingChatGPTLogin by remember { mutableStateOf(false) }
+    var chatGPTStatusMessage by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
 
     val whatsAppConnected by viewModel.whatsAppConnected.collectAsStateWithLifecycle()
     val whatsAppPhone by viewModel.whatsAppPhone.collectAsStateWithLifecycle()
@@ -349,6 +365,9 @@ fun ConnectionsScreen(
                         .clip(RoundedCornerShape(16.dp))
                         .background(AppCard)
                         .border(1.dp, AppDivider, RoundedCornerShape(16.dp))
+                        .clickable(enabled = connection.appId == "chatgpt") {
+                            showChatGPTDialog = true
+                        }
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -513,6 +532,7 @@ fun ConnectionsScreen(
                                 "telegram" -> showTelegramDialog = true
                                 "notion" -> showNotionDialog = true
                                 "github" -> showGitHubDialog = true
+                                "chatgpt" -> showChatGPTDialog = true
                                 "google_account", "gmail", "google_calendar", "google_drive" -> {
                                     val intent = viewModel.getAccountPickerIntent(item.appId)
                                     accountPickerLauncher.launch(intent)
@@ -736,6 +756,324 @@ fun ConnectionsScreen(
             containerColor = AppSurface,
             shape = RoundedCornerShape(16.dp)
         )
+    }
+
+    // ChatGPT Headless Integration Dialog (Google Sign-In & Token)
+    if (showChatGPTDialog) {
+        Dialog(
+            onDismissRequest = {
+                showChatGPTDialog = false
+                chatGPTStatusMessage = null
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = AppSurface),
+                modifier = Modifier
+                    .fillMaxWidth(0.95f)
+                    .fillMaxHeight(0.85f)
+                    .padding(vertical = 16.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(18.dp)
+                ) {
+                    // Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFF10A37F).copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "GPT",
+                                    color = Color(0xFF10A37F),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "ChatGPT Integration",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = AppWhite
+                                )
+                                Text(
+                                    text = "Headless image & document studio",
+                                    fontSize = 11.sp,
+                                    color = AppMuted
+                                )
+                            }
+                        }
+                        IconButton(onClick = {
+                            showChatGPTDialog = false
+                            chatGPTStatusMessage = null
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = AppMuted
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Tab Selector
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(AppCard)
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (chatGPTTab == 0) Color(0xFF10A37F).copy(alpha = 0.2f) else Color.Transparent)
+                                .border(1.dp, if (chatGPTTab == 0) Color(0xFF10A37F).copy(alpha = 0.6f) else Color.Transparent, RoundedCornerShape(8.dp))
+                                .clickable { chatGPTTab = 0 }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Google / Web Sign In",
+                                fontSize = 12.sp,
+                                fontWeight = if (chatGPTTab == 0) FontWeight.Bold else FontWeight.Medium,
+                                color = if (chatGPTTab == 0) Color(0xFF10A37F) else AppMuted
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (chatGPTTab == 1) Color(0xFF10A37F).copy(alpha = 0.2f) else Color.Transparent)
+                                .border(1.dp, if (chatGPTTab == 1) Color(0xFF10A37F).copy(alpha = 0.6f) else Color.Transparent, RoundedCornerShape(8.dp))
+                                .clickable { chatGPTTab = 1 }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Manual Token",
+                                fontSize = 12.sp,
+                                fontWeight = if (chatGPTTab == 1) FontWeight.Bold else FontWeight.Medium,
+                                color = if (chatGPTTab == 1) Color(0xFF10A37F) else AppMuted
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    if (chatGPTTab == 0) {
+                        // Google / Web Sign-in Tab
+                        Text(
+                            text = "Tap 'Log in' and choose 'Continue with Google'. DeepCode will automatically extract the session token upon sign in.",
+                            fontSize = 12.sp,
+                            color = AppMuted,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+
+                        if (chatGPTStatusMessage != null) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF10A37F).copy(alpha = 0.15f))
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = chatGPTStatusMessage ?: "",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF10A37F),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+
+                        // Embedded WebView with modern mobile UA to bypass Google OAuth disallowed_useragent
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.dp, AppDivider, RoundedCornerShape(12.dp))
+                        ) {
+                            AndroidView(
+                                factory = { ctx ->
+                                    WebView(ctx).apply {
+                                        settings.javaScriptEnabled = true
+                                        settings.domStorageEnabled = true
+                                        settings.setSupportZoom(false)
+                                        // Standard mobile Chrome UA without "wv" or "Version/4.0" to avoid Google OAuth disallowed_useragent error
+                                        settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+
+                                        val cookieManager = CookieManager.getInstance()
+                                        cookieManager.setAcceptCookie(true)
+                                        cookieManager.setAcceptThirdPartyCookies(this, true)
+
+                                        webViewClient = object : WebViewClient() {
+                                            override fun onPageFinished(view: WebView?, url: String?) {
+                                                super.onPageFinished(view, url)
+                                                url?.let { currentUrl ->
+                                                    val cookies = cookieManager.getCookie(currentUrl) ?: ""
+                                                    if (cookies.contains("__Secure-next-auth.session-token")) {
+                                                        if (!isCheckingChatGPTLogin) {
+                                                            isCheckingChatGPTLogin = true
+                                                            chatGPTStatusMessage = "Session detected! Authenticating..."
+                                                            coroutineScope.launch {
+                                                                val bridge = ChatGPTHeadlessBridge.getInstance(ctx)
+                                                                val token = bridge.fetchAccessTokenFromSessionCookie(cookies)
+                                                                if (token != null && token.isNotBlank()) {
+                                                                    viewModel.connectChatGPT(token)
+                                                                    Toast.makeText(ctx, "ChatGPT connected via Google!", Toast.LENGTH_LONG).show()
+                                                                    delay(400)
+                                                                    showChatGPTDialog = false
+                                                                } else {
+                                                                    chatGPTStatusMessage = "Session found. Tap 'Verify Login' once signed in."
+                                                                }
+                                                                isCheckingChatGPTLogin = false
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        loadUrl("https://chatgpt.com/auth/login")
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FilledAppButton(
+                                onClick = {
+                                    val cookieManager = CookieManager.getInstance()
+                                    val cookies = cookieManager.getCookie("https://chatgpt.com") ?: ""
+                                    coroutineScope.launch {
+                                        isCheckingChatGPTLogin = true
+                                        chatGPTStatusMessage = "Checking cookies..."
+                                        val bridge = ChatGPTHeadlessBridge.getInstance(context)
+                                        val token = bridge.fetchAccessTokenFromSessionCookie(cookies)
+                                        if (token != null && token.isNotBlank()) {
+                                            viewModel.connectChatGPT(token)
+                                            Toast.makeText(context, "ChatGPT connected successfully!", Toast.LENGTH_SHORT).show()
+                                            showChatGPTDialog = false
+                                        } else {
+                                            chatGPTStatusMessage = "No active session found. Please complete login or enter token manually."
+                                            Toast.makeText(context, "Sign in not detected yet. Complete login above.", Toast.LENGTH_SHORT).show()
+                                        }
+                                        isCheckingChatGPTLogin = false
+                                    }
+                                },
+                                text = if (isCheckingChatGPTLogin) "Verifying..." else "Verify Login",
+                                backgroundColor = Color(0xFF10A37F),
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            OutlinedAppButton(
+                                onClick = {
+                                    showChatGPTDialog = false
+                                    chatGPTStatusMessage = null
+                                },
+                                text = "Cancel",
+                                color = AppMuted
+                            )
+                        }
+                    } else {
+                        // Manual Token Tab
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = "Paste your ChatGPT access token or '__Secure-next-auth.session-token' cookie below:",
+                                fontSize = 12.sp,
+                                color = AppMuted
+                            )
+
+                            OutlinedTextField(
+                                value = chatGPTManualToken,
+                                onValueChange = { chatGPTManualToken = it },
+                                label = { Text("Access Token or Cookie") },
+                                placeholder = { Text("eyJhbGciOi... or __Secure-next-auth.session-token=...") },
+                                modifier = Modifier.fillMaxWidth(),
+                                maxLines = 4,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = AppWhite,
+                                    unfocusedTextColor = AppWhite,
+                                    focusedBorderColor = Color(0xFF10A37F),
+                                    unfocusedBorderColor = AppDarkGray
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+
+                            Text(
+                                text = "How to find this: In your browser, open chatgpt.com, press F12 > Application > Cookies > copy '__Secure-next-auth.session-token', or copy 'accessToken' from /api/auth/session.",
+                                fontSize = 11.sp,
+                                color = AppMuted
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilledAppButton(
+                                onClick = {
+                                    if (chatGPTManualToken.isNotBlank()) {
+                                        coroutineScope.launch {
+                                            val input = chatGPTManualToken.trim()
+                                            val bridge = ChatGPTHeadlessBridge.getInstance(context)
+                                            val token = bridge.fetchAccessTokenFromSessionCookie(input) ?: input
+                                            viewModel.connectChatGPT(token)
+                                            showChatGPTDialog = false
+                                            chatGPTManualToken = ""
+                                            Toast.makeText(context, "ChatGPT connected successfully!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                text = "Connect",
+                                backgroundColor = Color(0xFF10A37F),
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            OutlinedAppButton(
+                                onClick = {
+                                    showChatGPTDialog = false
+                                    chatGPTStatusMessage = null
+                                },
+                                text = "Cancel",
+                                color = AppMuted
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // WhatsApp QR Code Dialog

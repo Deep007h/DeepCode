@@ -59,8 +59,14 @@ fun DashboardScreen(
 
     val profileName = repository?.securePrefs?.getSetting("profile_name", "Deep Patel") ?: "Deep Patel"
 
-    LaunchedEffect(profileName, sessions.size, messageCount) {
+    LaunchedEffect(profileName) {
         ai.deepcode.android.util.DailyGreetingManager.initialize(context, profileName)
+    }
+    // Token backfill is IO-heavy: run once per repository instance, not on
+    // every message/session count change (previously keyed on
+    // profileName + sessions.size + messageCount, re-running sync on each
+    // new message and retriggering recomposition).
+    LaunchedEffect(repository) {
         repository?.syncAndBackfillTokenUsage()
     }
 

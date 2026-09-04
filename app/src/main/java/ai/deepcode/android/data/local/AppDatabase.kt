@@ -75,6 +75,12 @@ interface SessionDao {
 
     @Query("UPDATE sessions SET isCompacting = :compacting WHERE id = :sessionId")
     suspend fun setCompacting(sessionId: String, compacting: Boolean)
+
+    @Query("SELECT * FROM sessions")
+    suspend fun getAllSessionsList(): List<SessionEntity>
+
+    @Query("UPDATE sessions SET totalCost = :cost WHERE id = :sessionId")
+    suspend fun updateCost(sessionId: String, cost: Double)
 }
 
 @Dao

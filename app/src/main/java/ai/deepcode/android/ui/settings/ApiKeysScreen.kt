@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,10 +36,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ai.deepcode.android.data.remote.AIProviderFactory
 import ai.deepcode.android.data.remote.ModelCatalog
+import ai.deepcode.android.data.remote.OPENAI_PROVIDERS
 import ai.deepcode.android.data.remote.fetchModels
 import ai.deepcode.android.data.remote.providerDefaultBaseUrl
+import ai.deepcode.android.data.remote.providerStorageId
+import ai.deepcode.android.domain.model.AIModel
 import ai.deepcode.android.data.repository.DeepCodeRepository
 import ai.deepcode.android.service.google.GoogleAuthService
 import ai.deepcode.android.ui.theme.*
@@ -106,6 +121,7 @@ private val ALL_PROVIDERS = listOf(
     ProviderDef("hcnsec", "HCNSec", "OpenAI", "apikey"),
     ProviderDef("openadapter", "OpenAdapter", "OpenAI", "apikey"),
     ProviderDef("agentrouter", "AgentRouter", "OpenAI", "apikey"),
+    ProviderDef("gmi", "GMI Cloud", "OpenAI", "apikey"),
     ProviderDef("baseten", "Baseten", "OpenAI", "apikey"),
     ProviderDef("heroku", "Heroku", "OpenAI", "apikey"),
     ProviderDef("maritalk", "MariTalk", "OpenAI", "apikey"),
@@ -608,7 +624,7 @@ fun ApiKeysScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
-            items(filteredProviders, key = { "${it.id}_$refreshVersion" }) { provider ->
+            items(filteredProviders, key = { it.id }) { provider ->
                 when (provider.authType) {
                     "oauth" -> OAuthProviderCard(
                         provider = provider,
@@ -802,6 +818,159 @@ private suspend fun performBrowserOAuth(
     }
 }
 
+// ── Cube Icon & Helpers ───────────────────────────────────────────────────
+
+@Composable
+fun CubeIcon(modifier: Modifier = Modifier, tint: Color = Color.White) {
+    Canvas(modifier = modifier.size(16.dp)) {
+        val w = size.width
+        val h = size.height
+        val cx = w / 2f
+
+        val pTop = Offset(cx, h * 0.12f)
+        val pTR = Offset(w * 0.88f, h * 0.32f)
+        val pBR = Offset(w * 0.88f, h * 0.72f)
+        val pBot = Offset(cx, h * 0.92f)
+        val pBL = Offset(w * 0.12f, h * 0.72f)
+        val pTL = Offset(w * 0.12f, h * 0.32f)
+        val pCenter = Offset(cx, h * 0.52f)
+
+        val stroke = Stroke(
+            width = 1.5.dp.toPx(),
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round
+        )
+
+        val outerPath = Path().apply {
+            moveTo(pTop.x, pTop.y)
+            lineTo(pTR.x, pTR.y)
+            lineTo(pBR.x, pBR.y)
+            lineTo(pBot.x, pBot.y)
+            lineTo(pBL.x, pBL.y)
+            lineTo(pTL.x, pTL.y)
+            close()
+        }
+        drawPath(outerPath, tint, style = stroke)
+
+        drawLine(tint, pCenter, pTop, strokeWidth = stroke.width)
+        drawLine(tint, pCenter, pBL, strokeWidth = stroke.width)
+        drawLine(tint, pCenter, pBR, strokeWidth = stroke.width)
+    }
+}
+
+private fun getProviderDescription(id: String, name: String): String = when (id) {
+    "groq" -> "Ultra-fast inference for open models."
+    "gmi" -> "High-performance GPU cluster inference."
+    "zen" -> "Free & pro developer models with fast streaming."
+    "openai" -> "Industry-leading reasoning, multimodal & GPT models."
+    "anthropic" -> "Claude models with nuanced reasoning & vision."
+    "gemini" -> "Google Gemini multimodality and massive context."
+    "mistral" -> "Open and frontier multilingual models."
+    "cerebras" -> "World-record speed Llama and open models."
+    "deepseek" -> "High intelligence reasoning & code completion."
+    "openrouter" -> "Unified gateway to 100+ AI models."
+    "together" -> "Fast, cost-effective open-source AI cloud."
+    "fireworks" -> "Ultra-fast inference and function calling platform."
+    "deepinfra" -> "Scalable pay-as-you-go inference for open models."
+    "nvidia" -> "NVIDIA accelerated enterprise models & NIM."
+    "perplexity" -> "Real-time web search and cited answer engines."
+    "xai" -> "Grok models with real-time insight and reasoning."
+    "cohere" -> "Enterprise enterprise-grade command models."
+    "sambanova" -> "Ultra-fast inference on specialized chips."
+    "hyperbolic" -> "Decentralized GPU cloud for open models."
+    "github-models" -> "Azure AI and GitHub hosted model endpoints."
+    "novita" -> "Cost-effective GPU cloud inference."
+    "siliconflow" -> "High throughput inference in Asia-Pacific."
+    "agentrouter" -> "Decentralized routing and agent execution."
+    "ollama", "ollamacloud" -> "Local and private open source LLMs."
+    else -> "Fast and secure API inference for $name."
+}
+
+private fun getProviderConsoleUrl(id: String): String = when (id) {
+    "groq" -> "https://console.groq.com"
+    "gmi" -> "https://console.gmicloud.ai"
+    "zen" -> "https://opencode.ai"
+    "openai" -> "https://platform.openai.com"
+    "anthropic" -> "https://console.anthropic.com"
+    "gemini" -> "https://aistudio.google.com"
+    "mistral" -> "https://console.mistral.ai"
+    "cerebras" -> "https://cloud.cerebras.ai"
+    "deepseek" -> "https://platform.deepseek.com"
+    "openrouter" -> "https://openrouter.ai"
+    "together" -> "https://api.together.ai"
+    "fireworks" -> "https://fireworks.ai"
+    "deepinfra" -> "https://deepinfra.com"
+    "nvidia" -> "https://build.nvidia.com"
+    "perplexity" -> "https://www.perplexity.ai"
+    "xai" -> "https://console.x.ai"
+    "cohere" -> "https://dashboard.cohere.com"
+    "sambanova" -> "https://cloud.sambanova.ai"
+    "hyperbolic" -> "https://app.hyperbolic.xyz"
+    "github-models" -> "https://github.com/marketplace/models"
+    "novita" -> "https://novita.ai"
+    "siliconflow" -> "https://cloud.siliconflow.cn"
+    "agentrouter" -> "https://agentrouter.org"
+    "ollama", "ollamacloud" -> "https://ollama.com"
+    else -> "https://console.$id.com"
+}
+
+private fun formatContextTag(contextWindow: String, id: String): String {
+    val lower = contextWindow.lowercase()
+    return when {
+        lower.contains("1m") -> "1M"
+        lower.contains("2m") -> "2M"
+        lower.contains("128k") -> "128K"
+        lower.contains("200k") -> "200K"
+        lower.contains("256k") -> "256K"
+        lower.contains("64k") -> "64K"
+        lower.contains("32k") -> "32K"
+        lower.contains("16k") -> "16K"
+        lower.contains("8k") -> "8K"
+        lower.contains("4k") -> "4K"
+        id.contains("128k", true) -> "128K"
+        id.contains("32k", true) -> "32K"
+        id.contains("64k", true) -> "64K"
+        id.contains("8k", true) -> "8K"
+        id.contains("1m", true) -> "1M"
+        id.contains("2m", true) -> "2M"
+        id.contains("70b", true) -> "128K"
+        id.contains("8b", true) -> "128K"
+        else -> "128K"
+    }
+}
+
+private fun detectModalityTag(name: String, id: String): String {
+    val combined = "$name $id".lowercase()
+    return when {
+        combined.contains("vision") || combined.contains("-vl") || combined.contains("omni") || combined.contains("4o") -> "Vision"
+        combined.contains("coder") || combined.contains("code") -> "Code"
+        combined.contains("image") || combined.contains("imagen") -> "Image"
+        combined.contains("audio") || combined.contains("voice") -> "Audio"
+        else -> "Text"
+    }
+}
+
+private fun getAvailableModelsForProvider(provider: ProviderDef, securePrefs: ai.deepcode.android.data.local.EncryptedPrefs): List<AIModel> {
+    val catalog = ModelCatalog.getModelsForProvider(provider.name, securePrefs)
+    if (catalog.isNotEmpty()) return catalog
+    val factoryProvider = AIProviderFactory.providers.find {
+        it.name.equals(provider.name, ignoreCase = true) ||
+        it.name.contains(provider.name, ignoreCase = true) ||
+        providerStorageId(it.name) == provider.id
+    }
+    if (factoryProvider != null && factoryProvider.models.isNotEmpty()) {
+        return factoryProvider.models
+    }
+    val openAiConf = OPENAI_PROVIDERS.find {
+        it.name.equals(provider.name, ignoreCase = true) ||
+        it.name.contains(provider.name, ignoreCase = true)
+    }
+    if (openAiConf != null && openAiConf.models.isNotEmpty()) {
+        return openAiConf.models
+    }
+    return emptyList()
+}
+
 // ── API Key Card ───────────────────────────────────────────────────────────
 
 @Composable
@@ -821,117 +990,601 @@ private fun ApiKeyProviderCard(
             securePrefs.getApiKeySlot(provider.id, slot)
         }
     }
-    val savedFilter = remember(provider.id) { securePrefs.getSetting("model_filter_${provider.id}", "all") }
 
-    // Mutable state for each slot
     val keys = remember(provider.id) {
         initialKeys.map { mutableStateOf(it) }
     }
-    val keyVisibilities = remember(provider.id) {
-        (1..maxSlots).map { mutableStateOf(false) }
-    }
-    var selectedFilter by remember(provider.id) { mutableStateOf(savedFilter) }
+    var activeSlot by remember(provider.id) { mutableStateOf(1) }
+    var keyVisible by remember(provider.id) { mutableStateOf(false) }
 
-    // How many slots to show: filled count + 1 (for next empty), clamped to max
+    val hasKey = keys.any { it.value.isNotEmpty() }
     val filledCount = keys.count { it.value.isNotEmpty() }
-    var visibleSlots by remember(provider.id) { mutableStateOf((filledCount + 1).coerceIn(1, maxSlots)) }
 
-    val hasKey = keys[0].value.isNotEmpty()
-    val hasChanged = keys.indices.any { keys[it].value != initialKeys[it] } || selectedFilter != savedFilter
+    // Drawer state
+    var showModelsDrawer by remember(provider.id) { mutableStateOf(false) }
+    var modelSearchQuery by remember(provider.id) { mutableStateOf("") }
+    var modelFilter by remember(provider.id) { mutableStateOf("All") }
 
-    val categoryColor = CATEGORY_COLORS[provider.category] ?: AppPrimary
+    // Load models
+    val catalogModels by ModelCatalog.models.collectAsStateWithLifecycle()
+    val availableModels = remember(provider.id, catalogModels) {
+        getAvailableModelsForProvider(provider, securePrefs)
+    }
+
+    // Selected models for chat persistence
+    val savedSelectedStr = remember(provider.id) {
+        securePrefs.getSetting("selected_models_${provider.id}", "")
+    }
+    var selectedModelIds by remember(provider.id) {
+        mutableStateOf(
+            if (savedSelectedStr.isNotBlank()) {
+                savedSelectedStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+            } else {
+                emptySet()
+            }
+        )
+    }
+
+    // Default active model for provider
+    val savedDefaultModelId = remember(provider.id) {
+        securePrefs.getSetting("default_model_${provider.id}", "")
+    }
+    var currentDefaultModelId by remember(provider.id) {
+        mutableStateOf(
+            if (savedDefaultModelId.isNotBlank()) savedDefaultModelId
+            else selectedModelIds.firstOrNull() ?: availableModels.firstOrNull()?.id ?: ""
+        )
+    }
+
+    val selectedModelName = remember(currentDefaultModelId, availableModels) {
+        availableModels.find { it.id == currentDefaultModelId }?.name
+            ?: availableModels.firstOrNull()?.name
+            ?: "Select Model"
+    }
+
+    // Trigger fetchModels in background if key exists and models are empty
+    LaunchedEffect(provider.id, keys[0].value) {
+        if (keys[0].value.isNotEmpty() && availableModels.isEmpty()) {
+            val baseUrl = providerDefaultBaseUrl(provider.name)
+            val fetched = fetchModels(keys[0].value.trim(), baseUrl, provider.name)
+            if (fetched.isNotEmpty()) {
+                ModelCatalog.setModels(provider.name, fetched, securePrefs)
+            }
+        }
+    }
+
+    val categoryColor = CATEGORY_COLORS[provider.category] ?: Color(0xFFF59E0B)
 
     ProviderCardFrame(
         provider = provider,
         isExpanded = isExpanded,
         onToggle = onToggle,
         categoryColor = categoryColor,
-        hasKey = hasKey,
-        keyPreview = if (hasKey) {
-            val k = keys[0].value
-            val keyCount = keys.count { it.value.isNotEmpty() }
-            val preview = if (k.length > 16) "${k.take(6)}...${k.takeLast(4)}" else "\u2022".repeat(k.length.coerceAtMost(12))
-            if (keyCount > 1) "$preview (+${keyCount - 1})" else preview
-        } else null
+        hasKey = hasKey
     ) {
-        HorizontalDivider(color = AppDarkGray, thickness = 1.dp)
+        Spacer(modifier = Modifier.height(2.dp))
 
-        // Render key fields for visible slots
-        for (i in 0 until visibleSlots) {
-            val slotLabel = if (i == 0) "API Key" else "Key ${i + 1}"
-            ApiKeyField(
-                label = slotLabel,
-                value = keys[i].value,
-                onValueChange = { keys[i].value = it },
-                visible = keyVisibilities[i].value,
-                onToggleVisibility = { keyVisibilities[i].value = !keyVisibilities[i].value },
-                onClear = { keys[i].value = "" }
-            )
-        }
-
-        // "Add Key" button if there are more slots available
-        if (visibleSlots < maxSlots) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.Start
-            ) {
+        // ── 1. Top Row: Two Columns (Select Model & API Key) ──
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Left Column: Select Model
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Select Model",
+                        color = Color(0xFFA1A1AA),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "View All >",
+                        color = Color(0xFFF59E0B),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable { showModelsDrawer = !showModelsDrawer }
+                            .padding(vertical = 2.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(categoryColor.copy(alpha = 0.1f))
-                        .border(1.dp, categoryColor.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
-                        .clickable { visibleSlots = (visibleSlots + 1).coerceAtMost(maxSlots) }
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF18181B))
+                        .border(1.dp, Color(0xFF2E2E32), RoundedCornerShape(8.dp))
+                        .clickable { showModelsDrawer = !showModelsDrawer }
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.CenterStart
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            CubeIcon(tint = Color(0xFFA1A1AA), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = selectedModelName,
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                         Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Add Key",
-                            tint = categoryColor,
-                            modifier = Modifier.size(14.dp)
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Expand models",
+                            tint = Color(0xFFA1A1AA),
+                            modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                    }
+                }
+            }
+
+            // Right Column: API Key
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (activeSlot > 1) "API Key ($activeSlot)" else "API Key",
+                        color = Color(0xFFA1A1AA),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    if (filledCount > 1) {
                         Text(
-                            text = "Add Key (${visibleSlots}/$maxSlots)",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = categoryColor
+                            text = "Slot $activeSlot/$filledCount",
+                            color = Color(0xFFF59E0B),
+                            fontSize = 10.sp,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .clickable {
+                                    activeSlot = (activeSlot % filledCount) + 1
+                                }
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val currentKeyValue = keys[activeSlot - 1].value
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF18181B))
+                            .border(1.dp, Color(0xFF2E2E32), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                if (currentKeyValue.isEmpty()) {
+                                    Text(
+                                        text = "Enter API Key...",
+                                        color = Color(0xFF52525B),
+                                        fontSize = 13.sp
+                                    )
+                                }
+                                BasicTextField(
+                                    value = currentKeyValue,
+                                    onValueChange = { newVal ->
+                                        keys[activeSlot - 1].value = newVal
+                                        securePrefs.saveApiKeySlot(provider.id, activeSlot, newVal.trim())
+                                        if (newVal.trim().isNotEmpty() && activeSlot == 1) {
+                                            scope.launch(Dispatchers.IO) {
+                                                try {
+                                                    val baseUrl = providerDefaultBaseUrl(provider.name)
+                                                    val fetched = fetchModels(newVal.trim(), baseUrl, provider.name)
+                                                    if (fetched.isNotEmpty()) {
+                                                        ModelCatalog.setModels(provider.name, fetched, securePrefs)
+                                                    }
+                                                } catch (_: Exception) {}
+                                            }
+                                        }
+                                    },
+                                    singleLine = true,
+                                    visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation('•'),
+                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    ),
+                                    cursorBrush = SolidColor(Color(0xFFF59E0B)),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            IconButton(
+                                onClick = { keyVisible = !keyVisible },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (keyVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = "Toggle key visibility",
+                                    tint = Color(0xFFA1A1AA),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Red Delete Button
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF7F1D1D).copy(alpha = 0.25f))
+                            .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                            .clickable {
+                                keys[activeSlot - 1].value = ""
+                                securePrefs.saveApiKeySlot(provider.id, activeSlot, "")
+                                Toast.makeText(context, "${provider.name} key cleared", Toast.LENGTH_SHORT).show()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete key",
+                            tint = Color(0xFFEF4444),
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
             }
         }
 
-        ModelFilterRow(selectedFilter = selectedFilter, onSelect = { selectedFilter = it }, categoryColor = categoryColor)
+        // ── 2. "Models by [Provider]" Sub-Card ──
+        AnimatedVisibility(visible = showModelsDrawer) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF101012))
+                    .border(1.dp, Color(0xFF242428), RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CubeIcon(tint = Color.White, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Models by ${provider.name}",
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF222226))
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "${availableModels.size} models",
+                                color = Color(0xFFA1A1AA),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = { showModelsDrawer = false },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close models drawer",
+                            tint = Color(0xFFA1A1AA),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
 
-        ActionRow(
-            hasChanged = hasChanged,
-            onCancel = {
-                for (i in keys.indices) {
-                    keys[i].value = initialKeys[i]
-                }
-                selectedFilter = savedFilter
-                visibleSlots = (initialKeys.count { it.isNotEmpty() } + 1).coerceIn(1, maxSlots)
-            },
-            onSave = {
-                for (i in keys.indices) {
-                    securePrefs.saveApiKeySlot(provider.id, i + 1, keys[i].value.trim())
-                }
-                securePrefs.saveSetting("model_filter_${provider.id}", selectedFilter)
-                if (keys[0].value.trim().isNotEmpty()) {
-                    scope.launch {
-                        val baseUrl = providerDefaultBaseUrl(provider.name)
-                        val models = fetchModels(keys[0].value.trim(), baseUrl, provider.name)
-                        if (models.isNotEmpty()) {
-                            ModelCatalog.setModels(provider.name, models)
+                // Search Bar
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF18181B))
+                        .border(1.dp, Color(0xFF2A2A2E), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = Color(0xFF71717A),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (modelSearchQuery.isEmpty()) {
+                                Text(
+                                    text = "Search models...",
+                                    color = Color(0xFF71717A),
+                                    fontSize = 13.sp
+                                )
+                            }
+                            BasicTextField(
+                                value = modelSearchQuery,
+                                onValueChange = { modelSearchQuery = it },
+                                singleLine = true,
+                                textStyle = androidx.compose.ui.text.TextStyle(
+                                    color = Color.White,
+                                    fontSize = 13.sp
+                                ),
+                                cursorBrush = SolidColor(Color(0xFFF59E0B)),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        if (modelSearchQuery.isNotEmpty()) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear search",
+                                tint = Color(0xFF71717A),
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clickable { modelSearchQuery = "" }
+                            )
                         }
                     }
                 }
-                Toast.makeText(context, "${provider.name} keys saved", Toast.LENGTH_SHORT).show()
+
+                // Filter Tabs (All, Configured, Free, Paid)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val tabs = listOf(
+                        "All" to "All (${availableModels.size})",
+                        "Configured" to "Configured",
+                        "Free" to "Free",
+                        "Paid" to "Paid"
+                    )
+                    for ((key, label) in tabs) {
+                        val isSelected = modelFilter.equals(key, ignoreCase = true)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(if (isSelected) Color(0xFFF59E0B) else Color(0xFF1F1F23))
+                                .clickable { modelFilter = key }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) Color.Black else Color(0xFFA1A1AA)
+                            )
+                        }
+                    }
+                }
+
+                // Filtered List
+                val displayedModels = remember(availableModels, modelSearchQuery, modelFilter, selectedModelIds) {
+                    availableModels.filter { model ->
+                        val matchesSearch = modelSearchQuery.isBlank() ||
+                            model.name.contains(modelSearchQuery, ignoreCase = true) ||
+                            model.id.contains(modelSearchQuery, ignoreCase = true)
+                        val matchesFilter = when (modelFilter.lowercase()) {
+                            "configured" -> model.id in selectedModelIds
+                            "free" -> model.isFree || model.badge.equals("free", ignoreCase = true)
+                            "paid" -> !model.isFree && !model.badge.equals("free", ignoreCase = true)
+                            else -> true
+                        }
+                        matchesSearch && matchesFilter
+                    }
+                }
+
+                if (displayedModels.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (modelFilter == "Configured") "No models configured yet. Select models below to show in chat." else "No models matching criteria",
+                            color = Color(0xFF71717A),
+                            fontSize = 12.sp
+                        )
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        displayedModels.take(50).forEach { model ->
+                            val isModelSelected = model.id in selectedModelIds
+                            val isDefaultModel = model.id == currentDefaultModelId
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        val newIds = if (isModelSelected) {
+                                            selectedModelIds - model.id
+                                        } else {
+                                            selectedModelIds + model.id
+                                        }
+                                        selectedModelIds = newIds
+                                        securePrefs.saveSetting(
+                                            "selected_models_${provider.id}",
+                                            newIds.joinToString(",")
+                                        )
+                                        currentDefaultModelId = model.id
+                                        securePrefs.saveSetting("default_model_${provider.id}", model.id)
+                                    }
+                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CubeIcon(tint = Color(0xFFA1A1AA), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = model.name,
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isModelSelected || isDefaultModel) FontWeight.SemiBold else FontWeight.Medium,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+
+                                // Modality Pill
+                                val modality = detectModalityTag(model.name, model.id)
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(Color(0xFF222226))
+                                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        text = modality,
+                                        color = Color(0xFFA1A1AA),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+
+                                // Context Window Pill
+                                val ctxTag = formatContextTag(model.contextWindow, model.id)
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(Color(0xFF222226))
+                                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        text = ctxTag,
+                                        color = Color(0xFFA1A1AA),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                // Selection Circle
+                                Box(
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .border(
+                                            width = 1.5.dp,
+                                            color = if (isModelSelected) Color(0xFFF59E0B) else Color(0xFF52525B),
+                                            shape = CircleShape
+                                        )
+                                        .background(
+                                            color = if (isModelSelected) Color(0xFFF59E0B).copy(alpha = 0.15f) else Color.Transparent,
+                                            shape = CircleShape
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isModelSelected) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(10.dp)
+                                                .background(Color(0xFFF59E0B), CircleShape)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
-        )
+        }
+
+        // ── 3. Footer Row (+ Add Another Key & Encrypted Note) ──
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Add Key Button
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFFF59E0B).copy(alpha = 0.06f))
+                    .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                    .clickable {
+                        val nextSlot = (filledCount + 1).coerceAtMost(maxSlots)
+                        activeSlot = if (activeSlot < filledCount) activeSlot + 1 else nextSlot
+                        Toast.makeText(context, "Switched to Key Slot $activeSlot", Toast.LENGTH_SHORT).show()
+                    }
+                    .padding(horizontal = 12.dp, vertical = 7.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Add Key",
+                        tint = Color(0xFFF59E0B),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Add Another Key (${filledCount.coerceAtLeast(1)}/$maxSlots)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFF59E0B)
+                    )
+                }
+            }
+
+            // Encrypted note
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = null,
+                    tint = Color(0xFF71717A),
+                    modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Keys are encrypted and stored locally.",
+                    fontSize = 11.sp,
+                    color = Color(0xFF71717A)
+                )
+            }
+        }
     }
 }
 
@@ -1391,18 +2044,19 @@ private fun ProviderCardFrame(
     onToggle: () -> Unit,
     categoryColor: Color,
     hasKey: Boolean,
-    keyPreview: String?,
+    keyPreview: String? = null,
     expandedContent: @Composable ColumnScope.() -> Unit
 ) {
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(AppSurface)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF141416))
             .border(
                 1.dp,
-                if (isExpanded) categoryColor.copy(alpha = 0.3f) else AppDarkGray,
-                RoundedCornerShape(12.dp)
+                if (isExpanded) categoryColor.copy(alpha = 0.45f) else Color(0xFF27272A),
+                RoundedCornerShape(14.dp)
             )
             .animateContentSize()
     ) {
@@ -1410,60 +2064,114 @@ private fun ProviderCardFrame(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { onToggle() }
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             ProviderIcon(provider.id, provider.name)
-            Spacer(modifier = Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Text(
                         text = provider.name,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
                         color = AppWhite,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
                     CategoryBadge(provider.category, categoryColor)
                     if (provider.authType == "oauth") {
-                        Spacer(modifier = Modifier.width(4.dp))
                         OAuthBadge()
                     } else if (provider.authType == "webcookie") {
-                        Spacer(modifier = Modifier.width(4.dp))
                         WebBadge()
                     }
                 }
+
+                // Provider description
+                val description = getProviderDescription(provider.id, provider.name)
                 Text(
-                    text = keyPreview ?: "No key set",
-                    fontSize = 11.sp,
-                    color = if (hasKey) Color(0xFF10B981) else AppMuted,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 1,
+                    text = description,
+                    fontSize = 11.5.sp,
+                    color = Color(0xFFA1A1AA),
+                    lineHeight = 15.sp,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+
+                // Console link with ↗ icon
+                val consoleUrl = getProviderConsoleUrl(provider.id)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(consoleUrl))
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        } catch (_: Exception) {
+                            Toast.makeText(context, "Could not open $consoleUrl", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text(
+                        text = consoleUrl,
+                        fontSize = 11.sp,
+                        color = Color(0xFF71717A),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                        contentDescription = "Open console",
+                        tint = Color(0xFF71717A),
+                        modifier = Modifier.size(11.dp)
+                    )
+                }
+
+                if (keyPreview != null) {
+                    Text(
+                        text = keyPreview,
+                        fontSize = 11.sp,
+                        color = if (hasKey) Color(0xFF10B981) else AppMuted,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(if (hasKey) Color(0xFF10B981) else AppMuted.copy(alpha = 0.3f))
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Icon(
-                imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                contentDescription = null,
-                tint = AppMuted,
-                modifier = Modifier.size(18.dp)
-            )
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(if (hasKey) Color(0xFF10B981) else Color(0xFF3F3F46))
+                )
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    tint = Color(0xFF71717A),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
         AnimatedVisibility(visible = isExpanded) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp)
-                    .padding(bottom = 12.dp),
+                    .padding(horizontal = 14.dp)
+                    .padding(bottom = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 content = expandedContent
             )
@@ -1616,13 +2324,17 @@ private fun ActionRow(
 
 @Composable
 private fun CategoryBadge(category: String, color: Color) {
+    val displayCategory = when (category.lowercase()) {
+        "official" -> "Popular"
+        else -> category.replaceFirstChar { it.uppercase() }
+    }
     Box(
         modifier = Modifier
-            .background(color.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
-            .border(0.5.dp, color.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
-            .padding(horizontal = 5.dp, vertical = 2.dp)
+            .background(color.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+            .border(1.dp, color.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 8.dp, vertical = 2.dp)
     ) {
-        Text(text = category, fontSize = 8.sp, color = color, fontWeight = FontWeight.Bold)
+        Text(text = displayCategory, fontSize = 10.sp, color = color, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -1654,158 +2366,44 @@ private fun WebBadge() {
 
 @Composable
 private fun ProviderIcon(id: String, name: String) {
-    val logoUrl = when (id) {
-        "openai" -> "https://logo.clearbit.com/openai.com"
-        "anthropic" -> "https://logo.clearbit.com/anthropic.com"
-        "gemini" -> "https://logo.clearbit.com/google.com"
-        "groq" -> "https://logo.clearbit.com/groq.com"
-        "mistral" -> "https://logo.clearbit.com/mistral.ai"
-        "cerebras" -> "https://logo.clearbit.com/cerebras.ai"
-        "deepseek" -> "https://logo.clearbit.com/deepseek.com"
-        "openrouter" -> "https://logo.clearbit.com/openrouter.ai"
-        "claude" -> "https://logo.clearbit.com/anthropic.com"
-        "cohere" -> "https://logo.clearbit.com/cohere.com"
-        "together" -> "https://logo.clearbit.com/together.ai"
-        "nvidia" -> "https://logo.clearbit.com/nvidia.com"
-        "perplexity" -> "https://logo.clearbit.com/perplexity.ai"
-        "huggingface" -> "https://logo.clearbit.com/huggingface.co"
-        "ai21" -> "https://logo.clearbit.com/ai21.com"
-        "alibaba" -> "https://logo.clearbit.com/alibaba.com"
-        "baidu" -> "https://logo.clearbit.com/baidu.com"
-        "tencent" -> "https://logo.clearbit.com/tencent.com"
-        "github" -> "https://logo.clearbit.com/github.com"
-        "cursor" -> "https://logo.clearbit.com/cursor.com"
-        "windsurf" -> "https://logo.clearbit.com/codeium.com"
-        "gitlab-duo" -> "https://logo.clearbit.com/gitlab.com"
-        "bedrock" -> "https://logo.clearbit.com/aws.amazon.com"
-        "vertex" -> "https://logo.clearbit.com/cloud.google.com"
-        "azure-openai" -> "https://logo.clearbit.com/azure.microsoft.com"
-        "cloudflare-ai" -> "https://logo.clearbit.com/cloudflare.com"
-        "antigravity" -> "https://logo.clearbit.com/antigravity.com"
-        "suno" -> "https://logo.clearbit.com/suno.ai"
-        "leonardo" -> "https://logo.clearbit.com/leonardo.ai"
-        "fireworks" -> "https://logo.clearbit.com/fireworks.ai"
-        "deepinfra" -> "https://logo.clearbit.com/deepinfra.com"
-        "hyperbolic" -> "https://logo.clearbit.com/hyperbolic.xyz"
-        "reka" -> "https://logo.clearbit.com/reka.ai"
-        "sambanova" -> "https://logo.clearbit.com/sambanova.ai"
-        "nebius" -> "https://logo.clearbit.com/nebius.com"
-        "modal" -> "https://logo.clearbit.com/modal.com"
-        "databricks" -> "https://logo.clearbit.com/databricks.com"
-        "snowflake" -> "https://logo.clearbit.com/snowflake.com"
-        "heroku" -> "https://logo.clearbit.com/heroku.com"
-        "baseten" -> "https://logo.clearbit.com/baseten.co"
-        "ollama-cloud" -> "https://logo.clearbit.com/ollama.com"
-        "opencode", "opencode-zen", "opencode-go" -> "https://logo.clearbit.com/opencode.ai"
-        "zen", "zenmux", "zenmux-free" -> "https://logo.clearbit.com/zen.ly"
-        "github-models" -> "https://logo.clearbit.com/github.com"
-        "pollinations" -> "https://logo.clearbit.com/pollinations.ai"
-        "duckduckgo-web" -> "https://logo.clearbit.com/duckduckgo.com"
-        "claude-web" -> "https://logo.clearbit.com/anthropic.com"
-        "gemini-web" -> "https://logo.clearbit.com/google.com"
-        "grok-web" -> "https://logo.clearbit.com/x.com"
-        "perplexity-web" -> "https://logo.clearbit.com/perplexity.ai"
-        "deepseek-web" -> "https://logo.clearbit.com/deepseek.com"
-        "kimi" -> "https://logo.clearbit.com/kimi.com"
-        "qwen" -> "https://logo.clearbit.com/alibaba.com"
-        "minimax" -> "https://logo.clearbit.com/minimax.com"
-        "moonshot" -> "https://logo.clearbit.com/moonshot.com"
-        "yi" -> "https://logo.clearbit.com/lingyiwanwu.com"
-        "baichuan" -> "https://logo.clearbit.com/baichuan.com"
-        "stepfun" -> "https://logo.clearbit.com/stepfun.com"
-        "doubao" -> "https://logo.clearbit.com/doubao.com"
-        "volcengine" -> "https://logo.clearbit.com/volcengine.com"
-        "coze" -> "https://logo.clearbit.com/coze.com"
-        "kiro" -> "https://logo.clearbit.com/kiro.com"
-        "codex" -> "https://logo.clearbit.com/codex.com"
-        "qoder" -> "https://logo.clearbit.com/qoder.com"
-        "zed-hosted" -> "https://logo.clearbit.com/zed.com"
-        "trae" -> "https://logo.clearbit.com/trae.com"
-        "devin-cli" -> "https://logo.clearbit.com/devin.ai"
-        "v0-vercel" -> "https://logo.clearbit.com/vercel.com"
-        "v0-vercel-web" -> "https://logo.clearbit.com/vercel.com"
-        "vercel-ai-gateway" -> "https://logo.clearbit.com/vercel.com"
-        "copilot-web" -> "https://logo.clearbit.com/github.com"
-        "copilot-m365-web" -> "https://logo.clearbit.com/microsoft.com"
-        "huggingchat" -> "https://logo.clearbit.com/huggingface.co"
-        "glm" -> "https://logo.clearbit.com/zhipu.com"
-        "puter" -> "https://logo.clearbit.com/puter.com"
-        "nlpcloud" -> "https://logo.clearbit.com/nlpcloud.com"
-        "auggie" -> "https://logo.clearbit.com/auggie.com"
-        "chipotle" -> "https://logo.clearbit.com/chipotle.com"
-        "lmarena" -> "https://logo.clearbit.com/lmsys.org"
-        "grok-cli" -> "https://logo.clearbit.com/x.com"
-        "xai" -> "https://logo.clearbit.com/x.ai"
-        "ideogram" -> "https://logo.clearbit.com/ideogram.ai"
-        "haiper" -> "https://logo.clearbit.com/haiper.ai"
-        "veo" -> "https://logo.clearbit.com/veo.ai"
-        "udio" -> "https://logo.clearbit.com/udio.com"
-        "dify" -> "https://logo.clearbit.com/dify.ai"
-        "ovhcloud" -> "https://logo.clearbit.com/ovhcloud.com"
-        "codestral" -> "https://logo.clearbit.com/mistral.ai"
-        "wandb" -> "https://logo.clearbit.com/wandb.com"
-        "xiaomi-mimo" -> "https://logo.clearbit.com/xiaomi.com"
-        "upstage" -> "https://logo.clearbit.com/upstage.ai"
-        "scaleway" -> "https://logo.clearbit.com/scaleway.com"
-        "novita" -> "https://logo.clearbit.com/novita.ai"
-        "siliconflow" -> "https://logo.clearbit.com/siliconflow.com"
-        "liquid" -> "https://logo.clearbit.com/liquid.ai"
-        "modelscope" -> "https://logo.clearbit.com/modelscope.cn"
-        "lambda-ai" -> "https://logo.clearbit.com/lambda.ai"
-        "hackclub" -> "https://logo.clearbit.com/hackclub.com"
-        "blackbox" -> "https://logo.clearbit.com/blackbox.ai"
-        "blackbox-web" -> "https://logo.clearbit.com/blackbox.ai"
-        "preditbase" -> "https://logo.clearbit.com/predibase.com"
-        "gemini-business" -> "https://logo.clearbit.com/google.com"
-        "requesty" -> "https://logo.clearbit.com/requesty.ai"
-        "digitalocean" -> "https://logo.clearbit.com/digitalocean.com"
-        "meta-llama" -> "https://logo.clearbit.com/meta.com"
-        "qianfan" -> "https://logo.clearbit.com/baidu.com"
-        "venice" -> "https://logo.clearbit.com/venice.ai"
-        "poe-web" -> "https://logo.clearbit.com/poe.com"
-        "kimi-coding" -> "https://logo.clearbit.com/kimi.com"
-        "kimi-coding-apikey" -> "https://logo.clearbit.com/kimi.com"
-        "kimi-web" -> "https://logo.clearbit.com/kimi.com"
-        "doubao-web" -> "https://logo.clearbit.com/doubao.com"
-        "qwen-web" -> "https://logo.clearbit.com/alibaba.com"
-        "yuanbao-web" -> ""
-        "bailian-coding-plan" -> "https://logo.clearbit.com/alibaba.com"
-        "glm-cn" -> "https://logo.clearbit.com/zhipu.com"
-        "glmt" -> "https://logo.clearbit.com/zhipu.com"
-        "minimax-cn" -> "https://logo.clearbit.com/minimax.com"
-        "alibaba-cn" -> "https://logo.clearbit.com/alibaba.com"
-        "cline" -> "https://logo.clearbit.com/cline.com"
-        "vertex-partner" -> "https://logo.clearbit.com/cloud.google.com"
-        "command-code" -> "https://logo.clearbit.com/cohere.com"
-        "mimocode" -> ""
-        else -> null
+    val initials = when (id.lowercase()) {
+        "groq" -> "GR"
+        "gmi" -> "GM"
+        "openai" -> "OA"
+        "anthropic" -> "AN"
+        "gemini" -> "GM"
+        "mistral" -> "MI"
+        "deepseek" -> "DS"
+        "cerebras" -> "CB"
+        "openrouter" -> "OR"
+        "together" -> "TG"
+        "fireworks" -> "FW"
+        "deepinfra" -> "DI"
+        "nvidia" -> "NV"
+        "perplexity" -> "PP"
+        "cohere" -> "CO"
+        "xai" -> "XA"
+        "sambanova" -> "SN"
+        "hyperbolic" -> "HB"
+        "github-models", "github" -> "GH"
+        "zen", "zenmux", "zenmux-free", "opencode", "opencode-zen" -> "ZN"
+        else -> name.take(2).uppercase()
     }
-
-    var imageError by remember(id) { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
-            .size(34.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(AppDivider),
+            .size(42.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF202024))
+            .border(1.dp, Color(0xFF2E2E34), RoundedCornerShape(10.dp)),
         contentAlignment = Alignment.Center
     ) {
-        if (logoUrl != null && logoUrl.isNotEmpty() && !imageError) {
-            coil.compose.AsyncImage(
-                model = logoUrl,
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(4.dp),
-                onError = { imageError = true }
-            )
-        } else {
-            Text(
-                text = name.take(2).uppercase(),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = AppPrimary
-            )
-        }
+        Text(
+            text = initials,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFFF59E0B),
+            fontFamily = FontFamily.Monospace
+        )
     }
 }

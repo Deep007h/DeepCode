@@ -143,7 +143,15 @@ class DeepCodeRepository(context: Context) {
     }
 
     suspend fun insertMessage(message: Message) {
-        messageDao.insertMessage(MessageEntity.fromDomain(message))
+        withContext(Dispatchers.IO) {
+            if (sessionDao.getSessionById(message.sessionId) == null) {
+                val title = if (message.role == "user") {
+                    message.content.lines().firstOrNull()?.take(28)?.ifBlank { "New Chat" } ?: "New Chat"
+                } else "New Chat"
+                sessionDao.insertSession(SessionEntity(message.sessionId, title, message.timestamp))
+            }
+            messageDao.insertMessage(MessageEntity.fromDomain(message))
+        }
     }
 
     suspend fun deleteMessage(messageId: String) {
@@ -200,6 +208,42 @@ class DeepCodeRepository(context: Context) {
 
     suspend fun syncAndBackfillTokenUsage() = withContext(Dispatchers.IO) {
         try {
+            // 1. Recalculate cost for existing token_usage rows that currently have 0.0 cost
+            val allTokenSessions = tokenRepository.getAllSessionsList()
+            allTokenSessions.forEach { entity ->
+                if (entity.costUsd <= 0.0 && (entity.tokensInput > 0 || entity.tokensOutput > 0)) {
+                    val computedCost = ai.deepcode.android.data.local.ModelPriceProvider.calculateTurnCost(
+                        modelId = entity.modelId,
+                        inputTokens = entity.tokensInput.toInt(),
+                        outputTokens = entity.tokensOutput.toInt(),
+                        reasoningTokens = entity.tokensReasoning.toInt(),
+                        cacheReadTokens = entity.tokensCacheRead.toInt(),
+                        cacheWriteTokens = entity.tokensCacheWrite.toInt()
+                    )
+                    if (computedCost > 0.0) {
+                        tokenRepository.updateSessionCost(entity.sessionId, computedCost)
+                    }
+                }
+            }
+
+            // 2. Also backfill chat sessions table (sessions) if totalCost is 0.0
+            val allChatSessions = sessionDao.getAllSessionsList()
+            allChatSessions.forEach { sess ->
+                if (sess.totalCost <= 0.0 && (sess.totalTokensInput > 0 || sess.totalTokensOutput > 0)) {
+                    val matchingTokenSession = allTokenSessions.firstOrNull { it.sessionId == sess.id }
+                    val modelId = matchingTokenSession?.modelId ?: "minimax-m3"
+                    val computedCost = ai.deepcode.android.data.local.ModelPriceProvider.calculateTurnCost(
+                        modelId = modelId,
+                        inputTokens = sess.totalTokensInput.toInt(),
+                        outputTokens = sess.totalTokensOutput.toInt()
+                    )
+                    if (computedCost > 0.0) {
+                        sessionDao.updateCost(sess.id, computedCost)
+                    }
+                }
+            }
+
+            // 3. If token usage table was completely empty, backfill from message history
             val lifetime = tokenRepository.getLifetimeTotals()
             if (lifetime == null || lifetime.totalTokens == 0L) {
                 val allMessages = messageDao.getAllMessagesList()
@@ -215,8 +259,8 @@ class DeepCodeRepository(context: Context) {
                     if (inputTokens > 0 || outputTokens > 0) {
                         recordTokenUsage(
                             sessionId = sessId,
-                            modelId = "deepseek-v4-flash-free",
-                            providerName = "Zen (Free)",
+                            modelId = "deepseek-v4-flash",
+                            providerName = "Zen AI",
                             usage = TurnTokenUsage(
                                 inputTokens = inputTokens,
                                 outputTokens = outputTokens,

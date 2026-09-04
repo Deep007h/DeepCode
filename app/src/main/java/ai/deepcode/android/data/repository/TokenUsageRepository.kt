@@ -54,6 +54,12 @@ class TokenUsageRepository(
     fun observeLifetimeTotals(): Flow<LifetimeTotals?> =
         tokenUsageDao.observeLifetimeTotals()
 
+    suspend fun getAllSessionsList(): List<TokenUsageEntity> =
+        tokenUsageDao.getAllSessionsList()
+
+    suspend fun updateSessionCost(sessionId: String, costUsd: Double) =
+        tokenUsageDao.updateCost(sessionId, costUsd)
+
     suspend fun startSession(
         sessionId: String,
         modelId: String,

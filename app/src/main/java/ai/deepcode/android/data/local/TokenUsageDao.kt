@@ -90,6 +90,12 @@ interface TokenUsageDao {
     """)
     fun observeLifetimeTotals(): Flow<LifetimeTotals?>
 
+    @Query("SELECT * FROM token_usage")
+    suspend fun getAllSessionsList(): List<TokenUsageEntity>
+
+    @Query("UPDATE token_usage SET cost_usd = :costUsd WHERE session_id = :sessionId")
+    suspend fun updateCost(sessionId: String, costUsd: Double)
+
     // ── Cleanup ───────────────────────────────────────────────────────────────
 
     @Query("DELETE FROM token_usage WHERE session_id = :sessionId")

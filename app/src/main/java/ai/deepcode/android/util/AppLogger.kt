@@ -338,7 +338,7 @@ object AppLogger {
             }
             exportFile.writeText(sb.toString())
             try {
-                File("/sdcard/deepcode_logs.txt").writeText(sb.toString())
+                File("/sdcard/Download/deepcode_logs.txt").writeText(sb.toString())
             } catch (_: Exception) {}
             exportFile.absolutePath
         } catch (e: Exception) {

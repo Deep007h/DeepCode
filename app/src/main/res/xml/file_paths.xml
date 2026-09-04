@@ -2,6 +2,9 @@
 <paths>
     <files-path name="pdf" path="pdf/" />
     <files-path name="documents" path="Documents/" />
+    <files-path name="plugins" path="plugins/" />
+    <files-path name="audio" path="audio/" />
     <external-path name="external" path="." />
     <cache-path name="cache" path="." />
+    <cache-path name="audio_cache" path="audio/" />
 </paths>

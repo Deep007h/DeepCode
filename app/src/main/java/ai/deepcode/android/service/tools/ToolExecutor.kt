@@ -235,9 +235,34 @@ class ToolExecutor(private val context: Context? = null) {
     var gitHubService: GitHubService? = null
     var driveHandler: DriveHandler? = null
 
+    private fun optString(a: JsonObject, k: String): String? =
+        try { a.get(k)?.takeIf { !it.isJsonNull }?.asString?.trim()?.takeIf { it.isNotEmpty() } } catch (_: Exception) { null }
+
+    private fun optInt(a: JsonObject, k: String, default: Int): Int {
+        try {
+            val el = a.get(k) ?: return default
+            if (el.isJsonNull) return default
+            if (el.isJsonPrimitive) {
+                val p = el.asJsonPrimitive
+                return if (p.isNumber) p.asInt else p.asString.toDoubleOrNull()?.toInt() ?: default
+            }
+            return default
+        } catch (_: Exception) {
+            return default
+        }
+    }
+
+    private fun sanitizeFileName(raw: String?, fallback: String): String {
+        if (raw.isNullOrBlank()) return fallback
+        var n = raw.trim().substringAfterLast("/").substringAfterLast("\\")
+        n = n.replace(Regex("[^a-zA-Z0-9._-]"), "_").trim('_', '.', '-')
+        if (n.isBlank()) return fallback
+        return n.take(64)
+    }
+
     fun executeTool(name: String, argumentsJson: String, workingDir: String, useRoot: Boolean): String {
         return try {
-            val args = gson.fromJson(argumentsJson, JsonObject::class.java)
+            val args = try { gson.fromJson(argumentsJson, JsonObject::class.java) ?: JsonObject() } catch (_: Exception) { JsonObject() }
             if (name == "summon_agents") {
                 val taskDesc = args.get("task")?.asString ?: args.get("description")?.asString ?: return "Missing task/description argument"
                 return runOrchestration(taskDesc)
@@ -291,11 +316,11 @@ class ToolExecutor(private val context: Context? = null) {
                     runTinyFishAgent(url, goal)
                 }
                 "web_search" -> {
-                    val query = args.get("query")?.asString ?: return "Missing query argument"
-                    val numResults = args.get("numResults")?.asInt ?: 8
-                    val livecrawl = args.get("livecrawl")?.asString ?: "fallback"
-                    val type = args.get("type")?.asString ?: "auto"
-                    val contextMaxCharacters = args.get("contextMaxCharacters")?.asInt ?: 10000
+                    val query = optString(args, "query") ?: return "Missing query argument"
+                    val numResults = optInt(args, "numResults", 8).coerceIn(1, 20)
+                    val livecrawl = optString(args, "livecrawl") ?: "fallback"
+                    val type = optString(args, "type") ?: "auto"
+                    val contextMaxCharacters = optInt(args, "contextMaxCharacters", 10000).coerceIn(1000, 20000)
                     webSearch(query, numResults, livecrawl, type, contextMaxCharacters)
                 }
                 "todowrite" -> {
@@ -324,7 +349,9 @@ class ToolExecutor(private val context: Context? = null) {
                 "notion_read" -> {
                     try {
                         val svc = notionService ?: return "Notion not connected. Connect your Notion integration token first."
-                        val pageId = args.get("page_id")?.asString ?: return "Missing page_id argument"
+                        val rawPageId = optString(args, "page_id") ?: return "Missing page_id argument"
+                        val pageId = rawPageId.trim().replace("-", "").take(64)
+                        if (pageId.isBlank() || !pageId.all { it.isLetterOrDigit() }) return "Invalid page_id parameter"
                         val result = svc.getPageContent(pageId)
                         result.fold(
                             onSuccess = { it },
@@ -352,7 +379,7 @@ class ToolExecutor(private val context: Context? = null) {
                 "github_list_repos" -> {
                     try {
                         val svc = gitHubService ?: return "GitHub not connected. Connect your GitHub token first."
-                        val type = args.get("type")?.asString ?: "all"
+                        val type = optString(args, "type") ?: "all"
                         svc.listRepos(type).fold(
                             onSuccess = { repos ->
                                 repos.joinToString("\n") { r ->
@@ -368,9 +395,11 @@ class ToolExecutor(private val context: Context? = null) {
                 "github_list_contents" -> {
                     try {
                         val svc = gitHubService ?: return "GitHub not connected."
-                        val owner = args.get("owner")?.asString ?: return "Missing owner"
-                        val repo = args.get("repo")?.asString ?: return "Missing repo"
-                        val path = args.get("path")?.asString ?: ""
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        if (!owner.matches(Regex("^[a-zA-Z0-9_.-]{1,100}$"))) return "Invalid owner parameter"
+                        if (!repo.matches(Regex("^[a-zA-Z0-9_.-]{1,100}$"))) return "Invalid repo parameter"
+                        val path = optString(args, "path") ?: ""
                         svc.listRepoContents(owner, repo, path).fold(
                             onSuccess = { it },
                             onFailure = { "GitHub list contents failed: ${it.message}" }
@@ -382,9 +411,11 @@ class ToolExecutor(private val context: Context? = null) {
                 "github_read_file" -> {
                     try {
                         val svc = gitHubService ?: return "GitHub not connected."
-                        val owner = args.get("owner")?.asString ?: return "Missing owner"
-                        val repo = args.get("repo")?.asString ?: return "Missing repo"
-                        val path = args.get("path")?.asString ?: return "Missing path"
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        if (!owner.matches(Regex("^[a-zA-Z0-9_.-]{1,100}$"))) return "Invalid owner parameter"
+                        if (!repo.matches(Regex("^[a-zA-Z0-9_.-]{1,100}$"))) return "Invalid repo parameter"
+                        val path = optString(args, "path") ?: return "Missing path"
                         svc.getFileTextContent(owner, repo, path).fold(
                             onSuccess = { it },
                             onFailure = { "GitHub read file failed: ${it.message}" }
@@ -396,13 +427,15 @@ class ToolExecutor(private val context: Context? = null) {
                 "github_write_file" -> {
                     try {
                         val svc = gitHubService ?: return "GitHub not connected."
-                        val owner = args.get("owner")?.asString ?: return "Missing owner"
-                        val repo = args.get("repo")?.asString ?: return "Missing repo"
-                        val path = args.get("path")?.asString ?: return "Missing path"
-                        val content = args.get("content")?.asString ?: return "Missing content"
-                        val message = args.get("message")?.asString ?: "Update $path via DeepCode"
-                        val sha = args.get("sha")?.asString
-                        val branch = args.get("branch")?.asString
+                        val owner = optString(args, "owner")?.trim() ?: return "Missing owner"
+                        val repo = optString(args, "repo")?.trim() ?: return "Missing repo"
+                        if (!owner.matches(Regex("^[a-zA-Z0-9_.-]{1,100}$"))) return "Invalid owner parameter"
+                        if (!repo.matches(Regex("^[a-zA-Z0-9_.-]{1,100}$"))) return "Invalid repo parameter"
+                        val path = optString(args, "path") ?: return "Missing path"
+                        val content = optString(args, "content") ?: return "Missing content"
+                        val message = optString(args, "message") ?: "Update $path via DeepCode"
+                        val sha = optString(args, "sha")
+                        val branch = optString(args, "branch")
                         svc.createOrUpdateFile(owner, repo, path, content, message, sha, branch).fold(
                             onSuccess = { "GitHub file written: $it" },
                             onFailure = { "GitHub write file failed: ${it.message}" }
@@ -598,9 +631,10 @@ class ToolExecutor(private val context: Context? = null) {
                 "drive_upload" -> {
                     try {
                         val handler = driveHandler ?: return "Google Drive not connected."
-                        val name = args.get("name")?.asString ?: return "Missing name"
-                        val content = args.get("content")?.asString ?: return "Missing content"
-                        val mime = args.get("mimeType")?.asString ?: "text/plain"
+                        val name = optString(args, "name") ?: return "Missing name"
+                        val content = optString(args, "content") ?: return "Missing content"
+                        val rawMime = optString(args, "mimeType")?.trim() ?: "text/plain"
+                        val mime = if (rawMime.matches(Regex("^[a-zA-Z0-9.+_-]+/[a-zA-Z0-9.+_-]+$"))) rawMime else "text/plain"
                         kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
                             val result = handler.uploadFile(name, content, mime)
                             result.fold(
@@ -713,6 +747,26 @@ class ToolExecutor(private val context: Context? = null) {
                         "webbridge_agent failed: ${e.message}"
                     }
                 }
+                "generate_chatgpt_document" -> {
+                    val prompt = args.get("prompt")?.asString ?: return "Missing prompt argument"
+                    val format = args.get("format")?.asString ?: "markdown"
+                    val ctx = context ?: return "Context unavailable"
+                    val bridge = ai.deepcode.android.service.chatgpt.ChatGPTHeadlessBridge.getInstance(ctx)
+                    if (!bridge.isConfigured()) return "ChatGPT access token not configured. Please set chatgpt_access_token in DeepCode settings."
+                    try {
+                        kotlinx.coroutines.runBlocking { bridge.generateDocument(prompt, format) }
+                    } catch (e: Exception) {
+                        "ChatGPT document generation failed: ${e.message}"
+                    }
+                }
+                "schedule_chatgpt_task" -> {
+                    val name = args.get("name")?.asString ?: return "Missing name argument"
+                    val taskType = args.get("task_type")?.asString ?: "document_creation"
+                    val prompt = args.get("prompt")?.asString ?: return "Missing prompt argument"
+                    val cron = args.get("cron")?.asString ?: "0 9 * * *"
+                    val ctx = context ?: return "Context unavailable"
+                    executeScheduleChatGPTTask(name, taskType, prompt, cron, ctx)
+                }
                 "cron_add", "cron_list", "cron_remove" -> {
                     "Automation scheduling is handled by the main AI. Please ask the user to set up the automation through the chat interface."
                 }
@@ -725,8 +779,14 @@ class ToolExecutor(private val context: Context? = null) {
                 "generate_image" -> {
                     val prompt = args.get("prompt")?.asString ?: return "Missing prompt argument"
                     val model = args.get("model")?.asString ?: args.get("engine")?.asString ?: ""
-                    val imageUrl = executeImageGeneration(prompt, model)
-                    "[image:${imageUrl}]"
+                    val result = executeImageGeneration(prompt, model)
+                    if (result.startsWith("Error:") || result.startsWith("No image")) {
+                        result
+                    } else if (result.startsWith("[image:")) {
+                        result
+                    } else {
+                        "[image:${result}]"
+                    }
                 }
                 "generate_video" -> {
                     val prompt = args.get("prompt")?.asString ?: return "Missing prompt argument"
@@ -735,17 +795,20 @@ class ToolExecutor(private val context: Context? = null) {
                     executeVideoGeneration(prompt)
                 }
                 "edge_tts" -> {
-                    val text = args.get("text")?.asString ?: return "Missing text argument"
-                    val voice = args.get("voice")?.asString ?: ""
-                    val rate = args.get("rate")?.asString ?: ""
-                    val pitch = args.get("pitch")?.asString ?: ""
-                    executeEdgeTts(text, voice, rate, pitch, workingDir)
+                    val text = optString(args, "text") ?: return "Missing text argument"
+                    val voice = optString(args, "voice") ?: ""
+                    val rate = optString(args, "rate") ?: ""
+                    val pitch = optString(args, "pitch") ?: ""
+                    val verbatim = try { args.get("verbatim")?.asBoolean ?: true } catch (_: Exception) { true }
+                    executeEdgeTts(text, voice, rate, pitch, workingDir, verbatim)
                 }
                 "set_tts_voice" -> {
-                    val voice = args.get("voice")?.asString ?: return "Missing voice argument"
+                    val voice = optString(args, "voice") ?: return "Missing voice argument"
                     context?.let {
                         val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(it)
-                        prefs.saveSetting("tts_voice", voice)
+                        // Exact Edge voice (e.g. en-US-AriaNeural) goes to its own slot; locale (en-US) stays in tts_voice.
+                        if (voice.endsWith("Neural", ignoreCase = true)) prefs.saveSetting("tts_edge_voice", voice)
+                        else prefs.saveSetting("tts_voice", voice)
                     }
                     "TTS voice set to: $voice"
                 }
@@ -760,19 +823,55 @@ class ToolExecutor(private val context: Context? = null) {
                     "TTS backend set to: $backend"
                 }
                 "set_kokoro_url" -> {
-                    val url = args.get("url")?.asString ?: return "Missing url argument"
+                    val url = optString(args, "url") ?: return "Missing url argument"
+                    val clean = url.trim().trimEnd('/')
+                    if (!clean.startsWith("http://") && !clean.startsWith("https://")) return "Invalid URL: must start with http:// or https://"
                     context?.let {
                         val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(it)
-                        prefs.saveSetting("kokoro_url", url.trimEnd('/'))
+                        prefs.saveSetting("kokoro_url", clean)
                     }
-                    "Kokoro server URL set to: ${url.trimEnd('/')}"
+                    "Kokoro server URL set to: $clean"
+                }
+                "set_gotenberg_url" -> {
+                    val url = optString(args, "url") ?: return "Missing url argument"
+                    val clean = url.trim().trimEnd('/')
+                    if (!clean.startsWith("http://") && !clean.startsWith("https://")) return "Invalid URL: must start with http:// or https://"
+                    context?.let {
+                        val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(it)
+                        prefs.saveSetting("gotenberg_url", clean)
+                    }
+                    "Gotenberg server URL set to: $clean"
+                }
+                "analyze_pdf" -> {
+                    val path = optString(args, "path") ?: return "Missing path argument"
+                    analyzePdfFile(path)
+                }
+                "list_pdf_layouts" -> listPdfLayouts()
+                "create_pdf_from_reference" -> {
+                    val refPath = optString(args, "reference_path") ?: optString(args, "path") ?: return "Missing reference_path argument"
+                    val title = optString(args, "title") ?: return "Missing title argument"
+                    val content = optString(args, "content") ?: return "Missing content argument"
+                    val author = optString(args, "author")
+                    val filename = optString(args, "filename")
+                    createPdfFromReference(refPath, title, content, author, filename)
                 }
                 "create_pdf" -> {
-                    val title = args.get("title")?.takeIf { !it.isJsonNull }?.asString ?: return "Missing title argument"
-                    val content = args.get("content")?.takeIf { !it.isJsonNull }?.asString ?: return "Missing content argument"
-                    val author = args.get("author")?.takeIf { !it.isJsonNull }?.asString
-                    val filename = args.get("filename")?.takeIf { !it.isJsonNull }?.asString
-                    executeGotenbergPdf(title, content, author, filename)
+                    val title = optString(args, "title") ?: return "Missing title argument"
+                    val content = optString(args, "content") ?: return "Missing content argument"
+                    val author = optString(args, "author")
+                    val filename = optString(args, "filename")
+                    val layout = optString(args, "layout")
+                    if (!layout.isNullOrBlank()) {
+                        val resolved = try { resolveCustomLayout(layout) } catch (_: Exception) { null }
+                            ?: PdfLayoutEngine.getLayoutById(layout)
+                            ?: PdfLayoutEngine.getLayoutByName(layout)
+                            ?: PdfLayoutEngine.findLayout(layout)
+                        if (resolved != null) {
+                            return renderLocalPdf(title, content, author, filename, resolved)
+                        }
+                        AppLogger.w("PDF", "Unknown layout '$layout' — falling back to Gotenberg")
+                    }
+                    executeGotenbergPdf(title, content, author, filename, layout)
                 }
                 else -> {
                     if (ai.deepcode.android.plugin.PluginRegistry.hasToolName(name)) {
@@ -881,7 +980,7 @@ class ToolExecutor(private val context: Context? = null) {
 
             // 2. Generate clean narration script using active AI provider
             val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
-            val savedModel = prefs.getSetting("agent_model", "big-pickle")
+            val savedModel = prefs.getSetting("agent_model", "deepseek-v4-flash-free")
             val savedProviderName = prefs.getSetting("agent_provider", "Zen AI")
             val provider = ai.deepcode.android.data.remote.AIProviderFactory.providers.firstOrNull { it.name == savedProviderName }
                 ?: ai.deepcode.android.data.remote.AIProviderFactory.providers.firstOrNull { it.name == "Zen AI" }
@@ -946,29 +1045,65 @@ class ToolExecutor(private val context: Context? = null) {
         }
     }
 
-    private fun executeEdgeTts(text: String, voice: String, rate: String, pitch: String, workingDir: String): String {
+    private fun ttsCacheKey(text: String, locale: String, voice: String, backend: String, tone: String, char: String): String {
+        return try {
+            val raw = "$backend|$locale|$voice|$tone|$char|${text.trim()}"
+            val md = java.security.MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(Charsets.UTF_8))
+            md.joinToString("") { "%02x".format(it) }.take(32)
+        } catch (_: Exception) { java.util.UUID.randomUUID().toString().take(8) }
+    }
+
+    private fun isValidAudioData(data: ByteArray, ext: String): Boolean {
+        if (data.size < 2000) return false
+        return try {
+            if (ext == "wav") {
+                data.size > 44 && data[0] == 'R'.code.toByte() && data[1] == 'I'.code.toByte()
+            } else {
+                // MP3: ID3 header or frame sync 0xFF 0xE0
+                (data[0] == 0x49.toByte() && data[1] == 0x44.toByte()) ||
+                    (data[0] == 0xFF.toByte() && (data[1].toInt() and 0xE0) == 0xE0)
+            }
+        } catch (_: Exception) { data.size >= 2000 }
+    }
+
+    private fun trimAudioCache(dir: File, maxBytes: Long = 200L * 1024 * 1024, maxFiles: Int = 200) {
+        try {
+            val files = dir.listFiles()?.filter { it.isFile }?.sortedBy { it.lastModified() } ?: return
+            var total = files.sumOf { it.length() }
+            var idx = 0
+            while ((total > maxBytes || files.size - idx > maxFiles) && idx < files.size) {
+                total -= files[idx].length()
+                try { files[idx].delete() } catch (_: Exception) {}
+                idx++
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun executeEdgeTts(text: String, voice: String, rate: String, pitch: String, workingDir: String, verbatim: Boolean = false): String {
         val ctx = context ?: return "Audio generation requires an Android context"
         return try {
             var textToSpeak = text
-            val isMeta = isMetaReferenceText(text)
-            if (isMeta) {
-                val resolved = resolveLastAssistantMessage(ctx)
-                if (!resolved.isNullOrBlank()) {
-                    AppLogger.i("TTS", "Resolved meta-reference '$text' to actual last assistant message (${resolved.length} chars)")
-                    textToSpeak = resolved
-                } else {
-                    return "Audio generation error: Could not locate a previous assistant response in the conversation to convert to speech."
+            if (!verbatim) {
+                val isMeta = isMetaReferenceText(text)
+                if (isMeta) {
+                    val resolved = resolveLastAssistantMessage(ctx)
+                    if (!resolved.isNullOrBlank()) {
+                        AppLogger.i("TTS", "Resolved meta-reference '$text' to actual last assistant message (${resolved.length} chars)")
+                        textToSpeak = resolved
+                    } else {
+                        return "Audio generation error: Could not locate a previous assistant response in the conversation to convert to speech."
+                    }
                 }
-            } else if (isTopicOrQuestionPrompt(text)) {
-                val generated = generateAnswerForTopic(text, ctx)
-                if (!generated.isNullOrBlank()) {
-                    AppLogger.i("TTS", "Generated answer for topic prompt '$text' (${generated.length} chars)")
-                    textToSpeak = generated
-                }
+            } else {
+                AppLogger.i("TTS", "verbatim=true — speaking literal text without meta/topic rewrite")
             }
             textToSpeak = cleanTextForSpeech(textToSpeak)
             if (textToSpeak.isBlank()) {
                 return "Audio generation failed: text to speak is empty"
+            }
+            if (textToSpeak.length > 5000) {
+                AppLogger.w("TTS", "Text too long (${textToSpeak.length} chars), truncating to 5000")
+                textToSpeak = textToSpeak.take(5000)
             }
 
             val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
@@ -993,8 +1128,27 @@ class ToolExecutor(private val context: Context? = null) {
             }
             val styleName = getEdgeStyleAttr(tone)
 
-            // Determine the Kokoro voice from the saved edge voice or fallback
-            val kokoroVoice = savedExactVoice.ifEmpty { "af_bella" }
+            // Map locale -> Kokoro voice (Kokoro uses its own voice IDs, not Edge Neural names).
+            val kokoroVoiceMap = mapOf(
+                "en-US" to "af_bella", "en-GB" to "bf_emma", "hi-IN" to "hf_alpha",
+                "es-ES" to "ef_dora", "fr-FR" to "ff_siwis", "de-DE" to "df_dora",
+                "ja-JP" to "jf_alpha", "ko-KR" to "kf_alpha", "zh-CN" to "zf_xiaobei",
+                "pt-BR" to "pf_dora", "ru-RU" to "rf_sasha", "it-IT" to "if_sara"
+            )
+            val kokoroVoice = kokoroVoiceMap[savedLocale] ?: kokoroVoiceMap[savedLocale.substringBefore("-") + "-US"]
+                ?: kokoroVoiceMap.values.firstOrNull { it.startsWith(savedLocale.substringBefore("-").lowercase()) } ?: "af_bella"
+
+            // Hash cache: identical text+voice+backend reuses file without network.
+            try {
+                val cacheDir = File(ctx.cacheDir, "audio")
+                val ext0 = if (ttsBackend == "android") "wav" else "mp3"
+                val key = ttsCacheKey(textToSpeak, savedLocale, voiceName, ttsBackend, tone, char)
+                val cached = File(cacheDir, "tts_$key.$ext0")
+                if (cached.exists() && cached.length() >= 2000) {
+                    AppLogger.i("TTS", "Cache hit — ${cached.length()} bytes")
+                    return "[audio:${cached.absolutePath}]"
+                }
+            } catch (_: Exception) {}
 
             // Execute based on selected TTS backend
             val audioData = when (ttsBackend) {
@@ -1004,7 +1158,11 @@ class ToolExecutor(private val context: Context? = null) {
                 }
                 "google" -> {
                     AppLogger.i("TTS", "Using Google Translate TTS backend")
-                    return googleTranslateTts(textToSpeak, savedLocale, ctx)
+                    val gResult = try { googleTranslateTts(textToSpeak, savedLocale, ctx) } catch (_: Exception) { "" }
+                    // googleTranslateTts returns "[audio:path]" on success or an error string — only return on success so fallbacks can run.
+                    if (gResult.startsWith("[audio:")) return gResult
+                    AppLogger.w("TTS", "Google TTS failed ($gResult), trying fallbacks")
+                    null
                 }
                 "kokoro" -> {
                     AppLogger.i("TTS", "Using Kokoro backend with voice=$kokoroVoice, URL=${prefs.getSetting("kokoro_url", "http://localhost:8880")}")
@@ -1031,18 +1189,23 @@ class ToolExecutor(private val context: Context? = null) {
                 }
             }
 
-            if (audioData != null) {
+            val primaryExt = if (ttsBackend == "android") "wav" else "mp3"
+            if (audioData != null && isValidAudioData(audioData, primaryExt)) {
                 val audioDir = File(ctx.cacheDir, "audio")
                 audioDir.mkdirs()
-                val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmssSSS", java.util.Locale.US).format(java.util.Date())
-                val ext = if (ttsBackend == "android") "wav" else "mp3"
-                val outputFile = File(audioDir, "tts_$timestamp.$ext")
-                outputFile.writeBytes(audioData)
+                val key = ttsCacheKey(textToSpeak, savedLocale, voiceName, ttsBackend, tone, char)
+                val outputFile = File(audioDir, "tts_$key.$primaryExt")
+                try {
+                    outputFile.writeBytes(audioData)
+                    trimAudioCache(audioDir)
+                } catch (_: Exception) {}
                 if (!outputFile.exists() || outputFile.length() <= 0) {
                     return "Audio generation failed: no audio produced"
                 }
                 AppLogger.i("TTS", "${ttsBackend} TTS succeeded — ${audioData.size} bytes to ${outputFile.name}")
                 return "[audio:${outputFile.absolutePath}]"
+            } else if (audioData != null) {
+                AppLogger.w("TTS", "Primary $ttsBackend returned ${audioData.size} bytes (likely truncated/corrupt) — trying fallbacks")
             }
 
             // Fallback 1: Edge TTS (if primary wasn't edge_tts)
@@ -1055,12 +1218,15 @@ class ToolExecutor(private val context: Context? = null) {
                     AppLogger.e("EdgeTTS", "Edge TTS WebSocket failed", e)
                     null
                 }
-                if (edgeAudio != null) {
+                if (edgeAudio != null && isValidAudioData(edgeAudio, "mp3")) {
                     val audioDir = File(ctx.cacheDir, "audio")
                     audioDir.mkdirs()
-                    val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmssSSS", java.util.Locale.US).format(java.util.Date())
-                    val outputFile = File(audioDir, "tts_$timestamp.mp3")
-                    outputFile.writeBytes(edgeAudio)
+                    val key = ttsCacheKey(textToSpeak, savedLocale, voiceName, "edge_tts", tone, char)
+                    val outputFile = File(audioDir, "tts_$key.mp3")
+                    try {
+                        outputFile.writeBytes(edgeAudio)
+                        trimAudioCache(audioDir)
+                    } catch (_: Exception) {}
                     if (outputFile.exists() && outputFile.length() > 0) {
                         return "[audio:${outputFile.absolutePath}]"
                     }
@@ -1071,21 +1237,28 @@ class ToolExecutor(private val context: Context? = null) {
             if (ttsBackend != "android") {
                 AppLogger.w("TTS", "Primary backend failed, trying Android TTS fallback")
                 val androidAudio = androidTtsSynthesize(textToSpeak, savedLocale, voiceName, ctx)
-                if (androidAudio != null) {
+                if (androidAudio != null && isValidAudioData(androidAudio, "wav")) {
                     val audioDir = File(ctx.cacheDir, "audio")
                     audioDir.mkdirs()
-                    val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmssSSS", java.util.Locale.US).format(java.util.Date())
-                    val outputFile = File(audioDir, "tts_$timestamp.wav")
-                    outputFile.writeBytes(androidAudio)
+                    val key = ttsCacheKey(textToSpeak, savedLocale, voiceName, "android", tone, char)
+                    val outputFile = File(audioDir, "tts_$key.wav")
+                    try {
+                        outputFile.writeBytes(androidAudio)
+                        trimAudioCache(audioDir)
+                    } catch (_: Exception) {}
                     if (outputFile.exists() && outputFile.length() > 0) {
                         return "[audio:${outputFile.absolutePath}]"
                     }
                 }
             }
 
-            // Fallback 3: Google Translate TTS
-            AppLogger.w("TTS", "Android TTS failed, falling back to Google TTS")
-            googleTranslateTts(textToSpeak, savedLocale, ctx)
+            // Fallback 3: Google Translate TTS (skip if it was already the primary and failed).
+            if (ttsBackend != "google") {
+                AppLogger.w("TTS", "Android TTS failed, falling back to Google TTS")
+                googleTranslateTts(textToSpeak, savedLocale, ctx)
+            } else {
+                "Audio generation failed: all TTS backends failed"
+            }
         } catch (e: java.net.UnknownHostException) {
             "Audio generation failed: no internet connection"
         } catch (e: Exception) {
@@ -1096,29 +1269,51 @@ class ToolExecutor(private val context: Context? = null) {
     private fun googleTranslateTts(text: String, locale: String, ctx: Context): String {
         val audioDir = File(ctx.cacheDir, "audio")
         audioDir.mkdirs()
-        val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmssSSS", java.util.Locale.US).format(java.util.Date())
-        val outputFile = File(audioDir, "tts_$timestamp.mp3")
-        val cleanText = text.replace(Regex("[\\u2600-\\u27BF\\uD83C-\\uDBFF\\uDC00-\\uDFFF]"), "")
+        val outputFile = File(audioDir, "tts_${java.util.UUID.randomUUID()}.mp3")
+        val cleanText = text.replace(Regex("[\\u2600-\\u27BF\\uD83C-\\uDBFF\\uDC00-\\uDFFF]"), "").trim()
         if (cleanText.isBlank()) return "Audio generation failed: no text to synthesize"
         val localeObj = parseTtsLocale(locale)
-        val encoded = java.net.URLEncoder.encode(cleanText.take(200), "UTF-8")
-        val url = java.net.URL("https://translate.google.com/translate_tts?ie=UTF-8&q=$encoded&tl=${localeObj.toLanguageTag()}&client=tw-ob&ttsspeed=1.0")
-        val conn = url.openConnection() as java.net.HttpURLConnection
-        conn.connectTimeout = 10000
-        conn.readTimeout = 30000
-        conn.requestMethod = "GET"
-        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14)")
-        if (conn.responseCode != 200) {
-            conn.disconnect()
-            return "Audio generation failed: server returned ${conn.responseCode}"
+
+        // Split text into <=180 character chunks at punctuation or space boundaries (up to 1000 chars)
+        val chunks = mutableListOf<String>()
+        var remaining = cleanText.take(1000)
+        while (remaining.isNotEmpty()) {
+            if (remaining.length <= 180) {
+                chunks.add(remaining)
+                break
+            }
+            var splitIdx = remaining.take(180).lastIndexOfAny(charArrayOf('.', '!', '?', ';', '\n'))
+            if (splitIdx < 60) splitIdx = remaining.take(180).lastIndexOfAny(charArrayOf(',', ' '))
+            if (splitIdx < 40) splitIdx = 180
+            val chunk = remaining.substring(0, splitIdx + 1).trim()
+            if (chunk.isNotEmpty()) chunks.add(chunk)
+            remaining = remaining.substring(splitIdx + 1).trim()
         }
-        conn.inputStream.use { input ->
-            java.io.FileOutputStream(outputFile).use { fos ->
-                input.copyTo(fos)
+
+        var anySuccess = false
+        java.io.FileOutputStream(outputFile).use { fos ->
+            for (chunk in chunks) {
+                val encoded = java.net.URLEncoder.encode(chunk, "UTF-8")
+                val url = java.net.URL("https://translate.google.com/translate_tts?ie=UTF-8&q=$encoded&tl=${localeObj.toLanguageTag()}&client=tw-ob&ttsspeed=1.0")
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 10000
+                conn.readTimeout = 30000
+                conn.requestMethod = "GET"
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14)")
+                try {
+                    if (conn.responseCode == 200) {
+                        conn.inputStream.use { it.copyTo(fos) }
+                        anySuccess = true
+                    }
+                } catch (_: Exception) {
+                } finally {
+                    try { conn.disconnect() } catch (_: Exception) {}
+                }
             }
         }
-        conn.disconnect()
-        if (!outputFile.exists() || outputFile.length() <= 0) {
+
+        if (!anySuccess || !outputFile.exists() || outputFile.length() <= 0) {
+            try { outputFile.delete() } catch (_: Exception) {}
             return "Audio generation failed: no audio produced"
         }
         return "[audio:${outputFile.absolutePath}]"
@@ -1141,13 +1336,28 @@ class ToolExecutor(private val context: Context? = null) {
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)
                 .build()
-            val response = client.newCall(request).execute()
-            if (response.code != 200) {
-                AppLogger.w("KokoroTTS", "Server returned ${response.code}: ${response.body?.string()}")
-                response.close()
-                return null
+            try {
+                client.newCall(request).execute().use { response ->
+                    if (response.code != 200) {
+                        AppLogger.w("KokoroTTS", "Server returned ${response.code}: ${response.body?.string()?.take(300)}")
+                        try { client.dispatcher.executorService.shutdown() } catch (_: Exception) {}
+                        return null
+                    }
+                    val ct = response.header("Content-Type") ?: ""
+                    val bytes = response.body?.bytes()
+                    try { client.dispatcher.executorService.shutdown() } catch (_: Exception) {}
+                    if (bytes == null || bytes.size < 2000) {
+                        AppLogger.w("KokoroTTS", "Empty/short body (${bytes?.size ?: 0}b, ct=$ct)")
+                        return null
+                    }
+                    if (!ct.contains("audio", ignoreCase = true) && !ct.contains("octet", ignoreCase = true) && !ct.contains("mpeg", ignoreCase = true)) {
+                        AppLogger.w("KokoroTTS", "Unexpected content-type $ct")
+                    }
+                    bytes
+                }
+            } finally {
+                try { client.dispatcher.executorService.shutdown() } catch (_: Exception) {}
             }
-            response.body?.bytes()
         } catch (e: Exception) {
             AppLogger.e("KokoroTTS", "Kokoro TTS failed: ${e.message}", e)
             null
@@ -1236,6 +1446,8 @@ class ToolExecutor(private val context: Context? = null) {
     private fun edgeWsSynthesize(ssml: String): ByteArray? {
         val latch = CountDownLatch(1)
         val audioBuf = ByteArrayOutputStream()
+        val turnEnd = java.util.concurrent.atomic.AtomicBoolean(false)
+        val socketRef = java.util.concurrent.atomic.AtomicReference<WebSocket?>(null)
         val client = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
@@ -1279,6 +1491,7 @@ class ToolExecutor(private val context: Context? = null) {
 
         client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                socketRef.set(webSocket)
                 AppLogger.i("EdgeTTS", "WebSocket opened")
                 val dateStr = utcDateFormat.format(java.util.Date())
                 val connMsg = "X-Timestamp:$dateStr\r\n" +
@@ -1304,8 +1517,14 @@ class ToolExecutor(private val context: Context? = null) {
                 if (headerEnd >= 0) {
                     val headers = text.substring(0, headerEnd)
                     if (headers.contains("Path:turn.end")) {
+                        turnEnd.set(true)
                         latch.countDown()
+                    } else if (headers.contains("Path:turn.start")) {
+                        // stream started — no-op
                     }
+                } else if (text.contains("Path:turn.end")) {
+                    turnEnd.set(true)
+                    latch.countDown()
                 }
             }
 
@@ -1334,11 +1553,23 @@ class ToolExecutor(private val context: Context? = null) {
             }
         })
         latch.await(30, TimeUnit.SECONDS)
+        try { socketRef.get()?.close(1000, "done") } catch (_: Exception) {}
+        try { socketRef.get()?.cancel() } catch (_: Exception) {}
+        try { client.dispatcher.executorService.shutdown() } catch (_: Exception) {}
         val data = audioBuf.toByteArray()
+        // Without turn.end the stream was cut — treat tiny buffers as failure so fallbacks run.
+        if (!turnEnd.get() && data.size < 8000) {
+            AppLogger.w("EdgeTTS", "No turn.end and only ${data.size} bytes — treating as failure")
+            return null
+        }
         return if (data.isNotEmpty()) data else null
     }
 
     private fun androidTtsSynthesize(text: String, locale: String, voiceName: String, ctx: Context): ByteArray? {
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            AppLogger.w("EdgeTTS", "androidTtsSynthesize called on main thread — refusing (would deadlock)")
+            return null
+        }
         var tts: android.speech.tts.TextToSpeech? = null
         val safeText = text.take(3500)
         return try {
@@ -1369,22 +1600,35 @@ class ToolExecutor(private val context: Context? = null) {
                 (voiceName.endsWith("Neural", ignoreCase = true) && edgeVoiceMap.values.flatten()
                     .firstOrNull { it.first == voiceName }?.second == "male")
 
-            val matchedVoice = tts?.voices?.firstOrNull { v ->
-                val vl = v.locale
-                vl?.language == localeObj.language &&
-                    (vl?.country == localeObj.country || localeObj.country.isNullOrEmpty()) &&
-                    (!isMale || v.features.any { f -> f.contains("male", ignoreCase = true) })
-            }
+            val wantFemale = voiceName.contains("female", ignoreCase = true) ||
+                (voiceName.endsWith("Neural", ignoreCase = true) && edgeVoiceMap.values.flatten()
+                    .firstOrNull { it.first == voiceName }?.second == "female")
+            val matchedVoice = tts?.voices
+                ?.filter { v ->
+                    val vl = v.locale
+                    vl?.language == localeObj.language &&
+                        (vl?.country == localeObj.country || localeObj.country.isNullOrEmpty())
+                }
+                ?.sortedByDescending { v -> if (v.features.any { f -> f.contains("network", ignoreCase = true) }) 1 else 0 }
+                ?.firstOrNull { v ->
+                    val feats = v.features.joinToString(" ").lowercase() + " " + (v.name ?: "").lowercase()
+                    val looksMale = feats.contains("male") && !feats.contains("female")
+                    val looksFemale = feats.contains("female")
+                    if (isMale) looksMale else if (wantFemale) looksFemale else true
+                } ?: tts?.voices?.firstOrNull { v ->
+                    val vl = v.locale
+                    vl?.language == localeObj.language
+                }
             if (matchedVoice != null) {
                 tts?.voice = matchedVoice
             } else {
                 tts?.setLanguage(localeObj)
             }
 
-            val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmssSSS", java.util.Locale.US).format(java.util.Date())
+            val uid = java.util.UUID.randomUUID().toString().take(8)
             val audioDir = File(ctx.cacheDir, "audio")
             audioDir.mkdirs()
-            val outputFile = File(audioDir, "tts_$timestamp.wav")
+            val outputFile = File(audioDir, "tts_$uid.wav")
 
             val doneLatch = CountDownLatch(1)
             var synthOk = false
@@ -1393,7 +1637,7 @@ class ToolExecutor(private val context: Context? = null) {
                 override fun onError(utteranceId: String?) { doneLatch.countDown() }
                 override fun onStart(utteranceId: String?) {}
             })
-            val result = tts?.synthesizeToFile(safeText, android.os.Bundle.EMPTY, outputFile, "tts_$timestamp")
+            val result = tts?.synthesizeToFile(safeText, android.os.Bundle.EMPTY, outputFile, "tts_$uid")
             if (result != android.speech.tts.TextToSpeech.SUCCESS) return null
             if (!doneLatch.await(30, TimeUnit.SECONDS) || !synthOk) return null
             if (!outputFile.exists() || outputFile.length() <= 0) return null
@@ -1446,28 +1690,52 @@ class ToolExecutor(private val context: Context? = null) {
         val lowerModel = requestedModel.lowercase()
 
         val specifiedModel = when {
+            lowerModel.contains("chatgpt") -> "chatgpt"
             lowerModel.contains("dalle") || lowerModel.contains("dall-e") -> "dalle"
             lowerModel.contains("antigravity") -> "antigravity"
             lowerModel.contains("flux") -> "flux"
             lowerModel.contains("turbo") -> "turbo"
-            lowerModel.contains("imagen") || lowerModel.contains("gemini") -> "imagen"
+            lowerModel.contains("imagen") || lowerModel.contains("gemini") || lowerModel.contains("google") -> "imagen"
             lowerModel.contains("sdxl") -> "sdxl"
+            lowerPrompt.contains("model:chatgpt") || lowerPrompt.contains("using chatgpt") || lowerPrompt.contains("with chatgpt") -> "chatgpt"
             lowerPrompt.contains("model:dalle") || lowerPrompt.contains("model:dall-e") || lowerPrompt.contains("using dalle") || lowerPrompt.contains("with dalle") -> "dalle"
             lowerPrompt.contains("model:antigravity") || lowerPrompt.contains("using antigravity") || lowerPrompt.contains("with antigravity") -> "antigravity"
             lowerPrompt.contains("model:flux") || lowerPrompt.contains("using flux") || lowerPrompt.contains("with flux") -> "flux"
             lowerPrompt.contains("model:turbo") || lowerPrompt.contains("using turbo") || lowerPrompt.contains("with turbo") -> "turbo"
             lowerPrompt.contains("model:imagen") || lowerPrompt.contains("using imagen") || lowerPrompt.contains("with imagen") -> "imagen"
+            lowerPrompt.contains("model:google") || lowerPrompt.contains("using google") || lowerPrompt.contains("with google") -> "imagen"
+            lowerPrompt.contains("model:gemini") || lowerPrompt.contains("using gemini") || lowerPrompt.contains("with gemini") -> "imagen"
             lowerPrompt.contains("model:sdxl") || lowerPrompt.contains("using sdxl") || lowerPrompt.contains("with sdxl") -> "sdxl"
             lowerPrompt.contains("using pollinations") || lowerPrompt.contains("with pollinations") -> "pollinations"
             else -> ""
         }
 
         val cleanPrompt = prompt
-            .replace(Regex("""(?i)(model:\s*\w+|using\s+(dalle|dall-e|antigravity|flux|turbo|imagen|sdxl|pollinations)|with\s+(dalle|dall-e|antigravity|flux|turbo|imagen|sdxl|pollinations))"""), "")
+            .replace(Regex("""(?i)(model:\s*\w+|using\s+(chatgpt|dalle|dall-e|antigravity|flux|turbo|imagen|google|gemini|sdxl|pollinations)|with\s+(chatgpt|dalle|dall-e|antigravity|flux|turbo|imagen|google|gemini|sdxl|pollinations))"""), "")
             .trim()
             .ifEmpty { prompt }
 
-        // 1a. OpenAI DALL-E 3 / DALL-E 2
+        // 1a. ChatGPT Headless Single-Session Image Generation (Default image engine if connected and no specific model requested)
+        if (ctx != null && (specifiedModel == "chatgpt" || (specifiedModel.isBlank() && lowerModel.isBlank()) || (specifiedModel == "dalle" && ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx).getApiKey("openai").isBlank()))) {
+            val bridge = ai.deepcode.android.service.chatgpt.ChatGPTHeadlessBridge.getInstance(ctx)
+            if (bridge.isConfigured()) {
+                AppLogger.i("ToolExecutor", "Using ChatGPT headless image generation for prompt: $cleanPrompt")
+                try {
+                    val result = kotlinx.coroutines.runBlocking { bridge.generateImage(cleanPrompt) }
+                    if (result.isNotBlank() && !result.startsWith("Error:") && !result.startsWith("No image")) {
+                        AppLogger.i("ToolExecutor", "ChatGPT image generation success: $result")
+                        return result
+                    }
+                } catch (e: Exception) {
+                    AppLogger.e("ToolExecutor", "ChatGPT headless image generation failed: ${e.message}", e)
+                    if (specifiedModel == "chatgpt") {
+                        return "Error: ${e.message}"
+                    }
+                }
+            }
+        }
+
+        // 1b. OpenAI DALL-E 3 / DALL-E 2
         if (ctx != null && (specifiedModel == "dalle" || lowerModel.contains("openai") || lowerModel.contains("dall-e"))) {
             val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
             val openAiKey = prefs.getApiKey("openai")
@@ -2110,7 +2378,7 @@ class ToolExecutor(private val context: Context? = null) {
                 return ""
             }
 
-            outputFile.toURI().toString()
+            outputFile.absolutePath
         } catch (e: Exception) {
             AppLogger.w("ImageGen", "Cloudflare image gen failed: ${e.message}")
             ""
@@ -2137,7 +2405,7 @@ class ToolExecutor(private val context: Context? = null) {
 
             if (apiKey.isBlank()) {
                 logW("Veo", "No Veo API key configured, falling back")
-                return "https://storage.googleapis.com/veo-samples/sample.mp4"
+                return wrapVideoUrl("https://storage.googleapis.com/veo-samples/sample.mp4")
             }
 
             val isGeminiApi = endpointUrl.contains("generativelanguage.googleapis.com") || endpointUrl.contains("placeholder") || apiKey.startsWith("AIzaSy") || apiKey.startsWith("AQ.")
@@ -2182,7 +2450,19 @@ class ToolExecutor(private val context: Context? = null) {
                 var videoUrl: String? = null
                 var attempts = 0
                 while (!done && attempts < 30) {
-                    Thread.sleep(6000) // Poll every 6 seconds
+                    for (step in 0 until 12) {
+                        if (Thread.currentThread().isInterrupted) {
+                            logW("Veo", "Polling interrupted — returning fallback")
+                            return wrapVideoUrl("https://storage.googleapis.com/veo-samples/sample.mp4")
+                        }
+                        try {
+                            Thread.sleep(500)
+                        } catch (ie: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                            logW("Veo", "Polling interrupted — returning fallback")
+                            return wrapVideoUrl("https://storage.googleapis.com/veo-samples/sample.mp4")
+                        }
+                    }
                     attempts++
                     val pollUrl = "https://generativelanguage.googleapis.com/v1beta/$operationName"
                     val pollRequest = Request.Builder()
@@ -2292,16 +2572,30 @@ class ToolExecutor(private val context: Context? = null) {
 
     private fun resolvePath(path: String, workingDir: String): File {
         val file = File(path)
-        return if (file.isAbsolute) file else File(workingDir, path)
+        val base = if (file.isAbsolute) file else File(workingDir, path)
+        // Contain `..` escapes inside workingDir when a project dir is set — absolute paths outside are still allowed.
+        return try {
+            if (workingDir.isNotBlank() && !file.isAbsolute) {
+                val root = File(workingDir).canonicalFile
+                val canon = base.canonicalFile
+                if (!canon.path.startsWith(root.path)) File(root, base.name) else canon
+            } else base.canonicalFile
+        } catch (_: Exception) { base }
     }
 
     private fun readFile(path: String, workingDir: String, useRoot: Boolean): String {
         val file = resolvePath(path, workingDir)
+        val maxChars = 256 * 1024
+        val maxBytes = 256 * 1024L
         if (useRoot) {
             val escapedPath = escapeShellArg(file.absolutePath)
             val result = TerminalRunner.runCommand("cat $escapedPath", workingDir, true)
             if (!result.startsWith("Error running command:") && !result.contains("No such file") && !result.contains("Permission denied")) {
-                return result
+                return if (result.length > maxChars) {
+                    result.take(maxChars) + "\n\n... [TRUNCATED: Content exceeds 256KB preview limit]"
+                } else {
+                    result
+                }
             }
         }
         if (file.exists() && file.isFile) {
@@ -2310,6 +2604,11 @@ class ToolExecutor(private val context: Context? = null) {
             if (name.endsWith(".pdf") || name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".gif") || name.endsWith(".docx") || name.endsWith(".xlsx") || name.endsWith(".pptx")) {
                 return "[file:${file.absolutePath}] (${file.length()} bytes)"
             }
+            if (file.length() > maxBytes) {
+                val bytes = ByteArray(maxBytes.toInt())
+                file.inputStream().use { it.read(bytes) }
+                return String(bytes, Charsets.UTF_8) + "\n\n... [TRUNCATED: File size (${file.length()} bytes) exceeds 256KB preview limit]"
+            }
             return file.readText()
         }
         val drive = telegramDrive
@@ -2317,7 +2616,12 @@ class ToolExecutor(private val context: Context? = null) {
             val fileName = File(path).name
             val result = drive.retrieveTextFile(fileName)
             if (result.isSuccess) {
-                return result.getOrThrow()
+                val text = result.getOrThrow()
+                return if (text.length > maxChars) {
+                    text.take(maxChars) + "\n\n... [TRUNCATED: File size exceeds 256KB preview limit]"
+                } else {
+                    text
+                }
             }
         }
         return "File does not exist or is a directory: ${file.absolutePath}"
@@ -2407,26 +2711,35 @@ class ToolExecutor(private val context: Context? = null) {
     }
 
     private fun grepSearch(query: String, path: String, workingDir: String, useRoot: Boolean): String {
+        if (query.isBlank()) return "Missing query argument"
+        if (query.length > 500) return "Grep failed: query too long (max 500 chars)"
         val target = resolvePath(path, workingDir)
         if (useRoot) {
             val escapedQuery = escapeShellArg(query)
             val escapedPath = escapeShellArg(target.absolutePath)
-            return TerminalRunner.runCommand("grep -rnw $escapedPath -e $escapedQuery", workingDir, true)
+            return TerminalRunner.runCommand("grep -rnw $escapedPath -e $escapedQuery | head -n 100", workingDir, true)
         }
         return try {
             val results = mutableListOf<String>()
-            target.walkTopDown().forEach { file ->
-                if (file.isFile) {
+            val skipDirs = setOf(".git", ".gradle", "build", "node_modules", ".idea", ".kotlin")
+            val skipExt = setOf("png", "jpg", "jpeg", "gif", "mp3", "mp4", "zip", "pdf", "apk", "aab", "so", "dex")
+            target.walkTopDown().maxDepth(12).onEnter { dir -> dir.name !in skipDirs && !dir.name.startsWith(".") || dir == target }.forEach { file ->
+                if (results.size >= 100) return@forEach
+                if (!file.isFile) return@forEach
+                try {
+                    if (file.length() > 1024 * 1024) return@forEach
+                    if (file.extension.lowercase() in skipExt) return@forEach
                     file.useLines { lines ->
                         lines.forEachIndexed { idx, line ->
+                            if (results.size >= 100) return@forEachIndexed
                             if (line.contains(query)) {
-                                results.add("${file.absolutePath}:${idx + 1}: $line")
+                                results.add("${file.absolutePath}:${idx + 1}: ${line.take(500)}")
                             }
                         }
                     }
-                }
+                } catch (_: Exception) {}
             }
-            if (results.isEmpty()) "No matches found" else results.take(100).joinToString("\n")
+            if (results.isEmpty()) "No matches found" else results.joinToString("\n")
         } catch (e: Exception) {
             "Grep failed: ${e.message}"
         }
@@ -2456,7 +2769,15 @@ class ToolExecutor(private val context: Context? = null) {
     }
 
     private fun deleteFileOrDirectory(path: String, workingDir: String, useRoot: Boolean): String {
-        val file = resolvePath(path, workingDir)
+        val trimmed = path.trim()
+        if (trimmed.isEmpty() || trimmed == "/" || trimmed == "." || trimmed == "./") return "Delete failed: refusing to delete root/empty path"
+        val file = resolvePath(trimmed, workingDir)
+        try {
+            val canon = file.canonicalPath
+            if (canon == "/" || canon == "/storage" || canon == "/storage/emulated" || canon == "/storage/emulated/0") {
+                return "Delete failed: refusing to delete system path $canon"
+            }
+        } catch (_: Exception) {}
         if (useRoot) {
             val escapedPath = escapeShellArg(file.absolutePath)
             val result = TerminalRunner.runCommand("rm -rf $escapedPath", workingDir, true)
@@ -2653,6 +2974,19 @@ class ToolExecutor(private val context: Context? = null) {
     }
 
     private fun webFetch(url: String, throwOnError: Boolean = false, raw: Boolean = false): String {
+        val lower = url.trim().lowercase()
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+            val msg = "Web fetch failed: only http(s) URLs allowed"
+            if (throwOnError) throw RuntimeException(msg) else return msg
+        }
+        // Block cloud-metadata + loopback SSRF targets; LAN hosts still allowed for local dev servers.
+        try {
+            val host = java.net.URL(url).host.lowercase()
+            if (host == "169.254.169.254" || host == "metadata.google.internal" || host == "[::1]") {
+                val msg = "Web fetch failed: blocked host $host"
+                if (throwOnError) throw RuntimeException(msg) else return msg
+            }
+        } catch (_: Exception) {}
         // 1st Priority: TinyFish Fetch API
         val tinyFishResult = fetchTinyFishFetch(url, raw = raw)
         if (!tinyFishResult.isNullOrBlank()) {
@@ -3391,12 +3725,12 @@ class ToolExecutor(private val context: Context? = null) {
                 )
             ),
             Tool("generate_image",
-                "Generate an image from a text prompt using AI. Falls back to web image search if AI generation is unavailable. Supported model values: antigravity (uses the user's Antigravity/Google account — default when no model specified and Antigravity is configured), cloudflare, flux, turbo, sdxl, imagen, pollinations. If the user mentions 'antigravity' or asks to use their Google/Antigravity image models, ALWAYS set model to 'antigravity'.",
+                "Generate an image from a text prompt using AI. Automatically uses the connected ChatGPT engine by default when connected. Supported model values: chatgpt, dalle, antigravity, cloudflare, flux, turbo, sdxl, imagen, pollinations. ALWAYS call this tool whenever the user asks for an image, drawing, or photo.",
                 mapOf(
                     "type" to "object",
                     "properties" to mapOf(
                         "prompt" to mapOf("type" to "string", "description" to "The text description of the image to generate. Be detailed for best results."),
-                        "model" to mapOf("type" to "string", "description" to "Optional image model to use: antigravity, cloudflare, flux, turbo, sdxl, imagen, or pollinations. Omit to use the default generator.")
+                        "model" to mapOf("type" to "string", "description" to "Optional image model to use: chatgpt, dalle, antigravity, cloudflare, flux, turbo, sdxl, imagen, or pollinations. Omit to use the default generator.")
                     ),
                     "required" to listOf("prompt")
                 )
@@ -3412,14 +3746,15 @@ class ToolExecutor(private val context: Context? = null) {
                 )
             ),
             Tool("edge_tts",
-                "Generate speech/audio from text using neural TTS. Use this when the user asks for audio, voice, speech, TTS, or 'read aloud'. Returns a playable audio file path. IMPORTANT: Do NOT set the 'voice' parameter — the voice/language is controlled by the user's /voice and /language settings.",
+                "Generate speech/audio from text using neural TTS. Use this when the user asks for audio, voice, speech, TTS, or 'read aloud'. Returns a playable audio file path. IMPORTANT: Do NOT set the 'voice' parameter — the voice/language is controlled by the user's /voice and /language settings. Set verbatim=true to speak the exact text (skips last-response lookup and topic narration).",
                 mapOf(
                     "type" to "object",
                     "properties" to mapOf(
                         "text" to mapOf("type" to "string", "description" to "The text to convert to speech"),
                         "voice" to mapOf("type" to "string", "description" to "DO NOT USE. Omit this parameter. The user's saved voice settings will be used automatically."),
                         "rate" to mapOf("type" to "string", "description" to "DO NOT USE. Omit this parameter. The user's saved tone settings will be used automatically."),
-                        "pitch" to mapOf("type" to "string", "description" to "DO NOT USE. Omit this parameter.")
+                        "pitch" to mapOf("type" to "string", "description" to "DO NOT USE. Omit this parameter."),
+                        "verbatim" to mapOf("type" to "boolean", "description" to "If true, speak text literally without resolving last-response or generating topic narration")
                     ),
                     "required" to listOf("text")
                 )
@@ -3482,14 +3817,15 @@ Always pass the user's exact request as user_prompt.""",
                 )
             ),
             Tool("create_pdf",
-                """Create a high-precision PDF document using Gotenberg API. USE THIS IMMEDIATELY when the user asks to create any PDF — including study notes, exam papers, reports, resumes, or any document. Generates clean vector PDF via Gotenberg API and returns [file:/path/to/doc.pdf].""",
+                """Create a high-precision PDF document using Gotenberg API (falls back to offline layout engine if server unreachable). USE THIS IMMEDIATELY when the user asks to create any PDF — including study notes, exam papers, reports, resumes, or any document. Generates clean vector PDF and returns [file:/path/to/doc.pdf].""",
                 mapOf(
                     "type" to "object",
                     "properties" to mapOf(
                         "title" to mapOf("type" to "string", "description" to "The title of the document"),
                         "content" to mapOf("type" to "string", "description" to "The full text content. Supports HTML/Markdown formatting (e.g. <h2>, <p>, <ul>, <li>, <table>)."),
                         "author" to mapOf("type" to "string", "description" to "Optional author name"),
-                        "filename" to mapOf("type" to "string", "description" to "Optional custom filename (without .pdf extension)")
+                        "filename" to mapOf("type" to "string", "description" to "Optional custom filename (without .pdf extension)"),
+                        "layout" to mapOf("type" to "string", "description" to "Optional offline layout id (classic, modern-minimal, corporate-report, academic-paper, invoice-receipt, resume-cv). Uses offline engine directly.")
                     ),
                     "required" to listOf("title", "content")
                 )
@@ -3515,13 +3851,86 @@ Always pass the user's exact request as user_prompt.""",
                 )
             ),
             Tool("set_kokoro_url",
-                "Set the Kokoro-FastAPI server URL (for the kokoro TTS backend). Default is http://localhost:8880. The server runs via: docker run -p 8880:8880 remsky/kokoro-fastapi",
+                "Set the Kokoro-FastAPI server URL (for the kokoro TTS backend). Default is http://localhost:8880. On Android emulator use http://10.0.2.2:8880, on device use your PC LAN IP (e.g. http://192.168.1.100:8880). The server runs via: docker run -p 8880:8880 remsky/kokoro-fastapi",
                 mapOf(
                     "type" to "object",
                     "properties" to mapOf(
                         "url" to mapOf("type" to "string", "description" to "Full URL of the Kokoro-FastAPI server, e.g. http://192.168.1.100:8880")
                     ),
                     "required" to listOf("url")
+                )
+            ),
+            Tool("set_tts_voice",
+                "Set the TTS voice. Pass a locale like en-US / hi-IN, or an exact Edge voice like en-US-AriaNeural (saved as exact voice).",
+                mapOf(
+                    "type" to "object",
+                    "properties" to mapOf(
+                        "voice" to mapOf("type" to "string", "description" to "Locale (en-US) or exact Edge voice (en-US-AriaNeural)")
+                    ),
+                    "required" to listOf("voice")
+                )
+            ),
+            Tool("analyze_pdf",
+                "Analyze a PDF file and describe its layout (columns, margins, styles) so a matching layout can be recreated.",
+                mapOf(
+                    "type" to "object",
+                    "properties" to mapOf(
+                        "path" to mapOf("type" to "string", "description" to "Absolute path to the PDF file")
+                    ),
+                    "required" to listOf("path")
+                )
+            ),
+            Tool("list_pdf_layouts",
+                "List available built-in and custom PDF layouts for create_pdf.",
+                mapOf(
+                    "type" to "object",
+                    "properties" to mapOf<String, Any>(),
+                    "required" to listOf<String>()
+                )
+            ),
+            Tool("create_pdf_from_reference",
+                "Create a PDF whose layout matches a reference PDF file.",
+                mapOf(
+                    "type" to "object",
+                    "properties" to mapOf(
+                        "reference_path" to mapOf("type" to "string", "description" to "Path to the reference PDF"),
+                        "title" to mapOf("type" to "string", "description" to "Document title"),
+                        "content" to mapOf("type" to "string", "description" to "Document content"),
+                        "author" to mapOf("type" to "string", "description" to "Optional author"),
+                        "filename" to mapOf("type" to "string", "description" to "Optional filename")
+                    ),
+                    "required" to listOf("reference_path", "title", "content")
+                )
+            ),
+            Tool("generate_chatgpt_document",
+                """Generate a high-precision structured document (Markdown, specification, report, table) using the headless ChatGPT single-session engine.
+Suppresses all conversational filler and returns clean formatted document content and local file path.""",
+                mapOf(
+                    "type" to "object",
+                    "properties" to mapOf(
+                        "prompt" to mapOf("type" to "string", "description" to "Document requirements, topic, sections, or details"),
+                        "format" to mapOf("type" to "string", "description" to "Format style: 'markdown', 'report', 'guide', 'specs'. Default is 'markdown'")
+                    ),
+                    "required" to listOf("prompt")
+                )
+            ),
+            Tool("schedule_chatgpt_task",
+                """Schedule a recurring or delayed task on ChatGPT directly from chat. The task will be managed in DeepCode's Automations page.
+Can be used for:
+- Recurring image generations (e.g. daily wallpapers)
+- Scheduled document creations (e.g. daily/weekly briefs, summaries, reports)
+- Automated periodic ChatGPT tasks
+
+The task strictly runs within DeepCode's single persistent ChatGPT conversation session and outputs results into a dedicated chat session.""",
+                mapOf(
+                    "type" to "object",
+                    "properties" to mapOf(
+                        "name" to mapOf("type" to "string", "description" to "Descriptive name for the scheduled task (e.g. 'Daily Tech Brief')"),
+                        "task_type" to mapOf("type" to "string", "description" to "Type of task: 'image_generation', 'document_creation', or 'task'"),
+                        "prompt" to mapOf("type" to "string", "description" to "The exact prompt to run on ChatGPT"),
+                        "cron" to mapOf("type" to "string", "description" to "Standard cron expression (e.g. '0 9 * * *' for daily at 9am, '0 8 * * 1' for weekly Mondays)")
+                    ),
+                    "required" to listOf("name", "task_type", "prompt", "cron")
                 )
             )
         )
@@ -3547,6 +3956,41 @@ Always pass the user's exact request as user_prompt.""",
         val triggeredBy = args.get("triggered_by")?.asString ?: "primary_ai"
 
         val resolvedSite = if (targetSite == "auto") WebViewAutomator.getTargetSite(taskType, targetSite) else targetSite
+
+        // Route ChatGPT tasks directly to ChatGPTHeadlessBridge if configured
+        if (resolvedSite.equals("chatgpt", ignoreCase = true)) {
+            val bridge = ai.deepcode.android.service.chatgpt.ChatGPTHeadlessBridge.getInstance(ctx)
+            if (bridge.isConfigured()) {
+                return try {
+                    val result = kotlinx.coroutines.runBlocking {
+                        when {
+                            taskType.lowercase().contains("image") -> bridge.generateImage(userPrompt)
+                            taskType.lowercase().contains("document") -> bridge.generateDocument(userPrompt)
+                            else -> bridge.executeTask(userPrompt)
+                        }
+                    }
+                    val isImage = taskType.lowercase().contains("image")
+                    gson.toJson(mapOf(
+                        "task_id" to taskId,
+                        "status" to "SUCCESS",
+                        "mode" to "HEADLESS",
+                        "site_used" to "chatgpt",
+                        "target_site_used" to "chatgpt",
+                        "capability" to taskType,
+                        "output_type" to if (isImage) "image" else "text",
+                        "output" to mapOf<String, Any>(
+                            "text_content" to result,
+                            "image_urls" to if (isImage) listOf(result.removePrefix("[image:").removeSuffix("]")) else emptyList<String>(),
+                            "description" to "ChatGPT Headless Single-Session delivery"
+                        ),
+                        "error" to null
+                    ))
+                } catch (e: Exception) {
+                    AppLogger.e("ToolExecutor", "ChatGPTHeadlessBridge failed: ${e.message}", e)
+                    gson.toJson(generateMockWebBridgeResponse(taskId, taskType, resolvedSite, userPrompt, triggeredBy, e.message ?: "ChatGPT headless error"))
+                }
+            }
+        }
 
         return try {
             val automator = WebViewAutomator(ctx)
@@ -3624,8 +4068,8 @@ Always pass the user's exact request as user_prompt.""",
 
         return WebBridgeResult(
             task_id = taskId,
-            status = if (isFailover) "SUCCESS" else "success",
-            mode = if (isFailover) "FAILOVER" else "NORMAL",
+            status = "FAILOVER",
+            mode = "FAILOVER",
             target_site_used = siteUsed,
             site_used = siteUsed,
             output_type = taskType,
@@ -3668,20 +4112,26 @@ Always pass the user's exact request as user_prompt.""",
     // PDF Creation — Layout-Aware
     // ════════════════════════════════════════════════
 
-    private fun executeGotenbergPdf(title: String, content: String, author: String?, filename: String?): String {
+    private fun htmlEscape(s: String): String =
+        s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;")
+
+    private fun executeGotenbergPdf(title: String, content: String, author: String?, filename: String?, layout: String? = null): String {
         val ctx = context ?: return "Error: Context not available for PDF generation"
         val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
-        val gotenbergUrl = prefs.getSetting("gotenberg_url", "").ifBlank { "http://192.168.1.71:3000" }.trimEnd('/')
+        val gotenbergUrl = prefs.getSetting("gotenberg_url", "").ifBlank { "http://192.168.1.71:3000" }.trim().trimEnd('/')
+        if (content.isBlank()) return "Missing content argument"
 
         val formattedBody = if (content.contains("<p>") || content.contains("<h") || content.contains("<div>") || content.contains("<!DOCTYPE")) {
             content
         } else {
             content.split("\n\n").joinToString("") { block ->
                 if (block.isBlank()) ""
-                else "<p style='margin-bottom:12px;white-space:pre-wrap;'>" + block.trim().replace("\n", "<br>") + "</p>"
+                else "<p style='margin-bottom:12px;white-space:pre-wrap;'>" + htmlEscape(block.trim()).replace("\n", "<br>") + "</p>"
             }
         }
 
+        val safeTitle = htmlEscape(title.ifBlank { "Document" }.take(200))
+        val safeAuthor = if (!author.isNullOrBlank()) "• Author: ${htmlEscape(author.take(100))}" else ""
         val htmlContent = """
             <!DOCTYPE html>
             <html>
@@ -3689,10 +4139,11 @@ Always pass the user's exact request as user_prompt.""",
                 <meta charset="utf-8">
                 <style>
                     body {
-                        font-family: 'Segoe UI', Helvetica, Arial, sans-serif;
+                        font-family: 'Noto Sans', 'Segoe UI', Helvetica, Arial, sans-serif;
                         padding: 40px 50px;
                         color: #1F2937;
                         line-height: 1.6;
+                        word-break: break-word;
                     }
                     h1 {
                         color: #4F46E5;
@@ -3704,6 +4155,11 @@ Always pass the user's exact request as user_prompt.""",
                     p { font-size: 14px; margin-bottom: 12px; }
                     ul, ol { margin-left: 20px; font-size: 14px; }
                     li { margin-bottom: 6px; }
+                    table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+                    th, td { border: 1px solid #E5E7EB; padding: 6px 8px; font-size: 12px; word-break: break-word; }
+                    th { background: #F9FAFB; }
+                    img { max-width: 100%; height: auto; }
+                    pre, code { white-space: pre-wrap; word-break: break-word; font-size: 12px; }
                     .footer {
                         margin-top: 40px;
                         font-size: 11px;
@@ -3715,9 +4171,9 @@ Always pass the user's exact request as user_prompt.""",
                 </style>
             </head>
             <body>
-                <h1>$title</h1>
+                <h1>$safeTitle</h1>
                 <div>$formattedBody</div>
-                <div class="footer">Generated by DeepCode Gotenberg API ${author?.let { "• Author: $it" } ?: ""}</div>
+                <div class="footer">Generated by DeepCode Gotenberg API $safeAuthor</div>
             </body>
             </html>
         """.trimIndent()
@@ -3743,32 +4199,79 @@ Always pass the user's exact request as user_prompt.""",
 
             client.newCall(req).execute().use { resp ->
                 if (resp.isSuccessful && resp.body != null) {
-                    val bytes = resp.body!!.bytes()
+                    val contentType = resp.header("Content-Type") ?: ""
                     val docsDir = File(ctx.filesDir, "Documents")
                     if (!docsDir.exists()) docsDir.mkdirs()
-                    val outName = filename?.takeIf { it.isNotBlank() }?.let { if (it.endsWith(".pdf")) it else "$it.pdf" }
-                        ?: "doc_${System.currentTimeMillis()}.pdf"
+                    val baseName = sanitizeFileName(filename?.takeIf { it.isNotBlank() }?.let { if (it.endsWith(".pdf")) it.dropLast(4) else it }, "doc_${System.currentTimeMillis()}")
+                    val outName = "$baseName.pdf"
                     val outFile = File(docsDir, outName)
-                    outFile.writeBytes(bytes)
+                    // Stream to disk instead of loading whole PDF into heap.
+                    try {
+                        resp.body!!.byteStream().use { input ->
+                            java.io.FileOutputStream(outFile).use { fos -> input.copyTo(fos) }
+                        }
+                    } finally {
+                        try { client.dispatcher.executorService.shutdown() } catch (_: Exception) {}
+                    }
+                    if (!outFile.exists() || outFile.length() == 0L) return fallbackLocalPdf(title, content, author, filename, "Gotenberg returned empty PDF", layout)
+                    if (!contentType.contains("pdf", ignoreCase = true) && outFile.length() < 1000) {
+                        val preview = try { outFile.readBytes().take(300).toByteArray().let { String(it) } } catch (_: Exception) { "" }
+                        try { outFile.delete() } catch (_: Exception) {}
+                        return "Gotenberg API Error: unexpected response (${contentType.take(60)}): ${preview.take(300)}"
+                    }
 
-                    // Also save copy to public Downloads folder if accessible
+                    // Also save copy to public Downloads folder if accessible (best-effort, internal path stays canonical)
                     try {
                         val publicDownloads = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
                         if (publicDownloads != null && publicDownloads.exists()) {
-                            File(publicDownloads, outName).writeBytes(bytes)
+                            outFile.copyTo(File(publicDownloads, outName), overwrite = true)
                         }
                     } catch (_: Exception) {}
 
-                    AppLogger.i("Gotenberg", "Successfully created PDF via Gotenberg API: ${outFile.absolutePath} (${bytes.size} bytes)")
+                    AppLogger.i("Gotenberg", "Successfully created PDF via Gotenberg API: ${outFile.absolutePath} (${outFile.length()} bytes)")
                     "[file:${outFile.absolutePath}]"
                 } else {
-                    "Gotenberg API Error (${resp.code}): ${resp.body?.string() ?: resp.message}"
+                    val errBody = try { resp.body?.string()?.take(300) } catch (_: Exception) { resp.message }
+                    try { client.dispatcher.executorService.shutdown() } catch (_: Exception) {}
+                    fallbackLocalPdf(title, content, author, filename, "Gotenberg API Error (${resp.code}): $errBody", layout)
                 }
             }
         } catch (e: Exception) {
             AppLogger.e("Gotenberg", "Gotenberg API PDF generation failed: ${e.message}", e)
-            "Gotenberg PDF generation failed: ${e.message} (Server: $gotenbergUrl)"
+            fallbackLocalPdf(title, content, author, filename, "Gotenberg PDF generation failed: ${e.message} (Server: $gotenbergUrl)", layout)
         }
+    }
+
+    private fun renderLocalPdf(title: String, content: String, author: String?, filename: String?, layout: PdfLayout): String {
+        val ctx = context ?: return "Error: Context not available for PDF generation"
+        return try {
+            val docContent = DocumentContent(
+                title = title.ifBlank { "Document" },
+                author = author,
+                date = java.text.SimpleDateFormat("MMMM dd, yyyy", java.util.Locale.US).format(java.util.Date()),
+                rawContent = content
+            )
+            val safeName = sanitizeFileName(filename?.let { if (it.endsWith(".pdf")) it.dropLast(4) else it }, "doc_${System.currentTimeMillis()}")
+            PdfLayoutEngine().renderDocument(ctx, layout, docContent, "$safeName.pdf")
+        } catch (e: Exception) {
+            "Local PDF generation failed: ${e.message}"
+        }
+    }
+
+    private fun fallbackLocalPdf(title: String, content: String, author: String?, filename: String?, reason: String, layoutName: String? = null): String {
+        AppLogger.w("Gotenberg", "Falling back to local PDF engine. Reason: $reason")
+        val targetLayout = (layoutName?.let {
+            try { resolveCustomLayout(it) } catch (_: Exception) { null }
+                ?: PdfLayoutEngine.getLayoutById(it)
+                ?: PdfLayoutEngine.getLayoutByName(it)
+                ?: PdfLayoutEngine.findLayout(it)
+        }) ?: PdfLayoutEngine.getLayoutById("classic") ?: PdfLayoutEngine.findLayout("classic")!!
+
+        val local = try {
+            renderLocalPdf(title, content, author, filename, targetLayout)
+        } catch (_: Exception) { "" }
+        return if (local.startsWith("[file:")) "$local\n\n(Note: Gotenberg unavailable — used offline layout. $reason)"
+        else "$reason\n\nLocal fallback also failed: $local"
     }
 
     private fun resolveCustomLayout(idOrName: String): PdfLayout? {
@@ -3854,6 +4357,58 @@ Always pass the user's exact request as user_prompt.""",
             "$result\n\n(Layout derived from reference: ${analysis.suggestedLayoutId ?: "custom"} — ${analysis.estimatedColumnCount} column(s), margins: ${analysis.detectedMargins.left.toInt()}/${analysis.detectedMargins.top.toInt()}/${analysis.detectedMargins.right.toInt()}/${analysis.detectedMargins.bottom.toInt()} pts)"
         } catch (e: Exception) {
             "Error creating PDF from reference: ${e.message}"
+        }
+    }
+
+    private fun executeScheduleChatGPTTask(
+        name: String,
+        taskType: String,
+        prompt: String,
+        cron: String,
+        ctx: Context
+    ): String {
+        return try {
+            kotlinx.coroutines.runBlocking {
+                val db = ai.deepcode.android.data.local.AppDatabase.getDatabase(ctx)
+                val sessionId = java.util.UUID.randomUUID().toString()
+                val session = ai.deepcode.android.data.local.SessionEntity(
+                    id = sessionId,
+                    title = "🤖 $name (ChatGPT)",
+                    createdAt = System.currentTimeMillis()
+                )
+                db.sessionDao().insertSession(session)
+
+                val configMap = mutableMapOf(
+                    "target" to "chatgpt",
+                    "task_type" to taskType,
+                    "action_prompt" to prompt,
+                    "chat_session_id" to sessionId
+                )
+                val configJson = gson.toJson(configMap)
+                val nextRun = ai.deepcode.android.ui.automations.AutomationScheduler.computeNextRunAt(cron)
+
+                val entity = ai.deepcode.android.ui.automations.AutomationEntity(
+                    id = java.util.UUID.randomUUID().toString(),
+                    name = name,
+                    description = "ChatGPT automated task: $prompt",
+                    category = "CHATGPT",
+                    isEnabled = true,
+                    cronExpression = cron,
+                    lastRunAt = 0L,
+                    nextRunAt = nextRun,
+                    templateId = "chatgpt_task",
+                    configJson = configJson,
+                    chatSessionId = sessionId
+                )
+
+                val repo = ai.deepcode.android.ui.automations.AutomationRepository(ctx)
+                repo.insertAutomation(entity)
+                ai.deepcode.android.ui.automations.AutomationScheduler(ctx).schedule(entity, forceRecalculate = true)
+
+                "✅ Scheduled ChatGPT task **$name** created!\n- **Type**: $taskType\n- **Schedule**: `$cron`\n- **Dedicated Chat**: 🤖 $name (ChatGPT)\n\nYou can view and manage it anytime from the **Automations** page."
+            }
+        } catch (e: Exception) {
+            "Failed to schedule ChatGPT task: ${e.message}"
         }
     }
 

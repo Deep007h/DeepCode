@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -43,8 +44,8 @@ import java.util.concurrent.TimeUnit
 
 class AgentEngine(private val context: Context) {
     companion object {
-        private val THOUGHT_OPEN_REGEX = Regex("""<\s*(?:think|thinking|reasoning)\s*>""", RegexOption.IGNORE_CASE)
-        private val THOUGHT_CLOSE_REGEX = Regex("""<\s*/\s*(?:think|thinking|reasoning)\s*>""", RegexOption.IGNORE_CASE)
+        private val THOUGHT_BLOCK_REGEX = Regex("""(?is)<\s*(?:think|thought|thinking|reasoning|plan|reflection)\s*>[\s\S]*?(?:<\s*/\s*(?:think|thought|thinking|reasoning|plan|reflection)\s*>|$)""")
+        private val BRACKET_THOUGHT_REGEX = Regex("""(?is)\[\s*(?:thought|think|thinking|reasoning|plan)\s*\][\s\S]*?(?:\[\s*/\s*(?:thought|think|thinking|reasoning|plan)\s*\]|$)""")
         private val TOOL_CALL_TAG_REGEX = Regex("""<(?:invoke|parameter|tool_calls?)""", RegexOption.IGNORE_CASE)
     }
 
@@ -79,14 +80,19 @@ class AgentEngine(private val context: Context) {
 
     // Formats a tool result following TokenJuice compression rules
     private fun compressResult(toolName: String, rawResult: String): String {
+        // Never dedup/strip code, logs, files, patches, media, or shell output — duplicates are significant there.
+        val compressSafeTools = setOf("web_search", "web_fetch", "tinyfish_search")
+        if (toolName !in compressSafeTools) {
+            val truncated = if (rawResult.length > 15000) rawResult.substring(0, 15000) + "\n…[truncated]" else rawResult
+            return "[TOOL: $toolName]\n$truncated"
+        }
         // Strip HTML tags
         val noHtml = rawResult.replace(Regex("<[^>]*>"), "")
-        // Remove duplicate lines
+        // Remove duplicate lines only for web search results
         val lines = noHtml.split("\n")
         val uniqueLines = lines.distinct()
         val merged = uniqueLines.joinToString("\n")
-        // Truncate to max 12000 chars
-        val truncated = if (merged.length > 12000) merged.substring(0, 12000) else merged
+        val truncated = if (merged.length > 12000) merged.substring(0, 12000) + "\n…[truncated]" else merged
         return "[TOOL: $toolName]\n$truncated"
     }
 
@@ -328,7 +334,7 @@ class AgentEngine(private val context: Context) {
 
     // Resolves model and provider based on settings in EncryptedPrefs
     private fun resolveProviderAndModel(providerOverride: String? = null, modelOverride: String? = null): Pair<AIProvider, String> {
-        val modelSetting = modelOverride ?: securePrefs.getSetting("agent_model", "big-pickle")
+        val modelSetting = modelOverride ?: securePrefs.getSetting("agent_model", "deepseek-v4-flash-free")
         val providerSetting = providerOverride ?: securePrefs.getSetting("agent_provider", "Zen AI")
         val providers = AIProviderFactory.providers
         if (providers.isEmpty()) {
@@ -362,7 +368,7 @@ class AgentEngine(private val context: Context) {
     private fun getApiKeyForProvider(provider: AIProvider): String {
         val name = provider.name
         val key = when (name) {
-            "Zen AI", "Zen", "Zen (Free)" -> securePrefs.getApiKey("zen").ifEmpty { "zen-free" }
+            "Zen AI", "Zen", "Zen (Free)" -> securePrefs.getApiKey("zen")
             "Google Gemini" -> securePrefs.getApiKey("gemini")
             "Groq" -> securePrefs.getApiKey("groq")
             "Cerebrus", "Cerebras" -> {
@@ -375,6 +381,7 @@ class AgentEngine(private val context: Context) {
             "Anthropic" -> securePrefs.getApiKey("anthropic")
             "Mistral AI" -> securePrefs.getApiKey("mistral")
             "Agent Router" -> securePrefs.getApiKey("agentrouter")
+            "GMI Cloud" -> securePrefs.getApiKey("gmi")
             "Antigravity" -> securePrefs.getSetting("oauth_token_antigravity", "")
             "Ollama Cloud" -> securePrefs.getApiKey("ollama-cloud")
             "NVIDIA NIM" -> securePrefs.getApiKey("nvidia")
@@ -430,6 +437,7 @@ class AgentEngine(private val context: Context) {
             "Mistral AI" -> "url_mistral"
             "Ollama", "Ollama Cloud" -> "url_ollama"
             "Agent Router" -> "url_agentrouter"
+            "GMI Cloud" -> "url_gmi"
             else -> ""
         }
         val url = securePrefs.getSetting(key, "")
@@ -487,6 +495,20 @@ class AgentEngine(private val context: Context) {
                     val telegramChatId = args.get("telegramChatId")?.asString ?: ""
                     executeCreateAutomation(name, description, category, cron, actionPrompt, telegramChatId)
                 }
+                "generate_chatgpt_document" -> {
+                    val prompt = args.get("prompt")?.asString ?: return@withContext "Error: Missing prompt"
+                    val format = args.get("format")?.asString ?: "markdown"
+                    val executor = ToolExecutor(context)
+                    executor.executeTool("generate_chatgpt_document", """{"prompt":${gson.toJson(prompt)},"format":${gson.toJson(format)}}""", "", false)
+                }
+                "schedule_chatgpt_task" -> {
+                    val name = args.get("name")?.asString ?: return@withContext "Error: Missing name"
+                    val taskType = args.get("task_type")?.asString ?: "document_creation"
+                    val prompt = args.get("prompt")?.asString ?: return@withContext "Error: Missing prompt"
+                    val cron = args.get("cron")?.asString ?: "0 9 * * *"
+                    val executor = ToolExecutor(context)
+                    executor.executeTool("schedule_chatgpt_task", """{"name":${gson.toJson(name)},"task_type":${gson.toJson(taskType)},"prompt":${gson.toJson(prompt)},"cron":${gson.toJson(cron)}}""", "", false)
+                }
                 "list_automations", "cron_list" -> {
                     executeListAutomations()
                 }
@@ -507,8 +529,9 @@ class AgentEngine(private val context: Context) {
                 }
                 "generate_image" -> {
                     val prompt = args.get("prompt")?.asString ?: return@withContext "Error: Missing prompt"
+                    val model = try { args.get("model")?.takeIf { !it.isJsonNull }?.asString } catch (_: Exception) { null }
                     val executor = ToolExecutor(context)
-                    executor.executeTool("generate_image", """{"prompt":${gson.toJson(prompt)}}""", "", false)
+                    executor.executeTool("generate_image", """{"prompt":${gson.toJson(prompt)},"model":${gson.toJson(model)}}""", "", false)
                 }
                 "generate_video" -> {
                     val prompt = args.get("prompt")?.asString ?: return@withContext "Error: Missing prompt"
@@ -522,8 +545,10 @@ class AgentEngine(private val context: Context) {
                 }
                 "edge_tts" -> {
                     val text = args.get("text")?.asString ?: return@withContext "Error: Missing text"
+                    val verbatim = try { args.get("verbatim")?.asBoolean } catch (_: Exception) { null }
+                        ?: try { args.get("verbatim")?.asString?.equals("true", true) } catch (_: Exception) { null } ?: false
                     val executor = ToolExecutor(context)
-                    executor.executeTool("edge_tts", """{"text":${gson.toJson(text)}}""", "", false)
+                    executor.executeTool("edge_tts", """{"text":${gson.toJson(text)},"verbatim":$verbatim}""", "", false)
                 }
                 "set_tts_backend" -> {
                     val backend = args.get("backend")?.asString ?: return@withContext "Error: Missing backend"
@@ -564,19 +589,23 @@ class AgentEngine(private val context: Context) {
                     executor.executeTool("list_pdf_layouts", "{}", "", false)
                 }
                 "create_pdf_from_reference" -> {
-                    val refPath = args.get("reference_pdf")?.takeIf { !it.isJsonNull }?.asString ?: return@withContext "Error: Missing reference_pdf"
+                    val refPath = args.get("reference_pdf")?.takeIf { !it.isJsonNull }?.asString
+                        ?: args.get("reference_path")?.takeIf { !it.isJsonNull }?.asString
+                        ?: args.get("path")?.takeIf { !it.isJsonNull }?.asString
+                        ?: return@withContext "Error: Missing reference_pdf"
                     val title = args.get("title")?.takeIf { !it.isJsonNull }?.asString ?: return@withContext "Error: Missing title"
                     val content = args.get("content")?.takeIf { !it.isJsonNull }?.asString ?: return@withContext "Error: Missing content"
                     val author = args.get("author")?.takeIf { !it.isJsonNull }?.asString
                     val filename = args.get("filename")?.takeIf { !it.isJsonNull }?.asString
                     val executor = ToolExecutor(context)
-                    executor.executeTool("create_pdf_from_reference", """{"reference_pdf":${gson.toJson(refPath)},"title":${gson.toJson(title)},"content":${gson.toJson(content)},"author":${gson.toJson(author)},"filename":${gson.toJson(filename)}}""", "", false)
+                    executor.executeTool("create_pdf_from_reference", """{"reference_path":${gson.toJson(refPath)},"title":${gson.toJson(title)},"content":${gson.toJson(content)},"author":${gson.toJson(author)},"filename":${gson.toJson(filename)}}""", "", false)
                 }
                 "file_write" -> {
                     val path = args.get("path")?.asString ?: return@withContext "Error: Missing path"
                     val content = args.get("content")?.asString ?: return@withContext "Error: Missing content"
+                    val storage = try { args.get("storage")?.takeIf { !it.isJsonNull }?.asString } catch (_: Exception) { null }
                     val executor = ToolExecutor(context)
-                    executor.executeTool("file_write", """{"path":${gson.toJson(path)},"content":${gson.toJson(content)}}""", "", false)
+                    executor.executeTool("file_write", """{"path":${gson.toJson(path)},"content":${gson.toJson(content)},"storage":${gson.toJson(storage)}}""", "", false)
                 }
                 "file_read" -> {
                     val path = args.get("path")?.asString ?: return@withContext "Error: Missing path"
@@ -589,12 +618,8 @@ class AgentEngine(private val context: Context) {
                     executor.executeTool("list", """{"path":${gson.toJson(path)}}""", "", false)
                 }
                 else -> {
-                    if (ai.deepcode.android.plugin.PluginRegistry.hasToolName(name)) {
-                        val executor = ToolExecutor(context)
-                        executor.executeTool(name, argsJson, "", false)
-                    } else {
-                        "Error: Unknown tool $name"
-                    }
+                    val executor = ToolExecutor(context)
+                    executor.executeTool(name, argsJson, "", false)
                 }
             }
         } catch (e: Exception) {
@@ -1066,11 +1091,10 @@ class AgentEngine(private val context: Context) {
         }
     }
 
-    private fun normalizeThoughtTags(text: String): String =
-        text.replace(THOUGHT_OPEN_REGEX, "<thought>")
-            .replace(THOUGHT_CLOSE_REGEX, "</thought>")
-
-    private fun stripThoughts(text: String): String = normalizeThoughtTags(text).trim()
+    private fun stripThoughts(text: String): String =
+        text.replace(THOUGHT_BLOCK_REGEX, "")
+            .replace(BRACKET_THOUGHT_REGEX, "")
+            .trim()
 
     private fun executeTelegramSend(chatId: String, message: String): String {
         val botToken = securePrefs.getSetting("telegram_bot_token", "")
@@ -1135,6 +1159,9 @@ class AgentEngine(private val context: Context) {
         val configMap = mutableMapOf("action_prompt" to actionPrompt)
         if (telegramChatId.isNotBlank()) {
             configMap["telegram_chat_id"] = telegramChatId
+        }
+        if (category.equals("CHATGPT", ignoreCase = true) || description.contains("chatgpt", ignoreCase = true) || actionPrompt.contains("chatgpt", ignoreCase = true)) {
+            configMap["target"] = "chatgpt"
         }
 
         val existing = repository.getAllAutomations().find {
@@ -1510,15 +1537,23 @@ class AgentEngine(private val context: Context) {
                     // Fallback: if no multi-keys found, try the legacy single-key getter
                     if (entries.isEmpty()) {
                         val legacyKey = getApiKeyForProvider(provider)
-                        if (legacyKey.isNotEmpty()) {
+                        if (legacyKey.isNotEmpty() || provider.name.startsWith("Zen")) {
                             for (fm in fallbackModels) {
                                 entries.add(Triple(provider, fm, legacyKey))
                             }
                         }
                     }
                     entries
-                }.filter { (_, _, apiKey) ->
-                    apiKey.isNotEmpty()
+                }.filter { (provider, _, apiKey) ->
+                    if (provider.name.startsWith("Zen") && apiKey.isEmpty()) {
+                        true
+                    } else if (apiKey.isNotEmpty()) {
+                        val storageId = providerStorageId(provider.name)
+                        val slot = ai.deepcode.android.data.remote.ApiKeyRotator.getNextAvailableKey(securePrefs, storageId)?.second ?: 1
+                        !ai.deepcode.android.data.remote.ApiKeyRotator.isKeyExhausted(storageId, slot)
+                    } else {
+                        false
+                    }
                 }
                 val providerCount = resolvedFallback.size
                 var providerIndex = 0
@@ -1662,23 +1697,31 @@ class AgentEngine(private val context: Context) {
                                         val buf = pendingTail.toString()
                                         val cut = buf.lastIndexOf('<')
                                         if (cut >= 0) {
-                                            if (cut > 0) normalizedText.append(normalizeThoughtTags(buf.substring(0, cut)))
+                                            if (cut > 0) normalizedText.append(buf.substring(0, cut))
                                             pendingTail.setLength(0)
                                             pendingTail.append(buf.substring(cut))
                                         } else {
-                                            normalizedText.append(normalizeThoughtTags(buf))
+                                            normalizedText.append(buf)
                                             pendingTail.setLength(0)
                                         }
-                                        val raw = normalizedText.toString()
-                                        if (TOOL_CALL_TAG_REGEX.containsMatchIn(raw)) {
+                                        val raw = stripThoughts(normalizedText.toString())
+                                        if (TOOL_CALL_TAG_REGEX.containsMatchIn(normalizedText.toString())) {
                                             toolCallDetected = true
-                                        } else {
+                                        } else if (raw.isNotEmpty()) {
                                             trySend(raw)
                                         }
                                     }
                                 },
                                 onToolCall = { toolCalls.add(it) },
                                 onComplete = { reasoning ->
+                                    if (pendingTail.isNotEmpty()) {
+                                        normalizedText.append(pendingTail.toString())
+                                        pendingTail.setLength(0)
+                                        val raw = stripThoughts(normalizedText.toString())
+                                        if (!toolCallDetected && !TOOL_CALL_TAG_REGEX.containsMatchIn(normalizedText.toString()) && raw.isNotEmpty()) {
+                                            trySend(raw)
+                                        }
+                                    }
                                     done.complete(reasoning)
                                 },
                                 onError = { done.completeExceptionally(it) },
@@ -1710,7 +1753,7 @@ class AgentEngine(private val context: Context) {
                                 }
                             )
 
-                            val reasoning = done.await()
+                            val reasoning = withTimeout(90_000L) { done.await() }
 
                             val rawText = stripThoughts(textAccumulator.toString())
 
@@ -1730,17 +1773,16 @@ class AgentEngine(private val context: Context) {
                                 if (markersToAppend.isNotEmpty()) {
                                     finalResultText = finalResultText.trimEnd() + "\n\n" + markersToAppend.joinToString("\n")
                                 }
-                                repository.insertMessage(Message(
-                                    id = UUID.randomUUID().toString(),
-                                    sessionId = sessionId,
-                                    role = "assistant",
-                                    content = finalResultText,
-                                    timestamp = System.currentTimeMillis(),
-                                    toolCallsJson = null
-                                ))
-                                hasCompleted = true
-
-                                if (!isLimitMessage(finalResultText)) {
+                                if (finalResultText.isNotBlank() && !isLimitMessage(finalResultText)) {
+                                    repository.insertMessage(Message(
+                                        id = UUID.randomUUID().toString(),
+                                        sessionId = sessionId,
+                                        role = "assistant",
+                                        content = finalResultText,
+                                        timestamp = System.currentTimeMillis(),
+                                        toolCallsJson = null
+                                    ))
+                                    hasCompleted = true
                                     trySend(finalResultText)
                                     delivered = true
                                 }
@@ -1875,7 +1917,7 @@ class AgentEngine(private val context: Context) {
                                     }
                                 )
 
-                                done.await()
+                                withTimeout(90_000L) { done.await() }
                                 val rawText = stripThoughts(textAccumulator.toString())
                                 var finalText = rawText.ifEmpty {
                                     "I've completed the requested actions but couldn't generate a final summary."

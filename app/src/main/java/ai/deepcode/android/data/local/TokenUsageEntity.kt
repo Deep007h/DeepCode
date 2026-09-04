@@ -101,10 +101,10 @@ data class SessionTokenSummary(
     val totalTokens: Long get() = tokensInput + tokensOutput + tokensReasoning
 
     fun formattedCost(): String = when {
-        costUsd == 0.0 -> "Free"
+        costUsd <= 0.0 -> "$0.00"
         costUsd < 0.001 -> "< $0.001"
         costUsd < 1.0 -> "$%.4f".format(costUsd)
-        else -> "$%.3f".format(costUsd)
+        else -> "$%.2f".format(costUsd)
     }
 
     fun formattedTokens(): String = when {

@@ -142,18 +142,21 @@ fun AgentCard(
     ) {
         val statusColor = getStatusColor(agent.status)
         val isRunning = agent.status == AgentStatus.RUNNING
-        val glowAlpha: Float = if (isRunning) {
-            val transition = rememberInfiniteTransition(label = "agentGlow")
-            transition.animateFloat(
-                initialValue = 0.25f,
-                targetValue = 0.6f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(1000),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "glow"
-            ).value
-        } else 0f
+        // Hoisted out of the `if`: rememberInfiniteTransition must not be
+        // called conditionally (status flips RUNNING->COMPLETE would change
+        // hook order). Always create it, only drive alpha when running so
+        // idle cards cost zero choreographer callbacks.
+        val glowTransition = rememberInfiniteTransition(label = "agentGlow")
+        val pulsedAlpha by glowTransition.animateFloat(
+            initialValue = 0.25f,
+            targetValue = 0.6f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1000),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "glow"
+        )
+        val glowAlpha: Float = if (isRunning) pulsedAlpha else 0f
 
         Row(
             modifier = modifier

@@ -72,9 +72,6 @@ class EncryptedPrefs private constructor(context: Context) {
             _accentFlow.value = getSetting("accent", "amber")
             _wallpaperFlow.value = getSetting("chat_wallpaper", "default")
             _customWallpaperFlow.value = getSetting("chat_wallpaper_custom", "")
-            if (getApiKey("agentrouter").isEmpty()) {
-                saveApiKey("agentrouter", "sk-0ja1jN7ug89q9SgJ9wWZDja0vBTYM4B2JKA1Jj8mqe6gxfdD")
-            }
         }
     }
 
@@ -152,6 +149,18 @@ class EncryptedPrefs private constructor(context: Context) {
     fun saveBooleanSetting(key: String, value: Boolean) {
         sharedPrefs.edit().putBoolean("setting_bool_$key", value).apply()
     }
+
+    fun getChatGPTAccessToken(): String = getSetting("chatgpt_access_token", "")
+    fun saveChatGPTAccessToken(token: String) = saveSetting("chatgpt_access_token", token)
+
+    fun getChatGPTAccountId(): String = getSetting("chatgpt_account_id", "")
+    fun saveChatGPTAccountId(id: String) = saveSetting("chatgpt_account_id", id)
+
+    fun getChatGPTHeadlessConversationId(): String = getSetting("chatgpt_headless_conversation_id", "")
+    fun saveChatGPTHeadlessConversationId(convId: String) = saveSetting("chatgpt_headless_conversation_id", convId)
+
+    fun getChatGPTHeadlessParentMessageId(): String = getSetting("chatgpt_headless_parent_message_id", "")
+    fun saveChatGPTHeadlessParentMessageId(msgId: String) = saveSetting("chatgpt_headless_parent_message_id", msgId)
 }
 
 private const val DEFAULT_CUSTOM_PERSONA = ""

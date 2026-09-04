@@ -102,7 +102,7 @@ class AdbCommandBridge : BroadcastReceiver() {
             }
             Log.i(RESPONSE_TAG, json)
             try {
-                java.io.File("/sdcard/deepcode_agent_response.json").writeText(json)
+                java.io.File("/sdcard/Download/deepcode_agent_response.json").writeText(json)
             } catch (_: Exception) {}
             AppLogger.logAdbResponse(reqId, status, json)
         }
@@ -227,13 +227,21 @@ class AdbCommandBridge : BroadcastReceiver() {
 
             // ── PDF commands ──
             "create_pdf" -> {
-                // args format: "TITLE|||CONTENT|||AUTHOR|||FILENAME"
-                val parts = args.split("|||")
-                if (parts.size < 2) { respond(reqId, "error", "args must be TITLE|||CONTENT[|||AUTHOR[|||FILENAME]]"); return }
-                val title = parts[0].trim()
-                val content = parts[1].trim()
-                val author = parts.getOrNull(2)?.trim() ?: ""
-                val filename = parts.getOrNull(3)?.trim() ?: ""
+                // Preferred: JSON {"title":..,"content":..,"author":..,"filename":..}. Legacy: "TITLE|||CONTENT|||AUTHOR|||FILENAME".
+                val t = args.trim()
+                val title: String; val content: String; val author: String; val filename: String
+                if (t.startsWith("{")) {
+                    try {
+                        val j = org.json.JSONObject(t)
+                        title = j.optString("title", ""); content = j.optString("content", "")
+                        author = j.optString("author", ""); filename = j.optString("filename", "")
+                    } catch (_: Exception) { respond(reqId, "error", "invalid JSON args"); return }
+                } else {
+                    val parts = args.split("|||", limit = 4)
+                    if (parts.size < 2) { respond(reqId, "error", "args must be TITLE|||CONTENT[|||AUTHOR[|||FILENAME]] or JSON"); return }
+                    title = parts[0].trim(); content = parts[1].trim()
+                    author = parts.getOrNull(2)?.trim() ?: ""; filename = parts.getOrNull(3)?.trim() ?: ""
+                }
                 try {
                     val executor = ai.deepcode.android.service.tools.ToolExecutor(context)
                     val result = executor.executeTool("create_pdf",

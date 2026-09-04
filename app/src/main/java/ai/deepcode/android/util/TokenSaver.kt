@@ -30,6 +30,7 @@ object TokenSaver {
      */
     fun trimHistory(messages: List<Message>, maxTurns: Int): List<Message> {
         if (messages.isEmpty()) return messages
+        if (maxTurns == -1) return messages
         val limit = if (maxTurns <= 0) 8 else maxTurns
 
         var userMessagesCount = 0
@@ -53,8 +54,9 @@ object TokenSaver {
         }
 
         // Truncate extremely large intermediate history contents to prevent request payload bloat (e.g. Zen API 400 Errors)
+        // Never truncate tool outputs or tool calls as that produces broken JSON
         return subList.mapIndexed { index, msg ->
-            if (index < subList.size - 1 && msg.content.length > 4000) {
+            if (index < subList.size - 1 && msg.role != "tool" && !msg.isToolCall && msg.content.length > 4000) {
                 val prefix = msg.content.take(3800)
                 val suffix = "\n\n... [Content Truncated for Context Length to Prevent API Payload Overflow] ..."
                 msg.copy(content = prefix + suffix)

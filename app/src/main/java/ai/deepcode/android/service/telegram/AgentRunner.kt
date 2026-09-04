@@ -308,9 +308,9 @@ $telegramRules"""
         val fallback = AIProviderFactory.providers.firstOrNull()
             ?: return ResolvedProvider(
                 ai.deepcode.android.data.remote.ZenProvider(), "Zen AI",
-                "big-pickle", "", null
+                "deepseek-v4-flash-free", "", null
             )
-        val fallbackModelId = fallback.models.firstOrNull()?.id ?: "big-pickle"
+        val fallbackModelId = fallback.models.firstOrNull()?.id ?: "deepseek-v4-flash-free"
         return ResolvedProvider(fallback, fallback.name, fallbackModelId, "", null)
     }
 
@@ -326,6 +326,7 @@ $telegramRules"""
             "Mistral AI" -> "mistral"
             "Ollama Cloud" -> "ollama"
             "Agent Router" -> "agentrouter"
+            "GMI Cloud" -> "gmi"
             else -> ""
         }
     }

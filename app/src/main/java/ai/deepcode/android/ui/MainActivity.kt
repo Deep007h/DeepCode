@@ -542,7 +542,10 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                                                 all.find { it.second == activeContent }?.first ?: "Default"
                                             } else "Default"
                                             Popup(
-                                                onDismissRequest = { showPersonaPicker = false; scope.launch { drawerState.close() } },
+                                                // Dismissing the picker must NOT close the drawer:
+                                                // previously tapping outside closed both, losing
+                                                // drawer scroll position and confusing flow.
+                                                onDismissRequest = { showPersonaPicker = false },
                                                 alignment = Alignment.BottomStart
                                             ) {
                                                 PersonaPickerContent(
@@ -681,6 +684,10 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
+                    DrawerTokenUsage(repository, activeSessionId) {
+                        appState.setShowTokenUsage(true)
+                        scope.launch { drawerState.close() }
+                    }
                     HorizontalDivider(color = AppBorder, modifier = Modifier.padding(vertical = 4.dp))
 
                     // Settings Row
@@ -794,7 +801,16 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
         val isImeVisible = WindowInsets.isImeVisible
         Scaffold(
             bottomBar = {
-                if (!isImeVisible) {
+                // Animate instead of if(!isImeVisible) remove: hard-removing
+                // the bar changes Scaffold bottom padding instantly, which
+                // jumps the whole content (esp. Chat input with imePadding).
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = !isImeVisible,
+                    enter = androidx.compose.animation.slideInVertically { it } +
+                        androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.slideOutVertically { it } +
+                        androidx.compose.animation.fadeOut()
+                ) {
                     BottomNavBar(
                         activeTab = selectedTab,
                         onTabSelected = { index ->
@@ -894,28 +910,33 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                         }
                     }
 
-                    if (activeScreenKey != null) {
-                        val screenLevels = remember {
-                            mapOf(
-                                "themes_wallpapers" to 1,
-                                "vpn" to 1,
-                                "plugins" to 1,
-                                "cloudflare" to 1,
-                                "api_keys" to 1,
-                                "personas" to 1,
-                                "templates" to 1,
-                                "log_viewer" to 1,
-                                "editor" to 1,
-                                "agents" to 1,
-                                "token_usage" to 1,
-                                "persona_detail" to 2,
-                                "template_detail" to 2,
-                                "agent_detail" to 2
+                    // Slide overlay in/out instead of a hard cut: previously
+                    // the Box appeared instantly, breaking back-flow feel.
+                    // AnimatedVisibility wraps the branch (not vice-versa) so
+                    // the slideOut exit actually plays on dismiss.
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = activeScreenKey != null,
+                        enter = androidx.compose.animation.slideInHorizontally(
+                            animationSpec = androidx.compose.animation.core.tween(
+                                250,
+                                easing = androidx.compose.animation.core.FastOutSlowInEasing
                             )
-                        }
-
+                        ) { it / 3 } + androidx.compose.animation.fadeIn(
+                            animationSpec = androidx.compose.animation.core.tween(180)
+                        ),
+                        exit = androidx.compose.animation.slideOutHorizontally(
+                            animationSpec = androidx.compose.animation.core.tween(
+                                200,
+                                easing = androidx.compose.animation.core.FastOutSlowInEasing
+                            )
+                        ) { it / 3 } + androidx.compose.animation.fadeOut(
+                            animationSpec = androidx.compose.animation.core.tween(150)
+                        )
+                    ) {
+                        val overlayKey = activeScreenKey
+                        if (overlayKey != null) {
                         Box(modifier = Modifier.fillMaxSize().background(AppScreenBg)) {
-                            when (activeScreenKey) {
+                            when (overlayKey) {
                                 "themes_wallpapers" -> {
                                     ThemesAndWallpapersScreen(
                                         repository = repository,
@@ -1020,7 +1041,8 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                                 )
                             }
                         }
-                    }
+                        }
+                        }
                 }
             }
         }
@@ -1268,17 +1290,19 @@ fun DrawerItem1(
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (isSelected) {
-            Box(
-                modifier = Modifier
-                    .width(4.dp)
-                    .height(18.dp)
-                    .background(AppPrimary, RoundedCornerShape(2.dp))
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-        } else {
-            Spacer(modifier = Modifier.width(12.dp))
-        }
+        // Always reserve indicator space: previously the 4dp bar + 8dp spacer
+        // only existed when selected (else a 12dp spacer), so the icon/text
+        // jumped 4dp sideways on every selection change.
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .height(18.dp)
+                .background(
+                    if (isSelected) AppPrimary else Color.Transparent,
+                    RoundedCornerShape(2.dp)
+                )
+        )
+        Spacer(modifier = Modifier.width(8.dp))
         Icon(
             imageVector = icon,
             contentDescription = title,
@@ -1543,12 +1567,24 @@ fun DrawerTokenUsage(repository: DeepCodeRepository, activeSessionId: String, on
                 }
             }
             Spacer(Modifier.height(4.dp))
+            val sessionCost = if ((sessionTokens?.costUsd ?: 0.0) > 0.0) sessionTokens?.costUsd ?: 0.0 else {
+                sessionTokens?.let {
+                    ai.deepcode.android.data.local.ModelPriceProvider.calculateTurnCost(
+                        modelId = it.modelId,
+                        inputTokens = it.tokensInput.toInt(),
+                        outputTokens = it.tokensOutput.toInt(),
+                        reasoningTokens = it.tokensReasoning.toInt(),
+                        cacheReadTokens = it.tokensCacheRead.toInt(),
+                        cacheWriteTokens = it.tokensCacheWrite.toInt()
+                    )
+                } ?: 0.0
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text("Cost", fontSize = 10.sp, color = AppMuted)
-                Text(formattedCost(sessionTokens?.costUsd ?: 0.0), fontSize = 10.sp, color = AppSuccess)
+                Text(formattedCost(sessionCost), fontSize = 10.sp, color = AppSuccess)
             }
             sessionTokens?.let { s ->
                 if (s.turnCount > 0) {
@@ -1588,6 +1624,7 @@ fun DrawerTokenUsage(repository: DeepCodeRepository, activeSessionId: String, on
                 }
             }
             lifetimeTotals?.let { lt ->
+                val totalCostValue = if (lt.totalCost > 0.0) lt.totalCost else sessionCost
                 if (lt.totalTokens > 0 || (sessionTokens?.turnCount ?: 0) == 0) {
                     Spacer(Modifier.height(4.dp))
                     HorizontalDivider(color = AppDarkGray.copy(alpha = 0.3f))
@@ -1597,7 +1634,7 @@ fun DrawerTokenUsage(repository: DeepCodeRepository, activeSessionId: String, on
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("All sessions", fontSize = 9.sp, color = AppMuted)
-                        Text("${formatTokenCount(lt.totalTokens)} · ${lt.formattedCost()}", fontSize = 9.sp, color = AppMuted)
+                        Text("${formatTokenCount(lt.totalTokens)} · ${formattedCost(totalCostValue)}", fontSize = 9.sp, color = AppMuted)
                     }
                 }
             }
@@ -1606,10 +1643,10 @@ fun DrawerTokenUsage(repository: DeepCodeRepository, activeSessionId: String, on
 }
 
 private fun formattedCost(cost: Double): String = when {
-    cost == 0.0 -> "Free"
+    cost <= 0.0 -> "$0.00"
     cost < 0.001 -> "< $0.001"
     cost < 1.0 -> "$%.4f".format(cost)
-    else -> "$%.3f".format(cost)
+    else -> "$%.2f".format(cost)
 }
 
 private fun formatTokenCount(count: Long): String = when {
@@ -1634,13 +1671,34 @@ fun GlobalWallpaperBackground(repository: DeepCodeRepository) {
     }
 
     if (activeWallpaperId == "custom" && customFile != null && customFile.exists()) {
-        val bm = remember(customFile.absolutePath) {
-            try { android.graphics.BitmapFactory.decodeFile(customFile.absolutePath) } catch (_: Exception) { null }
+        // Decode off the main thread with downsampling: previously
+        // BitmapFactory.decodeFile ran inside remember{} on the UI thread,
+        // freezing a frame (or OOM) on every wallpaper change/recomposition.
+        val config = androidx.compose.ui.platform.LocalConfiguration.current
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val screenWPx = with(density) { config.screenWidthDp.dp.roundToPx().coerceAtLeast(1) }
+        val screenHPx = with(density) { config.screenHeightDp.dp.roundToPx().coerceAtLeast(1) }
+        val bm by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(
+            initialValue = null, customFile.absolutePath
+        ) {
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeFile(customFile.absolutePath, bounds)
+                    var sample = 1
+                    while (bounds.outWidth / (sample * 2) >= screenWPx || bounds.outHeight / (sample * 2) >= screenHPx) {
+                        sample *= 2
+                    }
+                    val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                    android.graphics.BitmapFactory.decodeFile(customFile.absolutePath, opts)
+                } catch (_: Exception) { null }
+            }
         }
-        if (bm != null) {
+        val wallpaperBitmap = bm
+        if (wallpaperBitmap != null) {
             Box(modifier = Modifier.fillMaxSize()) {
                 Image(
-                    bitmap = bm.asImageBitmap(),
+                    bitmap = wallpaperBitmap.asImageBitmap(),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = androidx.compose.ui.layout.ContentScale.Crop

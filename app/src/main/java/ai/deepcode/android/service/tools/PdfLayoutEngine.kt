@@ -469,37 +469,37 @@ class PdfLayoutEngine {
         val titlePaint = Paint().apply {
             color = primaryColorInt
             textSize = layout.typography.titleSize
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             isAntiAlias = true
         }
         val headingPaint = Paint().apply {
             color = primaryColorInt
             textSize = layout.typography.headingSize
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             isAntiAlias = true
         }
         val subheadingPaint = Paint().apply {
             color = secondaryColorInt
             textSize = layout.typography.headingSize - 2f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             isAntiAlias = true
         }
         val bodyPaint = Paint().apply {
             color = textColorInt
             textSize = layout.typography.bodySize
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
             isAntiAlias = true
         }
         val subtitlePaint = Paint().apply {
             color = Color.argb(180, Color.red(textColorInt), Color.green(textColorInt), Color.blue(textColorInt))
             textSize = layout.typography.headingSize - 2f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.ITALIC)
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.ITALIC)
             isAntiAlias = true
         }
         val captionPaint = Paint().apply {
             color = Color.argb(140, Color.red(textColorInt), Color.green(textColorInt), Color.blue(textColorInt))
             textSize = layout.typography.captionSize
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
             isAntiAlias = true
         }
 
@@ -820,13 +820,26 @@ class PdfLayoutEngine {
                                 val lines = mutableListOf<String>()
                                 val cur = StringBuilder()
                                 for (word in words) {
-                                    val test = if (cur.isEmpty()) word else "$cur $word"
+                                    var w = word
+                                    while (measurePaint.measureText(w) > cw && cw > 10f) {
+                                        var cut = w.length - 1
+                                        while (cut > 1 && measurePaint.measureText(w.substring(0, cut)) > cw) {
+                                            cut--
+                                        }
+                                        if (cur.isNotEmpty()) {
+                                            lines.add(cur.toString())
+                                            cur.clear()
+                                        }
+                                        lines.add(w.substring(0, cut))
+                                        w = w.substring(cut)
+                                    }
+                                    val test = if (cur.isEmpty()) w else "$cur $w"
                                     if (measurePaint.measureText(test) < cw) {
                                         if (cur.isNotEmpty()) cur.append(" ")
-                                        cur.append(word)
+                                        cur.append(w)
                                     } else {
                                         if (cur.isNotEmpty()) lines.add(cur.toString())
-                                        cur.clear(); cur.append(word)
+                                        cur.clear(); cur.append(w)
                                     }
                                 }
                                 if (cur.isNotEmpty()) lines.add(cur.toString())
@@ -836,6 +849,23 @@ class PdfLayoutEngine {
                             val cellRowHeight = bodyLineHeight * maxRowLines + 8f
                             if (y + cellRowHeight > bottomLimit()) {
                                 canvas = newPage()
+                                if (rowIdx > 0 && parsedRows.isNotEmpty()) {
+                                    val bgPaint = Paint().apply {
+                                        color = primaryColorInt
+                                        style = Paint.Style.FILL
+                                        alpha = 25
+                                    }
+                                    canvas.drawRect(m.left, y - bodyLineHeight, m.left + contentW, y + 8f, bgPaint)
+                                    var hCellX = m.left + 4f
+                                    for ((hColIdx, hCell) in parsedRows[0].withIndex()) {
+                                        if (hColIdx >= colCount) break
+                                        val hCw = colWidths[hColIdx]
+                                        canvas.drawText(stripLatexDelimiters(hCell), hCellX, y, tableHeaderPaint)
+                                        hCellX += hCw
+                                    }
+                                    canvas.drawLine(m.left, y + 8f, m.left + contentW, y + 8f, tableBorderPaint)
+                                    y += bodyLineHeight + 12f
+                                }
                             }
                             for ((colIdx, cell) in row.withIndex()) {
                                 if (colIdx >= colCount) break

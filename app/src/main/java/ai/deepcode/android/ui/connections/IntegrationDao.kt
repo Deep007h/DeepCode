@@ -14,6 +14,9 @@ interface IntegrationDao {
     @Query("SELECT * FROM integrations WHERE app_id = :appId LIMIT 1")
     suspend fun getIntegrationByAppId(appId: String): IntegrationEntity?
 
+    @Query("SELECT * FROM integrations WHERE app_id = :appId LIMIT 1")
+    fun getIntegrationByAppIdSync(appId: String): IntegrationEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertIntegration(integration: IntegrationEntity)
 

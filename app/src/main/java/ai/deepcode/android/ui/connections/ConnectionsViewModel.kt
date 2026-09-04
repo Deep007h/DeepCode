@@ -13,6 +13,7 @@ import ai.deepcode.android.service.telegram.BotConfig
 import ai.deepcode.android.service.telegram.TelegramBridgeService
 import ai.deepcode.android.service.notion.NotionService
 import ai.deepcode.android.service.github.GitHubService
+import ai.deepcode.android.service.chatgpt.ChatGPTHeadlessBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -101,6 +102,7 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
         if (current.isEmpty()) {
             addLog("Database empty. Pre-populating connections...")
             val list = listOf(
+                createIntegration("chatgpt", "ChatGPT", "https://logo.clearbit.com/openai.com"),
                 createIntegration("google_account", "Google Account", "https://logo.clearbit.com/google.com"),
                 createIntegration("gmail", "Gmail", "https://logo.clearbit.com/gmail.com"),
                 createIntegration("google_calendar", "Google Calendar", "https://logo.clearbit.com/google.com"),
@@ -126,6 +128,18 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
             )
             repository.insertIntegrations(list)
             addLog("Successfully prepopulated connections.")
+        } else {
+            // Ensure chatgpt integration is present for existing databases
+            if (current.none { it.appId == "chatgpt" }) {
+                val chatgpt = createIntegration("chatgpt", "ChatGPT", "https://logo.clearbit.com/openai.com")
+                val existingToken = securePrefs.getChatGPTAccessToken()
+                if (existingToken.isNotBlank()) {
+                    repository.insertIntegration(chatgpt.copy(status = "connected", accessToken = existingToken, connectedAt = System.currentTimeMillis()))
+                } else {
+                    repository.insertIntegration(chatgpt)
+                }
+                addLog("Added ChatGPT headless engine to available integrations.")
+            }
         }
     }
 
@@ -215,7 +229,14 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
                 repository.insertIntegration(updated)
                 addLog("Disconnected integration: ${integration.appName}")
 
-                if (appId == "telegram") {
+                if (appId == "chatgpt") {
+                    try {
+                        ChatGPTHeadlessBridge.getInstance(appContext).disconnect()
+                        addLog("ChatGPT headless session and credentials cleared.")
+                    } catch (e: Exception) {
+                        addLog("Error disconnecting ChatGPT: ${e.message}")
+                    }
+                } else if (appId == "telegram") {
                     try {
                         val botStore = BotConfigStore(appContext)
                         botStore.saveBots(emptyList())
@@ -228,6 +249,38 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
                     disconnectWhatsApp()
                 }
             }
+        }
+    }
+
+    fun connectChatGPT(token: String, email: String? = null) {
+        viewModelScope.launch {
+            val trimmed = token.trim()
+            if (trimmed.isEmpty()) return@launch
+            addLog("Connecting ChatGPT headless integration...")
+            securePrefs.saveChatGPTAccessToken(trimmed)
+            ChatGPTHeadlessBridge.getInstance(appContext).parseAndSaveJwtMetadata(trimmed)
+            if (!email.isNullOrBlank()) {
+                securePrefs.saveSetting("chatgpt_user_email", email)
+            }
+            val integration = repository.getIntegrationByAppId("chatgpt")
+            if (integration != null) {
+                val updated = integration.copy(
+                    status = "connected",
+                    accessToken = trimmed,
+                    connectedAt = System.currentTimeMillis(),
+                    lastSyncedAt = System.currentTimeMillis()
+                )
+                repository.insertIntegration(updated)
+            } else {
+                val newIntegration = createIntegration("chatgpt", "ChatGPT", "https://logo.clearbit.com/openai.com").copy(
+                    status = "connected",
+                    accessToken = trimmed,
+                    connectedAt = System.currentTimeMillis(),
+                    lastSyncedAt = System.currentTimeMillis()
+                )
+                repository.insertIntegration(newIntegration)
+            }
+            addLog("ChatGPT connected. Headless image generation and document studio ready.")
         }
     }
 

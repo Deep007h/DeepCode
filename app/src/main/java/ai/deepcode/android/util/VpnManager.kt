@@ -5,6 +5,7 @@ import ai.deepcode.android.data.local.EncryptedPrefs
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.withLock
 import okhttp3.Credentials
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -57,6 +58,8 @@ object VpnManager {
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing
+
+    private val rotateMutex = kotlinx.coroutines.sync.Mutex()
 
     // Custom proxy settings
     private val _customHost = MutableStateFlow("")
@@ -255,32 +258,34 @@ object VpnManager {
             setAutoVpnEnabled(true)
         }
         if (_vpnMode.value != VpnMode.CUSTOM) {
-            scope.launch {
-                rotateServer()
-            }
+            rotateServer()
         }
     }
 
     fun rotateServer() {
         if (!_vpnEnabled.value || _vpnMode.value == VpnMode.CUSTOM) return
-        val current = _activeServer.value
-        val list = _servers.value
-        if (list.isEmpty()) return
+        scope.launch {
+            rotateMutex.withLock {
+                val current = _activeServer.value
+                val list = _servers.value
+                if (list.isEmpty()) return@withLock
 
-        // Mark current as rate limited/failed
-        current?.isRateLimited = true
+                // Mark current as rate limited/failed
+                current?.isRateLimited = true
 
-        // Find next server that is not rate limited and has a good ping
-        var next = list.firstOrNull { it != current && !it.isRateLimited && it.pingMs > 0 }
-        if (next == null) {
-            // Fallback: clear rate limits and pick the fastest one that is not current
-            list.forEach { it.isRateLimited = false }
-            next = list.firstOrNull { it != current } ?: list.firstOrNull()
-        }
+                // Find next server that is not rate limited and has a good ping
+                var next = list.firstOrNull { it != current && !it.isRateLimited && it.pingMs > 0 }
+                if (next == null) {
+                    // Fallback: clear rate limits and pick the fastest one that is not current
+                    list.forEach { it.isRateLimited = false }
+                    next = list.firstOrNull { it != current } ?: list.firstOrNull()
+                }
 
-        if (next != null) {
-            AppLogger.i("VpnManager", "Rotating server to: ${next.country} (${next.ip})")
-            selectServer(next)
+                if (next != null) {
+                    AppLogger.i("VpnManager", "Rotating server to: ${next.country} (${next.ip})")
+                    selectServer(next)
+                }
+            }
         }
     }
 

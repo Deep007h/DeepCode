@@ -17,6 +17,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
@@ -26,6 +27,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Add
@@ -73,9 +75,10 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
-private val RE_THOUGHT_BLOCK = Regex("""(?is)<\s*(?:think|thought|thinking|reasoning|plan|reflection)\s*>[\s\S]*?<\s*/\s*(?:think|thought|thinking|reasoning|plan|reflection)\s*>""")
+private val RE_THOUGHT_BLOCK = Regex("""(?is)<\s*(?:think|thought|thinking|reasoning|plan|reflection)\s*>[\s\S]*?(?:<\s*/\s*(?:think|thought|thinking|reasoning|plan|reflection)\s*>|$)""")
 private val RE_THOUGHT_OPEN = Regex("""(?is)<\s*(?:think|thought|thinking|reasoning|plan|reflection)\s*>[\s\S]*""")
-private val RE_BRACKET_THOUGHT = Regex("""(?is)\[\s*(?:thought|think|thinking|reasoning|plan)\s*\][\s\S]*?\[\s*/\s*(?:thought|think|thinking|reasoning|plan)\s*\]""")
+private val RE_BRACKET_THOUGHT = Regex("""(?is)\[\s*(?:thought|think|thinking|reasoning|plan)\s*\][\s\S]*?(?:\[\s*/\s*(?:thought|think|thinking|reasoning|plan)\s*\]|$)""")
+private val RE_PARTIAL_THINK_OPEN = Regex("""<\s*/?\s*(?:t(?:h(?:i(?:n(?:k(?:i(?:n(?:g)?)?)?)?)?)?)?|r(?:e(?:a(?:s(?:o(?:n(?:i(?:n(?:g)?)?)?)?)?)?)?)?|p(?:l(?:a(?:n)?)?)?)\s*$""", RegexOption.IGNORE_CASE)
 private val RE_UNTAGGED_THINKING_HEADER = Regex(
     """(?is)\A\s*(?:(?:here'?s?|this is|there is|it'?s?|'s)?\s*(?:a\s+)?(?:thinking|thought|reasoning)\s+process\b|(?:thought|thinking|reasoning)\s*process\b|let'?s\s+think\s+step\s+by\s+step\b|chain\s+of\s+thought\b)""",
 )
@@ -86,84 +89,77 @@ private val RE_INNER_THOUGHT_PREFIX = Regex(
     """(?is)\A(?:\s*(?:thought|thinking|reasoning|internal thoughts?|plan):\s*[^\n]*\n*|\s*(?:that's|that is|this is)\s+(?:a|an)\s+[^.!?\n]*[.!?\n]*|\s*(?:the\s+)?user\s+(?:is|wants|asked|said|just)\b[^.!?\n]*[.!?\n]*|\s*i\s+(?:should|will|need\s+to|must|'ll)\s+(?:respond|reply|answer|greet|help|ask|follow)\b[^.!?\n]*[.!?\n]*|\s*(?:ensure|keep)\s+(?:no\s+thinking|no\s+internal|final\s+response)\b[^.!?\n]*[.!?\n]*|\s*(?:just\s+)?direct\s+answer[.!?\n]*|\s*no\s+tools\s+needed\b[^.!?\n]*[.!?\n]*)+"""
 )
 
-fun extractThoughtAndCleanText(raw: String, isStreaming: Boolean = false): Pair<String, String> {
-    if (raw.isBlank()) return Pair("", "")
+fun stripThinkingProcess(raw: String, isStreaming: Boolean = false): String {
+    if (raw.isBlank()) return ""
 
-    // 1. Tagged with <think>...</think>
-    val thinkMatch = Regex("""(?is)<\s*(?:think|thought|thinking|reasoning|plan)\s*>([\s\S]*?)(?:<\s*/\s*(?:think|thought|thinking|reasoning|plan)\s*>|$)""").find(raw)
-    if (thinkMatch != null) {
-        val thought = thinkMatch.groups[1]?.value?.trim() ?: ""
-        var clean = raw.replace(RE_THOUGHT_BLOCK, "")
-        if (isStreaming) clean = clean.replace(RE_THOUGHT_OPEN, "")
-        clean = clean.replace(RE_INNER_THOUGHT_PREFIX, "").trim()
-        return Pair(thought, clean)
+    var text = raw
+
+    // 1. Remove all tagged thought blocks (both closed and trailing unclosed)
+    text = text.replace(RE_THOUGHT_BLOCK, "")
+    text = text.replace(RE_BRACKET_THOUGHT, "")
+
+    // 2. Remove open tags or partial tags
+    text = text.replace(RE_THOUGHT_OPEN, "")
+    if (isStreaming) {
+        text = text.replace(RE_PARTIAL_THINK_OPEN, "")
     }
 
-    // 2. Tagged with [thought]...[/thought]
-    val bracketMatch = Regex("""(?is)\[\s*(?:thought|think|thinking|reasoning|plan)\s*\]([\s\S]*?)(?:\[\s*/\s*(?:thought|think|thinking|reasoning|plan)\s*\]|$)""").find(raw)
-    if (bracketMatch != null) {
-        val thought = bracketMatch.groups[1]?.value?.trim() ?: ""
-        var clean = raw.replace(RE_BRACKET_THOUGHT, "")
-        clean = clean.replace(RE_INNER_THOUGHT_PREFIX, "").trim()
-        return Pair(thought, clean)
-    }
-
-    // 3. Plain text untagged thinking process (e.g. "Here's a thinking process: ...")
-    if (RE_UNTAGGED_THINKING_HEADER.containsMatchIn(raw)) {
-        val answerMatch = RE_THOUGHT_FINAL_ANSWER_MARKER.find(raw)
+    // 3. Untagged thinking process (e.g. "Here's a thinking process: ...")
+    if (RE_UNTAGGED_THINKING_HEADER.containsMatchIn(text)) {
+        val answerMatch = RE_THOUGHT_FINAL_ANSWER_MARKER.find(text)
         if (answerMatch != null) {
             val candidateAnswer = answerMatch.groups[1]?.value?.trim() ?: ""
-            val thoughtPart = raw.substring(0, answerMatch.range.first).trim()
             val cleanAnswer = candidateAnswer.trimStart('✅', ' ', '\n', '\r')
             if (cleanAnswer.isNotEmpty()) {
-                return Pair(thoughtPart, cleanAnswer)
+                text = cleanAnswer
             }
-        }
-
-        // Backward line scan for the final answer
-        val lines = raw.lines()
-        var answerLineIndex = -1
-        for (i in lines.indices.reversed()) {
-            val line = lines[i].trim()
-            if (line.isEmpty() || line == "✅") continue
-            val isMeta = line.startsWith("1.") || line.startsWith("2.") || line.startsWith("3.") ||
-                         line.startsWith("4.") || line.startsWith("5.") || line.startsWith("- ") ||
-                         line.startsWith("* ") || line.contains("Analyze", ignoreCase = true) ||
-                         line.contains("Check Rules", ignoreCase = true) || line.contains("thinking process", ignoreCase = true) ||
-                         line.contains("Wait, the rules say", ignoreCase = true) || line.contains("I'll just say", ignoreCase = true) ||
-                         line.contains("I'll output that", ignoreCase = true) || line.contains("internal monologue", ignoreCase = true)
-            if (!isMeta) {
-                answerLineIndex = i
-                break
-            }
-        }
-
-        if (answerLineIndex > 0) {
-            val answer = lines.subList(answerLineIndex, lines.size).joinToString("\n").trim().trimStart('✅', ' ')
-            val thought = lines.subList(0, answerLineIndex).joinToString("\n").trim()
-            if (answer.isNotEmpty()) {
-                return Pair(thought, answer)
-            }
-        }
-
-        if (isStreaming) {
-            return Pair(raw.trim(), "")
         } else {
-            val quoted = Regex(""""([^"\n]{3,120})"""").findAll(raw).lastOrNull()?.groups?.get(1)?.value?.trim()
-            if (!quoted.isNullOrEmpty() && !quoted.contains("analyze", ignoreCase = true)) {
-                return Pair(raw.trim(), quoted)
+            // Backward line scan for the final answer
+            val lines = text.lines()
+            var answerLineIndex = -1
+            for (i in lines.indices.reversed()) {
+                val line = lines[i].trim()
+                if (line.isEmpty() || line == "✅") continue
+                val isMeta = line.startsWith("1.") || line.startsWith("2.") || line.startsWith("3.") ||
+                             line.startsWith("4.") || line.startsWith("5.") || line.startsWith("- ") ||
+                             line.startsWith("* ") || line.contains("Analyze", ignoreCase = true) ||
+                             line.contains("Check Rules", ignoreCase = true) || line.contains("thinking process", ignoreCase = true) ||
+                             line.contains("Wait, the rules say", ignoreCase = true) || line.contains("I'll just say", ignoreCase = true) ||
+                             line.contains("I'll output that", ignoreCase = true) || line.contains("internal monologue", ignoreCase = true)
+                if (!isMeta) {
+                    answerLineIndex = i
+                    break
+                }
             }
-            return Pair(raw.trim(), "")
+
+            if (answerLineIndex > 0) {
+                val answer = lines.subList(answerLineIndex, lines.size).joinToString("\n").trim().trimStart('✅', ' ')
+                text = if (answer.isNotEmpty()) answer else ""
+            } else if (isStreaming) {
+                text = ""
+            } else {
+                val quoted = Regex(""""([^"\n]{3,120})"""").findAll(text).lastOrNull()?.groups?.get(1)?.value?.trim()
+                text = if (!quoted.isNullOrEmpty() && !quoted.contains("analyze", ignoreCase = true)) quoted else ""
+            }
         }
     }
 
-    // 4. Default: remove any inner thought prefix
-    val cleaned = raw.replace(RE_INNER_THOUGHT_PREFIX, "").trim()
-    return Pair("", cleaned)
+    // 4. Remove inner thought prefixes
+    text = text.replace(RE_INNER_THOUGHT_PREFIX, "").trim()
+
+    // 5. Cleanup any stray/dangling think tags
+    if (text.startsWith("<think", ignoreCase = true) || text.startsWith("<thought", ignoreCase = true)) {
+        text = text.substringAfter(">", "").trim()
+    }
+    if (text.endsWith("</think>", ignoreCase = true) || text.endsWith("</thought>", ignoreCase = true)) {
+        text = text.substringBeforeLast("<").trim()
+    }
+
+    return text
 }
 
-fun stripThinkingProcess(raw: String, isStreaming: Boolean = false): String {
-    return extractThoughtAndCleanText(raw, isStreaming).second
+fun extractThoughtAndCleanText(raw: String, isStreaming: Boolean = false): Pair<String, String> {
+    return Pair("", stripThinkingProcess(raw, isStreaming))
 }
 
 private val RE_IMAGE_TAG = Regex("""\[image:([^\]]+)\]""")
@@ -369,23 +365,36 @@ fun ChatScreen(
     val isImeVisible = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    // Auto-scroll to latest message when keyboard opens
+    // Auto-scroll to latest message when keyboard opens.
+    // Use instant scrollToItem (not animate) so it can't fight the streaming
+    // follow-scroll below; both write to the same LazyListState.
     LaunchedEffect(isImeVisible) {
         if (isImeVisible) {
-            kotlinx.coroutines.delay(100L)
+            kotlinx.coroutines.delay(150L)
             val total = lazyListState.layoutInfo.totalItemsCount
             if (total > 0 && !lazyListState.isScrollInProgress) {
-                lazyListState.animateScrollToItem(total - 1)
+                try {
+                    lazyListState.scrollToItem(total - 1)
+                } catch (_: Exception) {}
             }
         }
     }
 
+    // Single authority for "new settled message" scrolls: only when NOT streaming,
+    // so streaming tokens never trigger a competing animated scroll.
     LaunchedEffect(messages.size, isStreaming) {
         if (messages.isNotEmpty() && !isStreaming) {
+            // Small settle delay lets the new item measure before scrolling,
+            // avoiding a mid-layout animateScrollToItem jump.
+            kotlinx.coroutines.delay(60L)
             val totalItems = lazyListState.layoutInfo.totalItemsCount
             if (totalItems > 0 && !lazyListState.isScrollInProgress) {
                 val lastVisible = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                if (lastVisible >= totalItems - 3) lazyListState.animateScrollToItem(totalItems - 1)
+                if (lastVisible >= totalItems - 3) {
+                    try {
+                        lazyListState.animateScrollToItem(totalItems - 1)
+                    } catch (_: Exception) {}
+                }
             }
         }
     }
@@ -403,19 +412,27 @@ fun ChatScreen(
         var lastScrollTime = 0L
         viewModel.streamedText.collect {
             val now = System.currentTimeMillis()
-            if (now - lastScrollTime >= 60L && !lazyListState.isScrollInProgress && isNearBottom && isStreaming) {
+            // Throttled to ~8fps: token flow can emit 30-60x/sec, and every
+            // scrollBy forces a remeasure. 120ms is smooth without jank.
+            // scrollToItem/scrollBy are instant (no animation) so consecutive
+            // frames never stack competing animations.
+            if (now - lastScrollTime >= 120L && !lazyListState.isScrollInProgress && isNearBottom && isStreaming) {
                 lastScrollTime = now
                 val total = lazyListState.layoutInfo.totalItemsCount
                 if (total > 0) {
-                    val lastVisibleItem = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()
-                    if (lastVisibleItem != null && lastVisibleItem.index == total - 1) {
-                        val overflow = (lastVisibleItem.offset + lastVisibleItem.size) - lazyListState.layoutInfo.viewportEndOffset
-                        if (overflow > 0) {
-                            lazyListState.scrollBy(overflow.toFloat())
+                    try {
+                        val lastVisibleItem = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()
+                        if (lastVisibleItem != null && lastVisibleItem.index == total - 1) {
+                            val overflow = (lastVisibleItem.offset + lastVisibleItem.size) - lazyListState.layoutInfo.viewportEndOffset
+                            // Ignore tiny (<4px) overflow: scrolling sub-pixel
+                            // leftovers every frame is a major jitter source.
+                            if (overflow > 4) {
+                                lazyListState.scrollBy(overflow.toFloat())
+                            }
+                        } else {
+                            lazyListState.scrollToItem(total - 1)
                         }
-                    } else {
-                        lazyListState.scrollToItem(total - 1)
-                    }
+                    } catch (_: Exception) {}
                 }
             }
         }
@@ -441,15 +458,19 @@ fun ChatScreen(
             // Decode off the main thread and downsample to ~screen size — a full-size
             // photo decoded synchronously in composition freezes frames and risks OOM.
             val config = LocalConfiguration.current
-            val screenW = config.screenWidthDp.coerceAtLeast(1)
-            val screenH = config.screenHeightDp.coerceAtLeast(1)
+            val density = LocalDensity.current
+            // bounds.outWidth/Height are PIXELS; screenWidthDp is DP — convert
+            // before comparing, else sample is under-estimated and we decode
+            // a far larger bitmap than needed (jank + OOM risk).
+            val screenWPx = with(density) { config.screenWidthDp.dp.roundToPx().coerceAtLeast(1) }
+            val screenHPx = with(density) { config.screenHeightDp.dp.roundToPx().coerceAtLeast(1) }
             val bm by produceState<android.graphics.Bitmap?>(initialValue = null, customFile.absolutePath) {
                 value = withContext(Dispatchers.IO) {
                     try {
                         val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
                         android.graphics.BitmapFactory.decodeFile(customFile.absolutePath, bounds)
                         var sample = 1
-                        while (bounds.outWidth / (sample * 2) >= screenW || bounds.outHeight / (sample * 2) >= screenH) {
+                        while (bounds.outWidth / (sample * 2) >= screenWPx || bounds.outHeight / (sample * 2) >= screenHPx) {
                             sample *= 2
                         }
                         val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
@@ -479,7 +500,7 @@ fun ChatScreen(
         } else {
             Box(modifier = Modifier.fillMaxSize().background(Color(0xFF000000)))
         }
-        Column(Modifier.fillMaxSize().imePadding()) {
+        Column(Modifier.fillMaxSize()) {
             TopBar(
                 sessionTitle = currentSessionTitle,
                 isStreaming = isStreaming,
@@ -750,7 +771,7 @@ fun ChatScreen(
                         buildList {
                             addAll(groupedItems)
                             val p = orchestrationPlan
-                            if (isStreaming && streamingMsgId.isNotEmpty()) {
+                            if (isStreaming && streamingMsgId.isNotEmpty() && groupedItems.none { it is ChatItem.NormalMessage && it.message.id == streamingMsgId }) {
                                 add(ChatItem.Streaming(streamingMsgId))
                             } else if (p != null && p.overallStatus != OverallStatus.COMPLETE && p.overallStatus != OverallStatus.FAILED) {
                                 add(ChatItem.OrchestrationPanel("orchestration"))
@@ -759,7 +780,7 @@ fun ChatScreen(
                             when (item) {
                                 is ChatItem.NormalMessage -> "msg_${item.message.id}"
                                 is ChatItem.ToolExecutionGroup -> "group_${item.groupId}"
-                                is ChatItem.Streaming -> "msg_${item.messageId}"
+                                is ChatItem.Streaming -> "streaming_${item.messageId}"
                                 is ChatItem.OrchestrationPanel -> "orch_${item.panelId}"
                             }
                         }
@@ -775,7 +796,7 @@ fun ChatScreen(
                         when (item) {
                             is ChatItem.NormalMessage -> "msg_${item.message.id}"
                             is ChatItem.ToolExecutionGroup -> "group_${item.groupId}"
-                            is ChatItem.Streaming -> "msg_${item.messageId}"
+                            is ChatItem.Streaming -> "streaming_${item.messageId}"
                             is ChatItem.OrchestrationPanel -> "orch_${item.panelId}"
                         }
                     }, contentType = { item ->
@@ -847,6 +868,7 @@ fun ChatScreen(
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp)
                 .padding(top = 8.dp)
+                .imePadding()
         ) {
             if (attachedFiles.isNotEmpty()) {
                 Row(
@@ -943,9 +965,9 @@ fun ChatScreen(
                                 innerTextField()
                             }
                         },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                         keyboardActions = KeyboardActions(onSend = {
-                            if (inputMsg.isNotEmpty() || attachedFiles.isNotEmpty()) {
+                            if ((inputMsg.isNotEmpty() || attachedFiles.isNotEmpty()) && !viewModel.isStreaming.value) {
                                 viewModel.sendMessage(inputMsg)
                                 inputMsg = ""
                             }
@@ -1175,10 +1197,11 @@ private fun TopBar(
             }
 
             if (expandedSelectorDropdown) {
-                val imeInsets = WindowInsets.ime
+                // Fixed anchor below the pill. Previously offset was
+                // 44.dp - imeBottom, so opening the picker while the keyboard
+                // was up pushed it far off-screen (unusable while typing).
                 val density = LocalDensity.current
-                val imeBottom by remember { derivedStateOf { imeInsets.getBottom(density) } }
-                val offsetPx = with(density) { (44.dp.roundToPx() - imeBottom) }
+                val offsetPx = with(density) { 52.dp.roundToPx() }
                 Popup(
                     alignment = Alignment.TopEnd,
                     offset = IntOffset(0, offsetPx),
@@ -1218,30 +1241,24 @@ fun MessageBubble(
 
     if (message.isToolCall || message.role == "tool") return
 
-    val (thoughtContent, cleanedContent) = remember(message.id, message.content, isUser) {
+    // Thinking is stripped entirely — never shown, not even in a box.
+    val cleanedContent = remember(message.id, message.content, isUser) {
         val raw = if (message.content.endsWith("[INTERRUPTED]")) message.content.substringBeforeLast("[INTERRUPTED]").trim()
         else message.content
-        if (isUser) {
-            Pair("", raw.trim())
-        } else {
-            extractThoughtAndCleanText(raw, isStreaming = false)
-        }
+        if (isUser) raw.trim()
+        else stripThinkingProcess(raw, isStreaming = false)
     }
 
-    if (cleanedContent.isEmpty() && thoughtContent.isEmpty()) return
+    if (cleanedContent.isEmpty()) return
 
     val isInterrupted = message.content.endsWith("[INTERRUPTED]")
     val parsedParts = remember(cleanedContent, isUser) { parseMessageContent(cleanedContent, isUser) }
 
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalAlignment = alignment) {
-        if (!isInterrupted || cleanedContent.isNotEmpty() || thoughtContent.isNotEmpty()) {
+        if (!isInterrupted || cleanedContent.isNotEmpty()) {
             if (isUser) {
                 UserBubble(cleanedContent = cleanedContent, parsedParts = parsedParts, message = message, context = context)
             } else {
-                if (thoughtContent.isNotEmpty()) {
-                    ThoughtBlock(thought = thoughtContent)
-                    Spacer(Modifier.height(4.dp))
-                }
                 if (cleanedContent.isNotEmpty()) {
                     AiBubble(cleanedContent = cleanedContent, parsedParts = parsedParts, message = message, imageCache = imageCache, onSelectLayout = onSelectLayout, onSendSuggestion = onSendSuggestion)
                 }
@@ -1278,6 +1295,14 @@ private fun UserBubble(
             .widthIn(min = 48.dp, max = 300.dp)
             .clip(RoundedCornerShape(22.dp))
             .background(bubbleBg)
+            // Animate height on Show more/less: previously instant, jumping
+            // neighboring messages.
+            .animateContentSize(
+                animationSpec = androidx.compose.animation.core.tween(
+                    220,
+                    easing = androidx.compose.animation.core.FastOutSlowInEasing
+                )
+            )
             .padding(horizontal = 18.dp, vertical = 14.dp)
             .pointerInput(Unit) {
                 detectTapGestures(onLongPress = { offset ->
@@ -1377,7 +1402,7 @@ private fun AiBubble(
                             Row(modifier = Modifier.padding(bottom = 10.dp).background(AppDivider, RoundedCornerShape(10.dp))
                                 .border(1.dp, AppBorder, RoundedCornerShape(10.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.List, null, tint = AppPrimary, modifier = Modifier.size(16.dp))
+                                Icon(Icons.AutoMirrored.Filled.List, null, tint = AppPrimary, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Text(item.filename, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold, maxLines = 1, fontFamily = FontFamily.Monospace)
@@ -1411,32 +1436,167 @@ private fun AiBubble(
     }
 }
 
+private object GlobalAudioPlaybackManager {
+    private var currentPlayer: MediaPlayer? = null
+    private var onStopCallback: (() -> Unit)? = null
+
+    @Synchronized
+    fun play(player: MediaPlayer, onStop: () -> Unit) {
+        if (currentPlayer != null && currentPlayer != player) {
+            try {
+                if (currentPlayer?.isPlaying == true) {
+                    currentPlayer?.pause()
+                }
+            } catch (_: Exception) {}
+            try {
+                onStopCallback?.invoke()
+            } catch (_: Exception) {}
+        }
+        currentPlayer = player
+        onStopCallback = onStop
+    }
+
+    @Synchronized
+    fun onStopped(player: MediaPlayer) {
+        if (currentPlayer == player) {
+            currentPlayer = null
+            onStopCallback = null
+        }
+    }
+
+    @Synchronized
+    fun release(player: MediaPlayer) {
+        if (currentPlayer == player) {
+            currentPlayer = null
+            onStopCallback = null
+        }
+    }
+}
+
+private fun formatAudioTime(ms: Int): String {
+    val totalSec = (ms / 1000).coerceAtLeast(0)
+    val mins = totalSec / 60
+    val secs = totalSec % 60
+    return String.format(Locale.US, "%d:%02d", mins, secs)
+}
+
+private fun generateSyntheticWaveform(seedKey: String, barCount: Int = 38): List<Float> {
+    val rng = java.util.Random(seedKey.hashCode().toLong())
+    val result = FloatArray(barCount)
+    var level = 0.4f
+    for (i in 0 until barCount) {
+        val normalizedPos = i.toFloat() / barCount
+        val envelope = (kotlin.math.sin(normalizedPos * Math.PI.toFloat())).coerceIn(0.25f, 1f)
+        val step = (rng.nextFloat() - 0.48f) * 0.45f
+        level = (level + step).coerceIn(0.2f, 0.95f)
+        val isPause = (i % 8 == 0 || i % 13 == 0) && i > 3 && i < barCount - 3
+        val rawAmp = if (isPause) (0.15f + rng.nextFloat() * 0.12f) else (level * envelope)
+        result[i] = rawAmp.coerceIn(0.12f, 0.98f)
+    }
+    result[0] = 0.15f
+    result[1] = 0.22f
+    result[barCount - 2] = 0.20f
+    result[barCount - 1] = 0.15f
+    return result.toList()
+}
+
+private fun extractWaveformAmplitudes(file: File, barCount: Int = 38): List<Float> {
+    if (!file.exists() || file.length() < 44) {
+        return generateSyntheticWaveform(file.name, barCount)
+    }
+    return try {
+        if (file.name.endsWith(".wav", ignoreCase = true)) {
+            val length = file.length()
+            val dataSize = length - 44
+            if (dataSize <= 0) return generateSyntheticWaveform(file.name, barCount)
+
+            java.io.RandomAccessFile(file, "r").use { raf ->
+                val step = (dataSize / barCount).coerceAtLeast(2)
+                val buffer = ByteArray(256)
+                val rawAmps = FloatArray(barCount)
+
+                for (i in 0 until barCount) {
+                    val pos = 44L + i * step
+                    raf.seek(pos.coerceIn(44L, (length - buffer.size).coerceAtLeast(44L)))
+                    val read = raf.read(buffer)
+                    var maxAmp = 0
+                    var j = 0
+                    while (j < read - 1) {
+                        val sample = (buffer[j].toInt() and 0xFF) or (buffer[j + 1].toInt() shl 8)
+                        val shortVal = sample.toShort().toInt()
+                        val absVal = kotlin.math.abs(shortVal)
+                        if (absVal > maxAmp) maxAmp = absVal
+                        j += 2
+                    }
+                    rawAmps[i] = maxAmp.toFloat() / 32768f
+                }
+
+                val max = rawAmps.maxOrNull()?.coerceAtLeast(0.01f) ?: 1f
+                rawAmps.map { amp ->
+                    val normalized = (amp / max).coerceIn(0f, 1f)
+                    0.15f + normalized * 0.85f
+                }
+            }
+        } else {
+            generateSyntheticWaveform(file.name, barCount)
+        }
+    } catch (e: Exception) {
+        generateSyntheticWaveform(file.name, barCount)
+    }
+}
+
 @Composable
 private fun AudioPlayer(part: MessageContentPart.Audio) {
     val context = LocalContext.current
     val isPlaying = remember { mutableStateOf(false) }
     val isPrepared = remember { mutableStateOf(false) }
-    val speedList = remember { listOf(1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 0.5f) }
+    val speedList = remember { listOf(1.0f, 1.25f, 1.5f, 2.0f) }
     val speedIndex = remember { mutableStateOf(0) }
+    val currentPosMs = remember { mutableStateOf(0) }
+    val totalDurationMs = remember { mutableStateOf(0) }
+    val showMoreMenu = remember { mutableStateOf(false) }
 
     val cleanPath = remember(part.filePath) {
         part.filePath.removePrefix("file://").trim()
     }
     val audioFile = remember(cleanPath) { File(cleanPath) }
 
+    val amplitudes = remember(cleanPath) {
+        mutableStateOf(generateSyntheticWaveform(cleanPath, 38))
+    }
+
+    LaunchedEffect(cleanPath) {
+        if (audioFile.exists()) {
+            withContext(Dispatchers.IO) {
+                try {
+                    val mmr = android.media.MediaMetadataRetriever()
+                    mmr.setDataSource(audioFile.absolutePath)
+                    val durStr = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    val dur = durStr?.toIntOrNull() ?: 0
+                    if (dur > 0) {
+                        totalDurationMs.value = dur
+                    }
+                    mmr.release()
+                } catch (e: Exception) {
+                    AppLogger.e("AudioPlayer", "MMR duration error", e)
+                }
+
+                val extracted = extractWaveformAmplitudes(audioFile, 38)
+                amplitudes.value = extracted
+            }
+        }
+    }
+
     fun applySpeed(mp: MediaPlayer?, speed: Float) {
         if (mp == null) return
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && isPrepared.value) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && isPrepared.value && isPlaying.value) {
                 val params = mp.playbackParams
                 params.speed = speed
                 mp.playbackParams = params
-                if (!isPlaying.value) {
-                    mp.pause()
-                }
             }
         } catch (e: Exception) {
-            ai.deepcode.android.util.AppLogger.e("AudioPlayer", "Error setting speed", e)
+            AppLogger.e("AudioPlayer", "Error setting speed", e)
         }
     }
 
@@ -1444,24 +1604,28 @@ private fun AudioPlayer(part: MessageContentPart.Audio) {
         if (audioFile.exists()) {
             MediaPlayer().apply {
                 try {
-                    setDataSource(context, android.net.Uri.fromFile(audioFile))
+                    setDataSource(context, Uri.fromFile(audioFile))
                     setOnPreparedListener { mp ->
                         mp.isLooping = false
                         isPrepared.value = true
-                        try {
-                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                                val params = mp.playbackParams
-                                params.speed = speedList[speedIndex.value]
-                                mp.playbackParams = params
-                                mp.pause()
-                            }
-                        } catch (_: Exception) {}
+                        if (mp.duration > 0) {
+                            totalDurationMs.value = mp.duration
+                        }
                     }
-                    setOnCompletionListener { isPlaying.value = false }
-                    setOnErrorListener { _, _, _ -> isPlaying.value = false; isPrepared.value = false; true }
+                    setOnCompletionListener {
+                        isPlaying.value = false
+                        currentPosMs.value = 0
+                        GlobalAudioPlaybackManager.onStopped(this)
+                    }
+                    setOnErrorListener { _, _, _ ->
+                        isPlaying.value = false
+                        isPrepared.value = false
+                        GlobalAudioPlaybackManager.onStopped(this)
+                        true
+                    }
                     prepareAsync()
                 } catch (e: Exception) {
-                    ai.deepcode.android.util.AppLogger.e("AudioPlayer", "Error preparing audio", e)
+                    AppLogger.e("AudioPlayer", "Error preparing audio", e)
                 }
             }
         } else null
@@ -1471,10 +1635,46 @@ private fun AudioPlayer(part: MessageContentPart.Audio) {
         onDispose {
             try {
                 mediaPlayer?.let {
+                    GlobalAudioPlaybackManager.release(it)
                     if (it.isPlaying) it.stop()
                     it.release()
                 }
             } catch (_: Exception) {}
+        }
+    }
+
+    LaunchedEffect(isPlaying.value) {
+        if (isPlaying.value) {
+            while (isPlaying.value) {
+                mediaPlayer?.let { mp ->
+                    try {
+                        if (mp.isPlaying) {
+                            currentPosMs.value = mp.currentPosition
+                            if (mp.duration > 0 && totalDurationMs.value <= 0) {
+                                totalDurationMs.value = mp.duration
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+                delay(40)
+            }
+        }
+    }
+
+    fun seekToFraction(fraction: Float) {
+        val dur = totalDurationMs.value
+        if (dur > 0) {
+            val targetMs = (fraction.coerceIn(0f, 1f) * dur).toInt()
+            currentPosMs.value = targetMs
+            mediaPlayer?.let { mp ->
+                try {
+                    if (isPrepared.value) {
+                        mp.seekTo(targetMs)
+                    }
+                } catch (e: Exception) {
+                    AppLogger.e("AudioPlayer", "Error seeking", e)
+                }
+            }
         }
     }
 
@@ -1487,18 +1687,20 @@ private fun AudioPlayer(part: MessageContentPart.Audio) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .background(AppDivider, RoundedCornerShape(10.dp))
-            .border(1.dp, AppBorder, RoundedCornerShape(10.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .background(Color(0xFF26282E), RoundedCornerShape(22.dp))
+            .border(1.dp, Color(0xFF353942), RoundedCornerShape(22.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // 1. Play / Pause Button
         Box(
             modifier = Modifier
+                .size(48.dp)
                 .clip(CircleShape)
-                .background(AppPrimary.copy(alpha = 0.15f))
+                .background(Color(0xFF383528))
                 .clickable {
                     if (!audioFile.exists()) {
-                        Toast.makeText(context, "Audio file missing: ${audioFile.name}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Audio file not ready", Toast.LENGTH_SHORT).show()
                         return@clickable
                     }
                     val mp = mediaPlayer ?: return@clickable
@@ -1506,63 +1708,212 @@ private fun AudioPlayer(part: MessageContentPart.Audio) {
                         if (isPlaying.value) {
                             mp.pause()
                             isPlaying.value = false
+                            GlobalAudioPlaybackManager.onStopped(mp)
                         } else {
                             if (!isPrepared.value) {
                                 Toast.makeText(context, "Loading audio...", Toast.LENGTH_SHORT).show()
                                 return@clickable
                             }
-                            applySpeed(mp, speedList[speedIndex.value])
+                            GlobalAudioPlaybackManager.play(mp) {
+                                isPlaying.value = false
+                            }
+                            if (currentPosMs.value == 0 || (totalDurationMs.value > 0 && currentPosMs.value >= totalDurationMs.value - 400)) {
+                                mp.seekTo(0)
+                                currentPosMs.value = 0
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                try {
+                                    val params = mp.playbackParams
+                                    params.speed = speedList[speedIndex.value]
+                                    mp.playbackParams = params
+                                } catch (_: Exception) {}
+                            }
                             mp.start()
                             isPlaying.value = true
                         }
                     } catch (e: Exception) {
                         isPlaying.value = false
+                        GlobalAudioPlaybackManager.onStopped(mp)
                         Toast.makeText(context, "Playback error: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
-                }
-                .padding(6.dp)
+                },
+            contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = if (isPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow,
                 contentDescription = if (isPlaying.value) "Pause" else "Play",
-                tint = AppPrimary,
-                modifier = Modifier.size(18.dp)
+                tint = Color(0xFFEAA315),
+                modifier = Modifier.size(24.dp)
             )
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        // 2. Waveform + Timestamps
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            val amps = amplitudes.value
+            val progress = if (totalDurationMs.value > 0) {
+                (currentPosMs.value.toFloat() / totalDurationMs.value.toFloat()).coerceIn(0f, 1f)
+            } else 0f
+
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(28.dp)
+                    .pointerInput(totalDurationMs.value) {
+                        detectTapGestures { offset ->
+                            if (size.width > 0) {
+                                seekToFraction(offset.x / size.width)
+                            }
+                        }
+                    }
+                    .pointerInput(totalDurationMs.value) {
+                        detectHorizontalDragGestures { change, _ ->
+                            change.consume()
+                            if (size.width > 0) {
+                                seekToFraction(change.position.x / size.width)
+                            }
+                        }
+                    }
+            ) {
+                val barCount = amps.size
+                if (barCount > 0 && size.width > 0) {
+                    val step = size.width / barCount
+                    val barWidth = (step * 0.45f).coerceIn(2.dp.toPx(), 3.2.dp.toPx())
+                    val centerY = size.height / 2f
+                    val maxHeight = size.height - 4.dp.toPx()
+
+                    for (i in 0 until barCount) {
+                        val barCenterX = (i + 0.5f) * step
+                        val isPlayed = (barCenterX / size.width) <= progress
+                        val barColor = if (isPlayed) Color.White else Color.White.copy(alpha = 0.28f)
+                        val barHeight = (amps[i] * maxHeight).coerceAtLeast(3.dp.toPx())
+
+                        drawLine(
+                            color = barColor,
+                            start = Offset(barCenterX, centerY - barHeight / 2f),
+                            end = Offset(barCenterX, centerY + barHeight / 2f),
+                            strokeWidth = barWidth,
+                            cap = StrokeCap.Round
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(3.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = formatAudioTime(currentPosMs.value),
+                    color = Color.White.copy(alpha = 0.65f),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    text = formatAudioTime(totalDurationMs.value),
+                    color = Color.White.copy(alpha = 0.65f),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
         }
 
         Spacer(Modifier.width(10.dp))
 
-        Text(
-            text = audioFile.name,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 12.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.weight(1f)
-        )
-
-        Spacer(Modifier.width(8.dp))
-
+        // 3. Speed Pill
         Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(AppField)
-                .border(1.dp, AppBorder, RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xFF1B1D22))
+                .border(1.dp, Color(0xFF2E313A), RoundedCornerShape(16.dp))
                 .clickable {
                     val nextIdx = (speedIndex.value + 1) % speedList.size
                     speedIndex.value = nextIdx
                     applySpeed(mediaPlayer, speedList[nextIdx])
                 }
-                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .padding(horizontal = 11.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center
         ) {
             Text(
                 text = speedText,
-                color = AppPrimary,
-                fontSize = 11.sp,
+                color = Color(0xFFEAA315),
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace
             )
+        }
+
+        Spacer(Modifier.width(4.dp))
+
+        // 4. More Options Menu
+        Box {
+            IconButton(
+                onClick = { showMoreMenu.value = true },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "Options",
+                    tint = Color.White.copy(alpha = 0.55f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            DropdownMenu(
+                expanded = showMoreMenu.value,
+                onDismissRequest = { showMoreMenu.value = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Share Audio") },
+                    leadingIcon = { Icon(Icons.Default.Share, null, modifier = Modifier.size(16.dp)) },
+                    onClick = {
+                        showMoreMenu.value = false
+                        try {
+                            val uri = androidx.core.content.FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.provider",
+                                audioFile
+                            )
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "audio/*"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share Audio"))
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Cannot share: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Save to Downloads") },
+                    leadingIcon = { Icon(Icons.Default.Save, null, modifier = Modifier.size(16.dp)) },
+                    onClick = {
+                        showMoreMenu.value = false
+                        try {
+                            val dest = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), audioFile.name)
+                            audioFile.copyTo(dest, overwrite = true)
+                            Toast.makeText(context, "Saved: ${dest.name}", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Failed to save: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Copy File Path") },
+                    leadingIcon = { Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp)) },
+                    onClick = {
+                        showMoreMenu.value = false
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                        cm?.setPrimaryClip(ClipData.newPlainText("Audio Path", audioFile.absolutePath))
+                        Toast.makeText(context, "Path copied", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
         }
     }
 }
@@ -1608,7 +1959,7 @@ private fun saveImagesFromMessage(text: String, context: Context) {
     RE_IMAGE_TAG.findAll(text).forEach { refs.add(it.groupValues[1].trim()) }
     RE_MARKDOWN_IMAGE.findAll(text).forEach {
         val url = it.groupValues[2].trim()
-        if (url.startsWith("http") || url.startsWith("file")) refs.add(url)
+        if (url.startsWith("http") || url.startsWith("file") || url.startsWith("/")) refs.add(url)
     }
     RE_DIRECT_IMG.findAll(text).forEach { refs.add(it.value) }
     val unique = refs.distinct()
@@ -1701,27 +2052,47 @@ private fun StreamingItem(
     mediaProcessingPrompt: String
 ) {
     val streamedText by viewModel.streamedText.collectAsStateWithLifecycle(initialValue = "")
-    StreamingBubble(text = streamedText, imageCache = imageCache)
+    StreamingBubble(
+        text = streamedText,
+        imageCache = imageCache,
+        mediaProcessingType = mediaProcessingType,
+        mediaProcessingPrompt = mediaProcessingPrompt
+    )
 }
 
 // ═══════════════════════════════════════════════
 @Composable
-fun StreamingBubble(text: String, imageCache: Map<String, ImageBitmap> = emptyMap()) {
-    val (liveThought, cleanText) = remember(text) {
-        extractThoughtAndCleanText(text, isStreaming = true)
+fun StreamingBubble(
+    text: String,
+    imageCache: Map<String, ImageBitmap> = emptyMap(),
+    mediaProcessingType: String? = null,
+    mediaProcessingPrompt: String = ""
+) {
+    // Thinking stripped entirely — stream only the final answer text.
+    val cleanText = remember(text) {
+        stripThinkingProcess(text, isStreaming = true)
     }
-    val isImageGenerating = remember(cleanText) {
-        cleanText.contains("Generating image", ignoreCase = true)
+    val isImageGenerating = remember(cleanText, mediaProcessingType) {
+        mediaProcessingType == "image" || cleanText.contains("Generating image", ignoreCase = true)
+    }
+    val isAudioGenerating = remember(cleanText, mediaProcessingType) {
+        mediaProcessingType == "audio" || cleanText.contains("Generating audio", ignoreCase = true)
     }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
-            .animateContentSize(animationSpec = MotionTokens.LayoutSpring),
+            .padding(vertical = 6.dp),
+        // NOTE: intentionally NO animateContentSize here. During streaming this
+        // composable recomposes per token; animating size on every frame
+        // restarts a spring each time and fights the LazyColumn measurement,
+        // which reads as vertical jitter. Text growth without animation is
+        // already smooth because the follow-scroll keeps the tail pinned.
         horizontalAlignment = Alignment.Start
     ) {
-        if (cleanText.isEmpty()) {
+        if (isImageGenerating) {
+            ImageGenerationSkeleton(statusText = if (mediaProcessingPrompt.isNotBlank()) mediaProcessingPrompt else "Generating image...")
+        } else if (cleanText.isEmpty() || isAudioGenerating) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1730,31 +2101,40 @@ fun StreamingBubble(text: String, imageCache: Map<String, ImageBitmap> = emptyMa
             ) {
                 // transitions.dev P28: Ambient breathing thinking status pill
                 AnimatedThinkingPill(
-                    statusText = if (liveThought.isNotEmpty()) "Reasoning through solution..." else "Thinking...",
+                    statusText = "Thinking...",
                     accentColor = AppPrimary
                 )
-
-                // If the model is outputting live reasoning tokens, stream them live
-                if (liveThought.isNotEmpty()) {
-                    LiveThoughtCard(thought = liveThought)
-                }
             }
-        } else if (isImageGenerating) {
-            ImageGenerationSkeleton(statusText = cleanText)
         } else {
-            if (liveThought.isNotEmpty()) {
-                ThoughtBlock(thought = liveThought)
-                Spacer(Modifier.height(8.dp))
+            val codeBg = if (isDarkThemeActive) Color(0xFF232530) else Color(0xFFEFF0F4)
+            val codeColor = AppPrimary
+            val linkColor = Color(0xFF3B82F6)
+            val textColor = MaterialTheme.colorScheme.onSurface
+
+            val streamingAnnotated = remember(cleanText, codeBg, codeColor, linkColor, textColor) {
+                buildStreamingMarkdown(
+                    text = cleanText,
+                    codeBg = codeBg,
+                    codeColor = codeColor,
+                    linkColor = linkColor,
+                    textColor = textColor
+                )
             }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .animateContentSize(animationSpec = MotionTokens.LayoutSpring),
-                verticalAlignment = Alignment.Bottom
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.Top
             ) {
-                Box(modifier = Modifier.weight(1f, fill = false)) {
-                    MarkdownText(text = cleanText, imageCache = imageCache)
-                }
+                Text(
+                    text = streamingAnnotated,
+                    fontSize = 15.sp,
+                    lineHeight = 23.sp,
+                    color = textColor,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                Spacer(Modifier.width(4.dp))
                 StreamingActiveCursor(color = AppPrimary)
             }
         }
@@ -2112,18 +2492,13 @@ fun ToolExecutionGroupBubble(group: ChatItem.ToolExecutionGroup, modifier: Modif
                 else if (msg.isToolCall) list.add(DisplayItem(msg.id, "Tool Call", null, msg.content))
             }
         }
-        list
+        list.filterNot { it.name == "edge_tts" || it.name == "tool" || it.result.contains("[audio:") }
     }
+    if (toolCalls.isEmpty()) return
     Column(modifier = modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         toolCalls.forEach { item ->
             val status = if (item.result.startsWith("Error") || item.result.contains("failed", ignoreCase = true)) "FAILED" else if (item.result == "Executing...") "RUNNING" else "SUCCESS"
             ToolCallCard(toolName = item.name, status = status, result = item.result, argsJson = item.argsJson, modifier = Modifier.fillMaxWidth())
-            val mediaRx = remember(item.result) { Regex("""\[(image|audio|video|file):[^\]]+\]""") }
-            if (mediaRx.containsMatchIn(item.result)) {
-                Box(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                    MarkdownText(text = item.result)
-                }
-            }
         }
     }
 }
@@ -2138,8 +2513,18 @@ fun ModelSelectionOverlay(
     onModelSelected: (AIModel) -> Unit,
     onOpenApiKeys: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val securePrefs = repository.securePrefs
     val catalog by ModelCatalog.models.collectAsStateWithLifecycle()
+
+    var refreshingProviders by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var isRefreshingAll by remember { mutableStateOf(false) }
+
+    // Load previously cached models from preferences once when the overlay is created
+    LaunchedEffect(Unit) {
+        ModelCatalog.loadFromPrefs(securePrefs)
+    }
 
     fun isProviderConfigured(provider: AIProvider): Boolean {
         if (provider.isFree) return true
@@ -2160,26 +2545,77 @@ fun ModelSelectionOverlay(
         mutableStateOf(if (configuredProviders.any { it.name == activeModel.provider }) activeModel.provider else configuredProviders.firstOrNull()?.name ?: "")
     }
 
-    LaunchedEffect(expandedProviderName) {
-        if (expandedProviderName.isNotEmpty()) {
-            val prov = configuredProviders.find { it.name == expandedProviderName }
-            if (prov != null && !catalog.containsKey(expandedProviderName)) {
-                val storageId = providerStorageId(expandedProviderName)
+    fun refreshSingleProvider(provider: AIProvider) {
+        if (refreshingProviders.contains(provider.name)) return
+        refreshingProviders = refreshingProviders + provider.name
+        scope.launch(Dispatchers.IO) {
+            try {
+                val storageId = providerStorageId(provider.name)
                 var apiKey = ApiKeyRotator.getNextAvailableKey(securePrefs, storageId)?.first
                     ?: securePrefs.getApiKey(storageId)
                 if (apiKey.isEmpty()) {
                     apiKey = securePrefs.getSetting("oauth_token_$storageId", "")
                 }
-                if (apiKey.isNotEmpty()) {
-                    if (expandedProviderName == "Antigravity") {
-                        val models = fetchAntigravityModels(apiKey.split("||")[0])
-                        if (models.isNotEmpty()) ModelCatalog.setModels(expandedProviderName, models)
+                if (apiKey.isEmpty() && (provider.name == "Zen AI" || provider.name == "Zen (Free)")) {
+                    apiKey = "zen-free"
+                }
+                val models = if (provider.name == "Antigravity") {
+                    fetchAntigravityModels(apiKey.split("||")[0])
+                } else {
+                    val baseUrl = providerDefaultBaseUrl(provider.name)
+                    fetchModels(apiKey, baseUrl, provider.name)
+                }
+                withContext(Dispatchers.Main) {
+                    if (models.isNotEmpty()) {
+                        ModelCatalog.setModels(provider.name, models, securePrefs)
+                        Toast.makeText(context, "Loaded ${models.size} models for ${provider.name}", Toast.LENGTH_SHORT).show()
                     } else {
-                        val baseUrl = providerDefaultBaseUrl(expandedProviderName)
-                        val models = fetchModels(apiKey, baseUrl, expandedProviderName)
-                        if (models.isNotEmpty()) ModelCatalog.setModels(expandedProviderName, models)
+                        Toast.makeText(context, "No models returned for ${provider.name}", Toast.LENGTH_SHORT).show()
                     }
                 }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Failed to refresh ${provider.name}: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    refreshingProviders = refreshingProviders - provider.name
+                }
+            }
+        }
+    }
+
+    fun refreshAllProviders() {
+        if (isRefreshingAll) return
+        isRefreshingAll = true
+        scope.launch(Dispatchers.IO) {
+            var totalCount = 0
+            for (provider in configuredProviders) {
+                try {
+                    val storageId = providerStorageId(provider.name)
+                    var apiKey = ApiKeyRotator.getNextAvailableKey(securePrefs, storageId)?.first
+                        ?: securePrefs.getApiKey(storageId)
+                    if (apiKey.isEmpty()) {
+                        apiKey = securePrefs.getSetting("oauth_token_$storageId", "")
+                    }
+                    if (apiKey.isEmpty() && (provider.name == "Zen AI" || provider.name == "Zen (Free)")) {
+                        apiKey = "zen-free"
+                    }
+                    val models = if (provider.name == "Antigravity") {
+                        fetchAntigravityModels(apiKey.split("||")[0])
+                    } else {
+                        val baseUrl = providerDefaultBaseUrl(provider.name)
+                        fetchModels(apiKey, baseUrl, provider.name)
+                    }
+                    if (models.isNotEmpty()) {
+                        ModelCatalog.setModels(provider.name, models, securePrefs)
+                        totalCount += models.size
+                    }
+                } catch (_: Exception) {}
+            }
+            withContext(Dispatchers.Main) {
+                isRefreshingAll = false
+                Toast.makeText(context, "Refreshed all models ($totalCount total)", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -2251,6 +2687,43 @@ fun ModelSelectionOverlay(
                 }
             }
         } else {
+            // Header: "All Providers" with global refresh icon
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "All Providers",
+                    color = AppWhite,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+                IconButton(
+                    onClick = { refreshAllProviders() },
+                    modifier = Modifier.size(28.dp),
+                    enabled = !isRefreshingAll && refreshingProviders.isEmpty()
+                ) {
+                    if (isRefreshingAll) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp,
+                            color = AppPrimary
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh all providers",
+                            tint = AppMuted,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+            HorizontalDivider(color = AppDivider, modifier = Modifier.padding(bottom = 2.dp))
+
             configuredProviders.forEach { provider ->
                 val isProviderExpanded = expandedProviderName == provider.name
                 val providerColor = when (provider.name) {
@@ -2261,32 +2734,91 @@ fun ModelSelectionOverlay(
 
                 Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
                     .background(AppField).border(1.dp, AppDivider, RoundedCornerShape(10.dp)).padding(8.dp)) {
-                    Row(Modifier.fillMaxWidth().clickable { expandedProviderName = if (isProviderExpanded) "" else provider.name }
-                        .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { expandedProviderName = if (isProviderExpanded) "" else provider.name }
+                                .padding(vertical = 4.dp)
+                        ) {
                             ProviderMiniLogo(provider.name)
                             Spacer(Modifier.width(10.dp))
-                            Text(if (provider.name == "Zen (Free)" || provider.name == "Zen AI") "Zen AI" else provider.name,
+                            Text(
+                                if (provider.name == "Zen (Free)" || provider.name == "Zen AI") "Zen AI" else provider.name,
                                 color = if (isProviderExpanded) providerColor else AppWhite,
-                                fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
-                        Icon(if (isProviderExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null,
-                            tint = if (isProviderExpanded) providerColor else AppMuted, modifier = Modifier.size(18.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            val isRefreshingThis = refreshingProviders.contains(provider.name) || isRefreshingAll
+                            IconButton(
+                                onClick = { refreshSingleProvider(provider) },
+                                modifier = Modifier.size(28.dp),
+                                enabled = !isRefreshingThis
+                            ) {
+                                if (isRefreshingThis) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        strokeWidth = 2.dp,
+                                        color = providerColor
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Refresh ${provider.name} models",
+                                        tint = if (isProviderExpanded) providerColor else AppMuted,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = { expandedProviderName = if (isProviderExpanded) "" else provider.name },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isProviderExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = if (isProviderExpanded) "Collapse" else "Expand",
+                                    tint = if (isProviderExpanded) providerColor else AppMuted,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
                     }
 
                     if (isProviderExpanded) {
                         Spacer(Modifier.height(8.dp))
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.animateContentSize()) {
-                            val fetchedModels = catalog[provider.name].orEmpty()
-                            val allModels = if (fetchedModels.isNotEmpty()) fetchedModels else provider.models
+                            val fetchedModels = catalog[provider.name].orEmpty().ifEmpty {
+                                ModelCatalog.getModelsForProvider(provider.name, securePrefs)
+                            }
+                            val allModels = (if (fetchedModels.isNotEmpty()) fetchedModels else provider.models)
+                                .filterNot { DecommissionedModels.isDecommissioned(it.id) }
                             val filterPref = securePrefs.getSetting("model_filter_${provider.name}", "all")
                             val filteredModels = when (filterPref) {
                                 "free" -> allModels.filter { it.isFree || it.badge == "Free" }
                                 "paid" -> allModels.filter { !it.isFree && it.badge != "Free" }
                                 else -> allModels
                             }
-                            filteredModels.forEach { model ->
+                            val storageId = providerStorageId(provider.name)
+                            val selectedIdsStr = securePrefs.getSetting("selected_models_$storageId", "")
+                            val finalModels = if (selectedIdsStr.isNotBlank()) {
+                                val selectedIdSet = selectedIdsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+                                val matched = filteredModels.filter { it.id in selectedIdSet }
+                                if (matched.isNotEmpty()) matched else filteredModels
+                            } else {
+                                filteredModels
+                            }
+                            finalModels.forEach { model ->
                                 val isSelected = activeModel.id == model.id
                                 val rowModifier = if (isSelected) {
                                     Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
@@ -2351,11 +2883,30 @@ sealed class ChatItem {
 // ═══════════════════════════════════════════════
 private fun groupChatMessages(messages: List<Message>): List<ChatItem> {
     val result = mutableListOf<ChatItem>()
+    val currentToolGroup = mutableListOf<Message>()
+
+    fun flushToolGroup() {
+        if (currentToolGroup.isNotEmpty()) {
+            val valid = currentToolGroup.filterNot { msg ->
+                val json = msg.toolCallsJson ?: ""
+                json.contains("edge_tts") || json.contains("\"tool\"") || msg.content.contains("[audio:")
+            }
+            if (valid.isNotEmpty()) {
+                result.add(ChatItem.ToolExecutionGroup(valid.first().id, valid.toList()))
+            }
+            currentToolGroup.clear()
+        }
+    }
+
     for (msg in messages) {
-        if (!msg.isToolCall && msg.role != "tool") {
+        if (msg.isToolCall || msg.role == "tool") {
+            currentToolGroup.add(msg)
+        } else {
+            flushToolGroup()
             result.add(ChatItem.NormalMessage(msg))
         }
     }
+    flushToolGroup()
     return result
 }
 
@@ -2431,12 +2982,17 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
 
     private var activeSessionId = ""
     private var messagesJob: Job? = null
+    private var sendJob: Job? = null
     private var orchestrator: OrchestratorEngine? = null
 
     init {
         val prefs = repository.securePrefs
         val savedProvider = prefs.getSetting("chat_provider", "Zen AI")
-        val savedModelId = prefs.getSetting("chat_model", "")
+        val rawSavedModelId = prefs.getSetting("chat_model", "")
+        val savedModelId = if (rawSavedModelId.isNotEmpty()) DecommissionedModels.sanitize(rawSavedModelId) else ""
+        if (savedModelId != rawSavedModelId && savedModelId.isNotEmpty()) {
+            prefs.saveSetting("chat_model", savedModelId)
+        }
         if (savedModelId.isNotEmpty()) {
             val isFree = savedModelId.contains("free", ignoreCase = true)
             val friendlyName = savedModelId.split("/").lastOrNull()?.replace("-", " ")?.replaceFirstChar { it.uppercase() } ?: savedModelId
@@ -2460,6 +3016,9 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
     fun switchSession(sessionId: String) {
         activeSessionId = sessionId
         messagesJob?.cancel()
+        // Don't leak in-flight send into the new session (was writing tool results to wrong session).
+        sendJob?.cancel()
+        sendJob = null
         _attachedFiles.value = emptyList()
 
         // Reset ALL streaming/loading state to prevent cross-session leaking
@@ -2479,10 +3038,15 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
 
         val prefs = repository.securePrefs
         val sessionProvider = prefs.getSetting("session_provider_$sessionId", "")
-        val sessionModelId = prefs.getSetting("session_model_$sessionId", "")
+        val rawSessionModelId = prefs.getSetting("session_model_$sessionId", "")
+        val sessionModelId = if (rawSessionModelId.isNotEmpty()) DecommissionedModels.sanitize(rawSessionModelId) else ""
+        if (sessionModelId != rawSessionModelId && sessionModelId.isNotEmpty()) {
+            prefs.saveSetting("session_model_$sessionId", sessionModelId)
+        }
 
         val targetProvider = sessionProvider.ifEmpty { prefs.getSetting("chat_provider", "Zen AI") }
-        val targetModelId = sessionModelId.ifEmpty { prefs.getSetting("chat_model", "") }
+        val rawTargetModelId = sessionModelId.ifEmpty { prefs.getSetting("chat_model", "") }
+        val targetModelId = if (rawTargetModelId.isNotEmpty()) DecommissionedModels.sanitize(rawTargetModelId) else ""
 
         if (targetModelId.isNotEmpty()) {
             val isFree = targetModelId.contains("free", ignoreCase = true)
@@ -2505,12 +3069,14 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
     }
 
     fun changeActiveModel(model: AIModel) {
-        _activeModel.value = model
-        repository.securePrefs.saveSetting("chat_provider", model.provider)
-        repository.securePrefs.saveSetting("chat_model", model.id)
+        val sanitizedId = DecommissionedModels.sanitize(model.id)
+        val sanitizedModel = if (sanitizedId != model.id) model.copy(id = sanitizedId) else model
+        _activeModel.value = sanitizedModel
+        repository.securePrefs.saveSetting("chat_provider", sanitizedModel.provider)
+        repository.securePrefs.saveSetting("chat_model", sanitizedModel.id)
         if (activeSessionId.isNotEmpty()) {
-            repository.securePrefs.saveSetting("session_provider_$activeSessionId", model.provider)
-            repository.securePrefs.saveSetting("session_model_$activeSessionId", model.id)
+            repository.securePrefs.saveSetting("session_provider_$activeSessionId", sanitizedModel.provider)
+            repository.securePrefs.saveSetting("session_model_$activeSessionId", sanitizedModel.id)
         }
     }
 
@@ -2548,7 +3114,10 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
     }
 
     fun sendMessage(text: String) {
-        viewModelScope.launch(Dispatchers.IO) {
+        // Prevent concurrent sends racing on _streamedText / _streamingMessageId (was overwriting + DB REPLACE collision).
+        if (_isStreaming.value) return
+        sendJob?.cancel()
+        sendJob = viewModelScope.launch(Dispatchers.IO) {
             var sessionId = activeSessionId
             val dynamicTitle = generateDynamicTitle(text)
             if (sessionId.isEmpty()) {
@@ -2591,6 +3160,92 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             val msgId = UUID.randomUUID().toString()
             _streamingMessageId.value = msgId
             _isStreaming.value = true
+
+            if (isAudioCreationRequest(text)) {
+                val isMeta = isMetaReferenceText(text)
+                val targetText: String? = if (isMeta) {
+                    val history = repository.getMessagesListForSession(sessionId)
+                    val lastAssistant = history.lastOrNull { msg ->
+                        msg.role == "assistant" &&
+                        !msg.isToolCall &&
+                        !msg.content.startsWith("Executing tool") &&
+                        !msg.content.startsWith("Running tool") &&
+                        !msg.content.startsWith("I've completed") &&
+                        !msg.content.startsWith("Tool result:") &&
+                        msg.content.replace(RE_MEDIA_TAG, "").trim().length > 3
+                    }
+                    lastAssistant?.content
+                        ?.replace(RE_AUDIO_TAG, "")
+                        ?.replace(RE_FILE_TAG, "")
+                        ?.replace(RE_IMAGE_TAG, "")
+                        ?.replace(RE_VIDEO_TAG, "")
+                        ?.trim()
+                } else {
+                    val directMatch = Regex("""^(?:create\s+audio\s*(?:of|for|from)?\s*:\s*|read\s+(?:this|aloud)?\s*:\s*|speak\s*(?:this)?\s*:\s*)(.+)$""", RegexOption.IGNORE_CASE).find(text.trim())
+                    directMatch?.groupValues?.get(1)?.trim()
+                }
+
+                if (!targetText.isNullOrBlank()) {
+                    _mediaProcessingType.value = "audio"
+                    _mediaProcessingPrompt.value = "Thinking..."
+                    _streamedText.value = ""
+
+                    val ttsArgs = com.google.gson.JsonObject().apply {
+                        addProperty("text", targetText)
+                    }.toString()
+
+                    val result = try {
+                        repository.executeTool("edge_tts", ttsArgs, repository.getDefaultProjectPath())
+                    } catch (e: Exception) {
+                        "Error: ${e.message}"
+                    }
+
+                    val mediaMatch = RE_MEDIA_TAG.find(result)
+                    val audioTag = mediaMatch?.value ?: if (result.contains("[audio:")) result else null
+                    if (audioTag != null) {
+                        appendAssistantMessage(audioTag, sessionId)
+                    } else {
+                        appendAssistantMessage("Failed to generate audio: $result", sessionId)
+                    }
+                    _isStreaming.value = false
+                    _streamingMessageId.value = ""
+                    _mediaProcessingType.value = null
+                    _mediaProcessingPrompt.value = ""
+                    return@launch
+                }
+            }
+
+            if (isImageCreationRequest(text)) {
+                val imagePrompt = extractImagePrompt(text)
+                if (imagePrompt.isNotBlank()) {
+                    _mediaProcessingType.value = "image"
+                    _mediaProcessingPrompt.value = "Generating image with ChatGPT..."
+                    _streamedText.value = ""
+
+                    val imgArgs = com.google.gson.JsonObject().apply {
+                        addProperty("prompt", imagePrompt)
+                    }.toString()
+
+                    val result = try {
+                        repository.executeTool("generate_image", imgArgs, repository.getDefaultProjectPath())
+                    } catch (e: Exception) {
+                        "Error: ${e.message}"
+                    }
+
+                    val mediaMatch = RE_MEDIA_TAG.find(result)
+                    val imgTag = mediaMatch?.value ?: if (result.contains("[image:")) result else null
+                    if (imgTag != null) {
+                        appendAssistantMessage(imgTag, sessionId)
+                    } else {
+                        appendAssistantMessage("Failed to generate image: $result", sessionId)
+                    }
+                    _isStreaming.value = false
+                    _streamingMessageId.value = ""
+                    _mediaProcessingType.value = null
+                    _mediaProcessingPrompt.value = ""
+                    return@launch
+                }
+            }
 
             val model = _activeModel.value
             val provider = AIProviderFactory.providers.find { it.name == model.provider }
@@ -2645,9 +3300,55 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 try {
                     _streamedText.value = ""
                     var streamHadToolCall = false
-                    var lastFlushTime = 0L
-                    val tokenBuffer = StringBuilder()
+                    var streamHadAudioTool = false
+                    val rawBuffer = StringBuilder()
                     val bufferLock = Any()
+                    var isStreamComplete = false
+                    val minCharsThreshold = 220
+
+                    val pacingJob = launch {
+                        var currentEmittedLength = 0
+                        while (isActive) {
+                            val readyToStream = synchronized(bufferLock) {
+                                rawBuffer.length >= minCharsThreshold || isStreamComplete
+                            }
+                            if (!readyToStream) {
+                                delay(35L)
+                                continue
+                            }
+
+                            val nextWord: String? = synchronized(bufferLock) {
+                                if (currentEmittedLength >= rawBuffer.length) {
+                                    null
+                                } else {
+                                    val rem = rawBuffer.substring(currentEmittedLength)
+                                    var idx = 0
+                                    while (idx < rem.length && !rem[idx].isWhitespace()) {
+                                        idx++
+                                    }
+                                    while (idx < rem.length && rem[idx].isWhitespace()) {
+                                        idx++
+                                    }
+                                    if (idx == 0) idx = 1.coerceAtMost(rem.length)
+                                    val wordChunk = rem.substring(0, idx)
+                                    currentEmittedLength += wordChunk.length
+                                    wordChunk
+                                }
+                            }
+
+                            if (nextWord != null) {
+                                if (!streamHadAudioTool) {
+                                    _streamedText.update { it + nextWord }
+                                }
+                                val isDone = synchronized(bufferLock) { isStreamComplete }
+                                delay(if (isDone) 12L else 28L)
+                            } else {
+                                val finished = synchronized(bufferLock) { isStreamComplete && currentEmittedLength >= rawBuffer.length }
+                                if (finished) break
+                                delay(30L)
+                            }
+                        }
+                    }
 
                     provider.streamCompletion(
                         messages = messagesForApi,
@@ -2656,44 +3357,42 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         apiKey = retryApiKey,
                         customBaseUrl = baseUrl,
                         onToken = { token ->
+                            if (streamHadAudioTool) return@streamCompletion
                             if (token == "\u200B") {
-                                synchronized(bufferLock) { tokenBuffer.setLength(0) }
+                                synchronized(bufferLock) { rawBuffer.setLength(0) }
                                 _streamedText.value = ""
                             } else {
-                                val shouldFlushImmediately = _streamedText.value.isEmpty()
-                                val now = System.currentTimeMillis()
-                                val toAppend: String
                                 synchronized(bufferLock) {
-                                    tokenBuffer.append(token)
-                                    if (shouldFlushImmediately || (now - lastFlushTime >= 35L)) {
-                                        lastFlushTime = now
-                                        toAppend = tokenBuffer.toString()
-                                        tokenBuffer.setLength(0)
-                                    } else {
-                                        toAppend = ""
-                                    }
-                                }
-                                if (toAppend.isNotEmpty()) {
-                                    _streamedText.update { it + toAppend }
+                                    rawBuffer.append(token)
                                 }
                             }
                         },
                         onToolCall = { toolCall ->
                             streamHadToolCall = true
+                            if (toolCall.name == "edge_tts") {
+                                streamHadAudioTool = true
+                                _streamedText.value = ""
+                            }
                             maybeAutoApproveTool(toolCall)
                         },
                         onComplete = { fullResponse ->
-                            val leftover = synchronized(bufferLock) {
-                                val s = tokenBuffer.toString()
-                                tokenBuffer.setLength(0)
-                                s
+                            if (streamHadAudioTool) {
+                                _streamedText.value = ""
+                                _deferredResponse = ""
+                                synchronized(bufferLock) { isStreamComplete = true }
+                                return@streamCompletion
                             }
-                            if (leftover.isNotEmpty()) {
-                                _streamedText.update { it + leftover }
+                            synchronized(bufferLock) {
+                                if (fullResponse.length > rawBuffer.length && fullResponse.startsWith(rawBuffer.toString())) {
+                                    rawBuffer.setLength(0)
+                                    rawBuffer.append(fullResponse)
+                                }
+                                isStreamComplete = true
                             }
                             _deferredResponse = fullResponse
                         },
                         onError = { error ->
+                            pacingJob.cancel()
                             val msg = error.message.orEmpty()
                             val isRotatableError = error is RateLimitException ||
                                     msg.contains("401") ||
@@ -2718,13 +3417,22 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                             }
                         }
                     )
+                    pacingJob.join()
+                    if (streamHadAudioTool) {
+                        _streamedText.value = ""
+                        _deferredResponse = ""
+                        break
+                    }
                     // Save to DB FIRST, then clear streaming state to avoid UI gap
                     val textToSave = if (_streamedText.value.isNotBlank()) _streamedText.value else _deferredResponse
                     if (textToSave.isNotBlank()) {
-                        appendAssistantMessage(textToSave)
+                        // Pin to the originating session — activeSessionId may have changed on switch.
+                        appendAssistantMessage(textToSave, sessionId)
+                        _streamingMessageId.value = ""
                     }
                     if (!streamHadToolCall) {
                         _isStreaming.value = false
+                        _streamingMessageId.value = ""
                     }
                     _streamedText.value = ""
                     _deferredResponse = ""
@@ -2755,10 +3463,14 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     appendAssistantMessage(_streamedText.value)
                     _streamedText.value = ""
                     break
+                } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                    // Stop / session switch — don't save a phantom error bubble.
+                    _isStreaming.value = false
+                    throw e
                 } catch (e: Exception) {
                     _isStreaming.value = false
                     _streamedText.value = "Error: ${e.message}"
-                    appendAssistantMessage(_streamedText.value)
+                    appendAssistantMessage(_streamedText.value, sessionId)
                     _streamedText.value = ""
                     break
                 }
@@ -2767,6 +3479,9 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
     }
 
     fun cancelActiveChat() {
+        // Cancel the in-flight network loop first so onToken stops appending after Stop.
+        sendJob?.cancel()
+        sendJob = null
         _isStreaming.value = false
         viewModelScope.launch(Dispatchers.IO) {
             val text = _streamedText.value
@@ -2774,12 +3489,51 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 appendAssistantMessage(text + "\n\n[INTERRUPTED]")
             }
             _streamedText.value = ""
+            _streamingMessageId.value = ""
+            _deferredResponse = ""
         }
     }
 
     fun approveToolCall() {
         val toolCall = _pendingToolCall.value ?: return
         _pendingToolCall.value = null
+
+        if (toolCall.name == "edge_tts") {
+            _mediaProcessingType.value = "audio"
+            _mediaProcessingPrompt.value = "Thinking..."
+            val priorContent = if (_deferredResponse.isNotBlank()) _deferredResponse else _streamedText.value
+            _streamedText.value = ""
+            _isStreaming.value = true
+
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val result = try {
+                        repository.executeTool(toolCall.name, toolCall.arguments, repository.getDefaultProjectPath())
+                    } catch (e: Exception) {
+                        "Error executing audio generation: ${e.message}"
+                    }
+                    val mediaMatch = RE_MEDIA_TAG.find(result)
+                    val audioTag = mediaMatch?.value ?: if (result.contains("[audio:")) result else null
+                    val cleanPrior = priorContent.trim()
+                    val textToSave = if (audioTag != null) {
+                        if (cleanPrior.isNotEmpty()) "$cleanPrior\n\n$audioTag" else audioTag
+                    } else {
+                        if (cleanPrior.isNotEmpty()) "$cleanPrior\n\nFailed to generate audio: $result" else "Failed to generate audio: $result"
+                    }
+                    appendAssistantMessage(textToSave)
+                } catch (e: Exception) {
+                    ai.deepcode.android.util.AppLogger.e("ChatViewModel", "edge_tts approve crashed: ${e.message}", e)
+                    appendAssistantMessage("Error: ${e.message}")
+                } finally {
+                    _isStreaming.value = false
+                    _streamingMessageId.value = ""
+                    _mediaProcessingType.value = null
+                    _mediaProcessingPrompt.value = ""
+                }
+            }
+            return
+        }
+
         when (toolCall.name) {
             "generate_image" -> {
                 val prompt = try {
@@ -2797,6 +3551,8 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             }
         }
         viewModelScope.launch(Dispatchers.IO) {
+            val argsString = toolCall.arguments.trim()
+            val encodedArgs = com.google.gson.Gson().toJson(argsString)
             // Insert assistant message with tool_calls BEFORE tool result
             val assistantToolCallMsg = Message(
                 id = UUID.randomUUID().toString(),
@@ -2805,7 +3561,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 content = "",
                 timestamp = System.currentTimeMillis(),
                 isToolCall = true,
-                toolCallsJson = """[{"id":"${toolCall.id}","name":"${toolCall.name}","arguments":${com.google.gson.Gson().toJson(toolCall.arguments)}}]"""
+                toolCallsJson = """[{"id":"${toolCall.id}","name":"${toolCall.name}","arguments":$encodedArgs}]"""
             )
             repository.insertMessage(assistantToolCallMsg)
 
@@ -2929,21 +3685,99 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             try {
                 _streamedText.value = ""
                 var nextStreamHadToolCall = false
+                var nextStreamHadAudioTool = false
+                val rawBuffer = StringBuilder()
+                val bufferLock = Any()
+                var isStreamComplete = false
+                val minCharsThreshold = 220
+
+                val pacingJob = viewModelScope.launch {
+                    var currentEmittedLength = 0
+                    while (isActive) {
+                        val readyToStream = synchronized(bufferLock) {
+                            rawBuffer.length >= minCharsThreshold || isStreamComplete
+                        }
+                        if (!readyToStream) {
+                            delay(35L)
+                            continue
+                        }
+
+                        val nextWord: String? = synchronized(bufferLock) {
+                            if (currentEmittedLength >= rawBuffer.length) {
+                                null
+                            } else {
+                                val rem = rawBuffer.substring(currentEmittedLength)
+                                var idx = 0
+                                while (idx < rem.length && !rem[idx].isWhitespace()) {
+                                    idx++
+                                }
+                                while (idx < rem.length && rem[idx].isWhitespace()) {
+                                    idx++
+                                }
+                                if (idx == 0) idx = 1.coerceAtMost(rem.length)
+                                val wordChunk = rem.substring(0, idx)
+                                currentEmittedLength += wordChunk.length
+                                wordChunk
+                            }
+                        }
+
+                        if (nextWord != null) {
+                            if (!nextStreamHadAudioTool) {
+                                _streamedText.update { it + nextWord }
+                            }
+                            val isDone = synchronized(bufferLock) { isStreamComplete }
+                            delay(if (isDone) 12L else 28L)
+                        } else {
+                            val finished = synchronized(bufferLock) { isStreamComplete && currentEmittedLength >= rawBuffer.length }
+                            if (finished) break
+                            delay(30L)
+                        }
+                    }
+                }
+
                 provider.streamCompletion(
                     messages = messagesForApi,
                     model = model.id,
                     tools = if (consecutiveWebSearches >= 2 || toolCallDepth >= maxToolCallDepth) emptyList() else repository.getDeclaredTools(),
                     apiKey = retryApiKey,
                     customBaseUrl = baseUrl,
-                    onToken = { token -> _streamedText.value += token },
+                    onToken = { token ->
+                        if (nextStreamHadAudioTool) return@streamCompletion
+                        if (token == "\u200B") {
+                            synchronized(bufferLock) { rawBuffer.setLength(0) }
+                            _streamedText.value = ""
+                        } else {
+                            synchronized(bufferLock) {
+                                rawBuffer.append(token)
+                            }
+                        }
+                    },
                     onToolCall = { tc ->
                         nextStreamHadToolCall = true
+                        if (tc.name == "edge_tts") {
+                            nextStreamHadAudioTool = true
+                            _streamedText.value = ""
+                        }
                         maybeAutoApproveTool(tc)
                     },
                     onComplete = { fullResponse ->
+                        if (nextStreamHadAudioTool) {
+                            _streamedText.value = ""
+                            _deferredResponse = ""
+                            synchronized(bufferLock) { isStreamComplete = true }
+                            return@streamCompletion
+                        }
+                        synchronized(bufferLock) {
+                            if (fullResponse.length > rawBuffer.length && fullResponse.startsWith(rawBuffer.toString())) {
+                                rawBuffer.setLength(0)
+                                rawBuffer.append(fullResponse)
+                            }
+                            isStreamComplete = true
+                        }
                         _deferredResponse = fullResponse
                     },
                     onError = { error ->
+                        pacingJob.cancel()
                         val msg = error.message.orEmpty()
                         val isRotatableError = error is RateLimitException ||
                                 msg.contains("401") ||
@@ -2968,6 +3802,12 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         }
                     }
                 )
+                pacingJob.join()
+                if (nextStreamHadAudioTool) {
+                    _streamedText.value = ""
+                    _deferredResponse = ""
+                    break
+                }
                 val textToSave = if (_streamedText.value.isNotBlank()) _streamedText.value else _deferredResponse
                 if (textToSave.isNotBlank()) {
                     appendAssistantMessage(textToSave)
@@ -3002,6 +3842,9 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 appendAssistantMessage(_streamedText.value)
                 _streamedText.value = ""
                 break
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                _isStreaming.value = false
+                throw e
             } catch (e: Exception) {
                 _isStreaming.value = false
                 _streamedText.value = "Error: ${e.message}"
@@ -3014,6 +3857,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
 
     fun denyToolCall() {
         _pendingToolCall.value = null
+        _isStreaming.value = false
         viewModelScope.launch(Dispatchers.IO) {
             appendAssistantMessage("Tool call was denied by user.")
         }
@@ -3057,6 +3901,38 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         val hasMetaTarget = clean.contains("last") || clean.contains("previous") || clean.contains("that") || clean.contains("what you")
         val hasMetaAction = clean.contains("response") || clean.contains("message") || clean.contains("reply") || clean.contains("answer") || clean.contains("audio") || clean.contains("speak") || clean.contains("read") || clean.contains("convert")
         return hasMetaTarget && hasMetaAction
+    }
+
+    private fun isAudioCreationRequest(input: String): Boolean {
+        val clean = input.trim().lowercase()
+        if (clean.length > 250) return false
+        val isMeta = isMetaReferenceText(clean)
+        val hasAudioWord = clean.contains("audio") || clean.contains("speak") ||
+                clean.contains("read") || clean.contains("voice") || clean.contains("tts")
+        if (isMeta && hasAudioWord) return true
+
+        val audioCommandRegex = Regex("""\b(create|generate|make|convert|produce|read|speak)\s+(an?\s+)?(audio|voice|speech|tts|sound)\b""")
+        return audioCommandRegex.containsMatchIn(clean)
+    }
+
+    private fun isImageCreationRequest(input: String): Boolean {
+        val clean = input.trim().lowercase()
+        if (clean.length > 350) return false
+        val imageCommandRegex = Regex(
+            """\b(create|generate|make|draw|paint|render|produce)\s+(an?\s+)?(image|picture|photo|illustration|drawing|painting|art)\b|^(?:picture|photo|image|drawing)\s+of\b|\b(draw|paint)\s+(?:me\s+)?(?:an?\s+)?([a-z0-9\s]+)""",
+            RegexOption.IGNORE_CASE
+        )
+        return imageCommandRegex.containsMatchIn(clean)
+    }
+
+    private fun extractImagePrompt(input: String): String {
+        val clean = input.trim()
+        val regex = Regex(
+            """^(?:please\s+|can\s+you\s+)?(?:(?:create|generate|make|draw|paint|render|produce)\s+(?:an?\s+)?(?:image|picture|photo|illustration|drawing|painting|art)|picture|photo|image|drawing|draw|paint)\s*(?:of|for|about|showing|with|me)?\s*[:,-]?\s*(.+)$""",
+            RegexOption.IGNORE_CASE
+        )
+        val match = regex.find(clean)
+        return match?.groupValues?.get(1)?.trim() ?: clean
     }
 
     private suspend fun buildMessageList(sessionId: String, newUserText: String): List<Message> {
@@ -3129,20 +4005,23 @@ $persona
 
 CRITICAL INSTRUCTIONS:
 - Be fast, helpful, and concise. Respond immediately and directly to the user without preamble.
-- NEVER write out a "thinking process", chain-of-thought, internal monologue, or audit rules out loud.
-- If you need to reason or think before replying, you MUST place ALL reasoning strictly inside <think>...</think> tags. Outside of <think> tags, provide ONLY the clean final response.
+- NEVER output thinking, reasoning, chain-of-thought, internal monologue, audit rules, <think> tags, or thinking boxes. Output ONLY the clean final response.
 - When asked to create or provide ANY PDF document (poem, study notes, report, resume, etc.), immediately call `create_pdf` with the full content and reply with "Here is your PDF document: [file:/path/to/doc.pdf]".
 - When tools return file/image tags (e.g. `[image:...]` or `[file:...]`), stop calling tools and provide a brief confirmation.
 - Audio/Speech (edge_tts): When the user asks for audio, resolve the full text and pass it to `edge_tts`.
+- Image Generation (generate_image): When the user asks for an image, picture, photo, illustration, drawing, or artwork, ALWAYS call the `generate_image` tool with a detailed prompt describing what to render. NEVER fabricate, hallucinate, or make up local file paths or [image:...] tags yourself.
+- Documents (generate_chatgpt_document): When asked to generate a document or specification with ChatGPT, call `generate_chatgpt_document`.
 - Video Generation (generate_video): Call `generate_video` with a prompt describing the scene.
 """.trim()
     }
 
-    private suspend fun appendAssistantMessage(content: String) = withContext(Dispatchers.IO) {
-        val (thought, clean) = extractThoughtAndCleanText(content, isStreaming = false)
-        var finalContent = if (thought.isNotEmpty()) "<think>$thought</think>\n\n$clean" else clean
+    private suspend fun appendAssistantMessage(content: String, sessionId: String? = null) = withContext(Dispatchers.IO) {
+        val targetSessionId = sessionId ?: activeSessionId
+        if (targetSessionId.isEmpty()) return@withContext
+        // Persist only the final answer — thinking is discarded entirely, never stored.
+        var finalContent = stripThinkingProcess(content, isStreaming = false)
         try {
-            val history = repository.getMessagesListForSession(activeSessionId)
+            val history = repository.getMessagesListForSession(targetSessionId)
             val lastAssistantIndex = history.indexOfLast { it.role == "assistant" && !it.isToolCall }
             val toolMessages = if (lastAssistantIndex >= 0) {
                 history.subList(lastAssistantIndex + 1, history.size)
@@ -3196,7 +4075,7 @@ CRITICAL INSTRUCTIONS:
         val id = _streamingMessageId.value.ifEmpty { UUID.randomUUID().toString() }
         val msg = Message(
             id = id,
-            sessionId = activeSessionId,
+            sessionId = targetSessionId,
             role = "assistant",
             content = finalContent,
             timestamp = System.currentTimeMillis()
@@ -3219,6 +4098,42 @@ CRITICAL INSTRUCTIONS:
 
         executedToolSignatures[signature] = count + 1
 
+        if (toolCall.name == "edge_tts") {
+            _mediaProcessingType.value = "audio"
+            _mediaProcessingPrompt.value = "Thinking..."
+            val priorContent = if (_deferredResponse.isNotBlank()) _deferredResponse else _streamedText.value
+            _streamedText.value = ""
+            _isStreaming.value = true
+
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val result = try {
+                        repository.executeTool(toolCall.name, toolCall.arguments, repository.getDefaultProjectPath())
+                    } catch (e: Exception) {
+                        "Error executing audio generation: ${e.message}"
+                    }
+                    val mediaMatch = RE_MEDIA_TAG.find(result)
+                    val audioTag = mediaMatch?.value ?: if (result.contains("[audio:")) result else null
+                    val cleanPrior = priorContent.trim()
+                    val textToSave = if (audioTag != null) {
+                        if (cleanPrior.isNotEmpty()) "$cleanPrior\n\n$audioTag" else audioTag
+                    } else {
+                        if (cleanPrior.isNotEmpty()) "$cleanPrior\n\nFailed to generate audio: $result" else "Failed to generate audio: $result"
+                    }
+                    appendAssistantMessage(textToSave)
+                } catch (e: Exception) {
+                    ai.deepcode.android.util.AppLogger.e("ChatViewModel", "edge_tts auto-approve crashed: ${e.message}", e)
+                    appendAssistantMessage("Error: ${e.message}")
+                } finally {
+                    _isStreaming.value = false
+                    _streamingMessageId.value = ""
+                    _mediaProcessingType.value = null
+                    _mediaProcessingPrompt.value = ""
+                }
+            }
+            return
+        }
+
         // Set media processing overlay for image/video generation
         when (toolCall.name) {
             "generate_image" -> {
@@ -3238,6 +4153,8 @@ CRITICAL INSTRUCTIONS:
         }
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                val argsString = toolCall.arguments.trim()
+                val encodedArgs = com.google.gson.Gson().toJson(argsString)
                 val assistantToolCallMsg = Message(
                     id = UUID.randomUUID().toString(),
                     sessionId = activeSessionId,
@@ -3245,7 +4162,7 @@ CRITICAL INSTRUCTIONS:
                     content = "",
                     timestamp = System.currentTimeMillis(),
                     isToolCall = true,
-                    toolCallsJson = """[{"id":"${toolCall.id}","name":"${toolCall.name}","arguments":${com.google.gson.Gson().toJson(toolCall.arguments)}}]"""
+                    toolCallsJson = """[{"id":"${toolCall.id}","name":"${toolCall.name}","arguments":$encodedArgs}]"""
                 )
                 repository.insertMessage(assistantToolCallMsg)
 

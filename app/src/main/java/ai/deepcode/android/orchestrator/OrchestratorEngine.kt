@@ -247,7 +247,7 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
                 JsonObject().apply { addProperty("role", "user"); addProperty("content", prompt) }
             )
             val body = JsonObject().apply {
-                addProperty("model", "deepseek-v4-flash")
+                addProperty("model", "deepseek-v4-flash-free")
                 add("messages", gson.toJsonTree(messages))
                 addProperty("temperature", 0.3)
                 addProperty("max_tokens", 512)
@@ -256,6 +256,7 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
                 .url("https://opencode.ai/zen/v1/chat/completions")
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer $zenApiKey")
+                .header("X-OpenCode-Client", "android/1.0.0")
                 .post(body.toString().toRequestBody("application/json".toMediaType()))
                 .build()
             val response = httpClient.newBuilder()
@@ -355,6 +356,7 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
                     .url(url)
                     .header("Authorization", "Bearer ${apiKey.ifEmpty { "public" }}")
                     .header("Content-Type", "application/json")
+                    .header("X-OpenCode-Client", "android/1.0.0")
                     .post(body)
                     .build()
                 val response = httpClient.newCall(request).execute()
@@ -375,13 +377,24 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
     }
 
     private fun parseLlmResponse(body: String?): String? {
-        if (body == null) return null
+        if (body.isNullOrBlank()) return null
         return try {
             val json = JsonParser.parseString(body).asJsonObject
             val choices = json.getAsJsonArray("choices")
             if (choices != null && choices.size() > 0) {
-                choices[0].asJsonObject.getAsJsonObject("message")?.get("content")?.asString
-            } else json.get("response")?.asString ?: json.get("output")?.asString ?: body
+                val choiceObj = choices[0].asJsonObject
+                val msg = choiceObj.getAsJsonObject("message") ?: choiceObj.getAsJsonObject("delta")
+                val contentEl = msg?.get("content")
+                if (contentEl != null && !contentEl.isJsonNull) {
+                    contentEl.asString
+                } else {
+                    val reasoningEl = msg?.get("reasoning_content") ?: msg?.get("reasoning")
+                    if (reasoningEl != null && !reasoningEl.isJsonNull) reasoningEl.asString else null
+                }
+            } else {
+                val resp = json.get("response") ?: json.get("output")
+                if (resp != null && !resp.isJsonNull) resp.asString else body
+            }
         } catch (_: Exception) { null }
     }
 
@@ -401,7 +414,7 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
         val providers = AIProviderFactory.providers
         if (providers.isEmpty()) throw IllegalStateException("No AI providers configured")
         val configuredName = prefs.getSetting("agent_provider", "Zen AI")
-        val configuredModel = prefs.getSetting("agent_model", "big-pickle")
+        val configuredModel = prefs.getSetting("agent_model", "deepseek-v4-flash-free")
         
         val sortedProviders = providers.filter { isCompatibleProvider(it.name) }.sortedByDescending {
             when {
@@ -414,7 +427,7 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
         return sortedProviders.map { provider ->
             val baseUrl = getCompatibleBaseUrl(provider.name)
             val apiKey = getApiKeyForProvider(provider.name)
-            val modelId = if (provider.name == configuredName && provider.models.any { it.id == configuredModel }) configuredModel else provider.models.firstOrNull()?.id ?: "big-pickle"
+            val modelId = if (provider.name == configuredName && provider.models.any { it.id == configuredModel }) configuredModel else provider.models.firstOrNull { it.isFree }?.id ?: provider.models.firstOrNull()?.id ?: "deepseek-v4-flash-free"
             Triple(baseUrl, modelId, apiKey)
         }
     }
@@ -429,6 +442,7 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
         name.contains("Mistral", ignoreCase = true) -> "https://api.mistral.ai/v1"
         name.contains("Ollama", ignoreCase = true) -> "https://ollama.com/v1"
         name.contains("Agent Router", ignoreCase = true) -> "https://agentrouter.org/v1"
+        name.contains("GMI Cloud", ignoreCase = true) -> "https://api.gmi-serving.com/v1"
         else -> "https://api.openai.com/v1"
     }
 
@@ -442,6 +456,7 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
         name.contains("Mistral", ignoreCase = true) -> prefs.getApiKey("mistral")
         name.contains("Ollama", ignoreCase = true) -> prefs.getApiKey("ollama")
         name.contains("Agent Router", ignoreCase = true) -> prefs.getApiKey("agentrouter")
+        name.contains("GMI Cloud", ignoreCase = true) -> prefs.getApiKey("gmi")
         else -> ""
     }
 

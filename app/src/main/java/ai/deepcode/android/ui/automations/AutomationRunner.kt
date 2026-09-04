@@ -137,18 +137,60 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
 
                 AppLogger.i("AutomationRunner", "Running agent in session $targetSessionId with prompt: $interpolatedPrompt")
 
-                // 3. Execute through AgentEngine into the single separate chat session
-                val engine = AgentEngine(context)
-                val responseTokens = StringBuilder()
-                try {
-                    engine.run(targetSessionId, contextualPrompt).collect { token ->
-                        responseTokens.append(token)
+                // 3. Execute through ChatGPTHeadlessBridge (for CHATGPT automations) or AgentEngine (for standard automations)
+                val isChatGPT = rule.category == "CHATGPT" || configObj.get("target")?.asString == "chatgpt"
+                val finalOutput = if (isChatGPT) {
+                    AppLogger.i("AutomationRunner", "Running ChatGPT headless task for rule '${rule.name}' in single session")
+                    val bridge = ai.deepcode.android.service.chatgpt.ChatGPTHeadlessBridge.getInstance(context)
+                    val taskType = configObj.get("task_type")?.asString ?: "task"
+                    val result = try {
+                        when {
+                            taskType.contains("image") -> bridge.generateImage(interpolatedPrompt)
+                            taskType.contains("document") -> bridge.generateDocument(interpolatedPrompt)
+                            else -> bridge.executeTask(interpolatedPrompt)
+                        }
+                    } catch (e: Exception) {
+                        AppLogger.e("AutomationRunner", "ChatGPT headless task execution failed for ${rule.name}", e)
+                        "⚠️ ChatGPT headless automation failed: ${e.message}"
                     }
-                } catch (e: Exception) {
-                    AppLogger.e("AutomationRunner", "AgentEngine execution failed for ${rule.name}", e)
+
+                    // Record the execution in the dedicated chat session
+                    val userMsg = ai.deepcode.android.data.local.MessageEntity(
+                        id = UUID.randomUUID().toString(),
+                        sessionId = targetSessionId,
+                        role = "user",
+                        content = contextualPrompt,
+                        timestamp = System.currentTimeMillis(),
+                        isToolCall = false,
+                        toolCallsJson = null,
+                        toolResultsJson = null
+                    )
+                    val assistantMsg = ai.deepcode.android.data.local.MessageEntity(
+                        id = UUID.randomUUID().toString(),
+                        sessionId = targetSessionId,
+                        role = "assistant",
+                        content = result,
+                        timestamp = System.currentTimeMillis() + 100,
+                        isToolCall = false,
+                        toolCallsJson = null,
+                        toolResultsJson = null
+                    )
+                    database.messageDao().insertMessage(userMsg)
+                    database.messageDao().insertMessage(assistantMsg)
+                    result
+                } else {
+                    val engine = AgentEngine(context)
+                    val responseTokens = StringBuilder()
+                    try {
+                        engine.run(targetSessionId, contextualPrompt).collect { token ->
+                            responseTokens.append(token)
+                        }
+                    } catch (e: Exception) {
+                        AppLogger.e("AutomationRunner", "AgentEngine execution failed for ${rule.name}", e)
+                    }
+                    responseTokens.toString().trim()
                 }
 
-                val finalOutput = responseTokens.toString().trim()
                 AppLogger.i("AutomationRunner", "Execution completed in session $targetSessionId (output length: ${finalOutput.length})")
 
                 // 4. Mirror to Telegram if chat ID is configured
