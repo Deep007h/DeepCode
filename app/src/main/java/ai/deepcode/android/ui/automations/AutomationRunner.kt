@@ -137,11 +137,11 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
 
                 AppLogger.i("AutomationRunner", "Running agent in session $targetSessionId with prompt: $interpolatedPrompt")
 
-                // 3. Execute through ChatGPTHeadlessBridge (for CHATGPT automations) or AgentEngine (for standard automations)
+                // 3. Execute through ChatGPT integration (for CHATGPT automations) or AgentEngine (for standard automations)
                 val isChatGPT = rule.category == "CHATGPT" || configObj.get("target")?.asString == "chatgpt"
                 val finalOutput = if (isChatGPT) {
-                    AppLogger.i("AutomationRunner", "Running ChatGPT headless task for rule '${rule.name}' in single session")
-                    val bridge = ai.deepcode.android.service.chatgpt.ChatGPTHeadlessBridge.getInstance(context)
+                    AppLogger.i("AutomationRunner", "Running ChatGPT task for rule '${rule.name}' in single session")
+                    val bridge = ai.deepcode.android.service.chatgpt.ChatGPTBridge.getInstance(context)
                     val taskType = configObj.get("task_type")?.asString ?: "task"
                     val result = try {
                         when {
@@ -150,8 +150,8 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
                             else -> bridge.executeTask(interpolatedPrompt)
                         }
                     } catch (e: Exception) {
-                        AppLogger.e("AutomationRunner", "ChatGPT headless task execution failed for ${rule.name}", e)
-                        "⚠️ ChatGPT headless automation failed: ${e.message}"
+                        AppLogger.e("AutomationRunner", "ChatGPT task execution failed for ${rule.name}", e)
+                        "⚠️ ChatGPT automation failed: ${e.message}"
                     }
 
                     // Record the execution in the dedicated chat session

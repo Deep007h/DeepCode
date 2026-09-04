@@ -81,9 +81,10 @@ class GitHubService(private val token: String) {
         body: String? = null,
         acceptHeader: String = "application/vnd.github.v3+json"
     ): Request {
+        val cleanToken = token.trim().removePrefix("Bearer ").removePrefix("token ").trim()
         val builder = Request.Builder()
             .url("$baseUrl${endpoint.trimStart('/')}")
-            .header("Authorization", "Bearer $token")
+            .header("Authorization", "Bearer $cleanToken")
             .header("Accept", acceptHeader)
             .header("User-Agent", "DeepCode-Android")
         when (method) {
@@ -185,19 +186,27 @@ class GitHubService(private val token: String) {
     // ── Repositories ──
 
     fun listRepos(type: String = "all", perPage: Int = 50): Result<List<GitHubRepo>> {
-        val request = buildRequest("user/repos?type=$type&per_page=$perPage&sort=updated")
-        return execute(request).map { body ->
+        val endpoint = if (type == "all" || type.isBlank()) "user/repos?per_page=$perPage&sort=updated"
+        else "user/repos?type=$type&per_page=$perPage&sort=updated"
+        val request = buildRequest(endpoint)
+        val firstAttempt = execute(request)
+        val respResult = if (firstAttempt.isFailure) {
+            val fallbackReq = buildRequest("user/repos?per_page=$perPage")
+            execute(fallbackReq)
+        } else firstAttempt
+
+        return respResult.map { body ->
             val arr = gson.fromJson(body, JsonArray::class.java)
             arr.map { el ->
                 val obj = el.asJsonObject
                 GitHubRepo(
-                    name = obj.get("name")?.asString ?: "",
-                    fullName = obj.get("full_name")?.asString ?: "",
-                    description = obj.get("description")?.asString ?: "",
-                    url = obj.get("html_url")?.asString ?: "",
-                    defaultBranch = obj.get("default_branch")?.asString ?: "main",
-                    private = obj.get("private")?.asBoolean ?: false,
-                    fork = obj.get("fork")?.asBoolean ?: false
+                    name = obj.get("name")?.takeIf { !it.isJsonNull }?.asString ?: "",
+                    fullName = obj.get("full_name")?.takeIf { !it.isJsonNull }?.asString ?: "",
+                    description = obj.get("description")?.takeIf { !it.isJsonNull }?.asString ?: "",
+                    url = obj.get("html_url")?.takeIf { !it.isJsonNull }?.asString ?: "",
+                    defaultBranch = obj.get("default_branch")?.takeIf { !it.isJsonNull }?.asString ?: "main",
+                    private = obj.get("private")?.takeIf { !it.isJsonNull }?.asBoolean ?: false,
+                    fork = obj.get("fork")?.takeIf { !it.isJsonNull }?.asBoolean ?: false
                 )
             }
         }

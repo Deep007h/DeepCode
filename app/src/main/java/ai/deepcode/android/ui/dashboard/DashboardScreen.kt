@@ -518,7 +518,7 @@ fun DashboardScreen(
                             .clip(RoundedCornerShape(16.dp))
                             .background(MaterialTheme.colorScheme.surface)
                             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
-                            .clickable { Toast.makeText(context, "Connecting ${app.name}...", Toast.LENGTH_SHORT).show() }
+                            .clickable { onTabSelect(3) }
                             .padding(vertical = 12.dp, horizontal = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
@@ -546,7 +546,7 @@ fun DashboardScreen(
                             .clip(RoundedCornerShape(16.dp))
                             .background(MaterialTheme.colorScheme.surface)
                             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
-                            .clickable { Toast.makeText(context, "More integrations...", Toast.LENGTH_SHORT).show() }
+                            .clickable { onTabSelect(3) }
                             .padding(vertical = 12.dp, horizontal = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {

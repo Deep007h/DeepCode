@@ -20,14 +20,14 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /**
- * Headless ChatGPT Bridge for DeepCode.
+ * ChatGPT integration bridge for image and docs creation in DeepCode.
  *
  * Guarantees:
  * 1. Single persistent conversation: Stores and reuses a dedicated conversation_id across its entire lifetime.
- * 2. Headless delivery: Returns clean images, documents, and data without chat UI or casual conversational filler.
+ * 2. High-precision delivery: Returns clean images, documents, and data via ChatGPT integration for image and docs creation.
  * 3. Robust asset extraction: Resolves DALL-E asset pointers and downloads image bytes directly to local storage.
  */
-class ChatGPTHeadlessBridge private constructor(private val context: Context) {
+class ChatGPTBridge private constructor(private val context: Context) {
 
     private val prefs: EncryptedPrefs by lazy { EncryptedPrefs.getInstance(context) }
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
@@ -44,15 +44,15 @@ class ChatGPTHeadlessBridge private constructor(private val context: Context) {
         .build()
 
     companion object {
-        private const val TAG = "ChatGPTHeadlessBridge"
+        private const val TAG = "ChatGPTBridge"
         private const val USER_AGENT = "ChatGPT/1.2026.216 (Android 14; Mobile; build 2621621)"
 
         @Volatile
-        private var instance: ChatGPTHeadlessBridge? = null
+        private var instance: ChatGPTBridge? = null
 
-        fun getInstance(context: Context): ChatGPTHeadlessBridge {
+        fun getInstance(context: Context): ChatGPTBridge {
             return instance ?: synchronized(this) {
-                instance ?: ChatGPTHeadlessBridge(context.applicationContext).also { instance = it }
+                instance ?: ChatGPTBridge(context.applicationContext).also { instance = it }
             }
         }
     }
@@ -383,8 +383,8 @@ class ChatGPTHeadlessBridge private constructor(private val context: Context) {
         val sentinelToken = fetchSentinelToken(token)
 
         // Read single conversation state
-        var conversationId: String? = prefs.getChatGPTHeadlessConversationId().takeIf { it.isNotBlank() }
-        var parentMessageId: String? = prefs.getChatGPTHeadlessParentMessageId().takeIf { it.isNotBlank() }
+        var conversationId: String? = prefs.getChatGPTConversationId().takeIf { it.isNotBlank() }
+        var parentMessageId: String? = prefs.getChatGPTParentMessageId().takeIf { it.isNotBlank() }
 
         val messageId = UUID.randomUUID().toString()
         val currentParentId = parentMessageId ?: UUID.randomUUID().toString()
@@ -502,11 +502,11 @@ class ChatGPTHeadlessBridge private constructor(private val context: Context) {
 
         // Persist single conversation state to guarantee single-session reuse
         if (!returnedConvId.isNullOrBlank()) {
-            prefs.saveChatGPTHeadlessConversationId(returnedConvId)
+            prefs.saveChatGPTConversationId(returnedConvId)
             AppLogger.i(TAG, "Persisted single session conversation_id: $returnedConvId")
         }
         if (!returnedMsgId.isNullOrBlank()) {
-            prefs.saveChatGPTHeadlessParentMessageId(returnedMsgId)
+            prefs.saveChatGPTParentMessageId(returnedMsgId)
         }
 
         SessionTurnResult(
@@ -518,12 +518,12 @@ class ChatGPTHeadlessBridge private constructor(private val context: Context) {
     }
 
     /**
-     * Generates an image using the headless ChatGPT session and returns a local file path
+     * Generates an image using the ChatGPT integration for image and docs creation and returns a local file path
      * formatted as [image:/path/to/img.png] or raw path.
      */
     suspend fun generateImage(userPrompt: String): String = withContext(Dispatchers.IO) {
         val cleanPrompt = userPrompt.trim()
-        AppLogger.i(TAG, "Executing headless image generation: $cleanPrompt")
+        AppLogger.i(TAG, "Executing ChatGPT image generation: $cleanPrompt")
 
         val token = getAccessToken()
         val turnResult = executeSingleSessionTurn(
@@ -564,12 +564,12 @@ class ChatGPTHeadlessBridge private constructor(private val context: Context) {
     }
 
     /**
-     * Generates a structured document using the headless ChatGPT session and returns
+     * Generates a structured document using the ChatGPT integration for image and docs creation and returns
      * either clean Markdown or writes it to a file.
      */
     suspend fun generateDocument(prompt: String, docType: String = "markdown"): String = withContext(Dispatchers.IO) {
         val cleanPrompt = prompt.trim()
-        AppLogger.i(TAG, "Executing headless document generation: $cleanPrompt")
+        AppLogger.i(TAG, "Executing ChatGPT document generation: $cleanPrompt")
 
         val directive = buildString {
             appendLine("You are an autonomous document generation engine.")
@@ -594,10 +594,10 @@ class ChatGPTHeadlessBridge private constructor(private val context: Context) {
     }
 
     /**
-     * Executes a general task in the headless ChatGPT single session.
+     * Executes a general task in the ChatGPT single session.
      */
     suspend fun executeTask(prompt: String): String = withContext(Dispatchers.IO) {
-        AppLogger.i(TAG, "Executing headless task: ${prompt.take(60)}")
+        AppLogger.i(TAG, "Executing ChatGPT task: ${prompt.take(60)}")
         val turnResult = executeSingleSessionTurn(prompt, model = "gpt-4o")
         turnResult.text
     }

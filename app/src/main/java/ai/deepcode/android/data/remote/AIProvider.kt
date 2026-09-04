@@ -119,10 +119,11 @@ private fun genProvider(name: String, baseUrl: String, modelIds: List<Pair<Strin
 
 val OPENAI_PROVIDERS = listOf(
     genProvider("OpenAI", "https://api.openai.com/v1", listOf(
-        "gpt-4o" to "GPT-4o", "gpt-4o-mini" to "GPT-4o Mini", "o1" to "OpenAI o1", "o1-mini" to "OpenAI o1 Mini",
+        "gpt-6-astra" to "GPT 6 Astra", "gpt-5.6-sol" to "GPT 5.6 Sol", "gpt-4o" to "GPT-4o", "gpt-4o-mini" to "GPT-4o Mini", "o1" to "OpenAI o1", "o1-mini" to "OpenAI o1 Mini",
         "o3-mini" to "OpenAI o3 Mini", "gpt-4.5-preview" to "GPT-4.5 Preview", "gpt-4-turbo" to "GPT-4 Turbo", "gpt-3.5-turbo" to "GPT-3.5 Turbo"
     )),
     genProvider("Anthropic", "https://api.anthropic.com/v1", listOf(
+        "claude-fable-5.1" to "Claude Fable 5.1", "claude-opus-5" to "Claude Opus 5", "claude-sonnet-5" to "Claude Sonnet 5",
         "claude-3-7-sonnet-latest" to "Claude 3.7 Sonnet", "claude-3-5-sonnet-latest" to "Claude 3.5 Sonnet",
         "claude-3-5-haiku-latest" to "Claude 3.5 Haiku", "claude-3-opus-latest" to "Claude 3 Opus",
         "claude-4.5-sonnet" to "Claude Sonnet 4.5", "claude-4.5-opus" to "Claude Opus 4.5"
@@ -142,6 +143,7 @@ val OPENAI_PROVIDERS = listOf(
         "codestral-latest" to "Codestral", "pixtral-12b-2409" to "Pixtral 12B", "open-mistral-nemo" to "Mistral NeMo"
     )),
     genProvider("DeepSeek", "https://api.deepseek.com/v1", listOf(
+        "deepseek-v4-flash" to "DeepSeek V4 Flash", "deepseek-v4-pro" to "DeepSeek V4 Pro",
         "deepseek-chat" to "DeepSeek V3 (Chat)", "deepseek-reasoner" to "DeepSeek R1 (Reasoner)", "deepseek-coder" to "DeepSeek Coder"
     )),
     genProvider("OpenRouter", "https://openrouter.ai/api/v1", listOf(
@@ -365,19 +367,23 @@ class ZenProvider : AIProvider {
     override val isFree = true
     override val models = listOf(
         AIModel("deepseek-v4-flash-free", "DeepSeek V4 Flash (Free)", "Zen AI", true, "1M tokens", "Free"),
+        AIModel("muse-spark-1.3-contributor-free", "Muse Spark 1.3 (Free)", "Zen AI", true, "1M tokens", "Free"),
         AIModel("muse-spark-1.2-contributor-free", "Muse Spark 1.2 (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("mimo-v2.5-free", "Mimo V2.5 (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("ling-3.0-flash-fin-free", "Ling 3.0 Flash Fin (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("nemotron-3-ultra-free", "Nemotron 3 Ultra (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("nemotron-3.5-lightning-free", "Nemotron 3.5 Lightning (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("laguna-s-2.1-free", "Laguna S 2.1 (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("claude-fable-5.1", "Claude Fable 5.1", "Zen AI", false, "1M tokens", "Paid"),
         AIModel("claude-fable-5", "Claude Fable 5", "Zen AI", false, "200k tokens", "Paid"),
         AIModel("claude-opus-5", "Claude Opus 5", "Zen AI", false, "200k tokens", "Paid"),
         AIModel("claude-sonnet-5", "Claude Sonnet 5", "Zen AI", false, "200k tokens", "Paid"),
         AIModel("claude-sonnet-4-6", "Claude Sonnet 4.6", "Zen AI", false, "200k tokens", "Paid"),
+        AIModel("gemini-3.8-flash", "Gemini 3.8 Flash", "Zen AI", false, "1M tokens", "Paid"),
         AIModel("gemini-3.7-flash", "Gemini 3.7 Flash", "Zen AI", false, "1M tokens", "Paid"),
         AIModel("gemini-3.6-flash", "Gemini 3.6 Flash", "Zen AI", false, "1M tokens", "Paid"),
         AIModel("gemini-3.5-flash", "Gemini 3.5 Flash", "Zen AI", false, "1M tokens", "Paid"),
+        AIModel("gpt-6-astra", "GPT 6 Astra", "Zen AI", false, "128k tokens", "Paid"),
         AIModel("gpt-5.6-sol", "GPT 5.6 Sol", "Zen AI", false, "128k tokens", "Paid"),
         AIModel("gpt-5.5", "GPT 5.5", "Zen AI", false, "128k tokens", "Paid"),
         AIModel("gpt-5.4", "GPT 5.4", "Zen AI", false, "128k tokens", "Paid"),
@@ -890,6 +896,7 @@ class GeminiProvider : AIProvider {
     override val name = "Google Gemini"
     override val isFree = false
     override val models = listOf(
+        AIModel("gemini-3.8-flash", "Gemini 3.8 Flash", "Google Gemini", true, "1M tokens", "Free"),
         AIModel("gemini-2.0-flash", "Gemini 2.0 Flash", "Google Gemini", true, "1M tokens", "Free"),
         AIModel("gemini-2.0-flash-lite", "Gemini 2.0 Flash Lite", "Google Gemini", true, "1M tokens", "Free"),
         AIModel("gemini-2.0-pro-exp-02-05", "Gemini 2.0 Pro Experimental", "Google Gemini", true, "2M tokens", "Free"),
@@ -916,8 +923,9 @@ class GeminiProvider : AIProvider {
                 val finalKey = apiKey.ifEmpty { "DUMMY_GEMINI_KEY" }
                 val targetModel = when {
                     model.startsWith("imagen-") -> model
-                    model in listOf("gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-pro") -> model
-                    else -> "gemini-2.0-flash"
+                    model in listOf("gemini-3.8-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-pro") -> model
+                    model.startsWith("gemini-") -> model
+                    else -> "gemini-3.8-flash"
                 }
 
                 // Handle Imagen 3 Image Generation Models directly
@@ -1423,6 +1431,8 @@ class OpenAIProvider : AIProvider {
     override val name = "OpenAI"
     override val isFree = false
     override val models = listOf(
+        AIModel("gpt-6-astra", "GPT 6 Astra", "OpenAI", false, "128k tokens", "Paid"),
+        AIModel("gpt-5.6-sol", "GPT 5.6 Sol", "OpenAI", false, "128k tokens", "Paid"),
         AIModel("gpt-4o", "GPT-4o", "OpenAI", false, "128k tokens", "Paid"),
         AIModel("gpt-4o-mini", "GPT-4o Mini", "OpenAI", false, "128k tokens", "Paid"),
         AIModel("o1", "OpenAI o1", "OpenAI", false, "200k tokens", "Paid"),
@@ -1483,6 +1493,9 @@ class AnthropicProvider : AIProvider {
     override val name = "Anthropic"
     override val isFree = false
     override val models = listOf(
+        AIModel("claude-fable-5.1", "Claude Fable 5.1", "Anthropic", false, "1M tokens", "Paid"),
+        AIModel("claude-opus-5", "Claude Opus 5", "Anthropic", false, "200k tokens", "Paid"),
+        AIModel("claude-sonnet-5", "Claude Sonnet 5", "Anthropic", false, "200k tokens", "Paid"),
         AIModel("claude-3-7-sonnet-latest", "Claude 3.7 Sonnet (Hybrid)", "Anthropic", false, "200k tokens", "Paid"),
         AIModel("claude-3-5-sonnet-latest", "Claude 3.5 Sonnet", "Anthropic", false, "200k tokens", "Paid"),
         AIModel("claude-3-5-haiku-latest", "Claude 3.5 Haiku", "Anthropic", false, "200k tokens", "Paid"),
@@ -2267,6 +2280,8 @@ class AntigravityProvider : AIProvider {
         AIModel("claude-opus-4-6-thinking", "Claude Opus 4.6 (Thinking)", "Antigravity", false, "200k tokens", "Paid"),
         AIModel("claude-sonnet-4-6", "Claude Sonnet 4.6 (Thinking)", "Antigravity", false, "200k tokens", "Paid"),
         // Gemini models
+        AIModel("gemini-3.8-flash", "Gemini 3.8 Flash", "Antigravity", true, "1M tokens", "Free"),
+        AIModel("gemini-3.8-flash-cyber", "Gemini 3.8 Flash Cyber", "Antigravity", false, "1M tokens", "Paid"),
         AIModel("gemini-3-flash-agent", "Gemini 3.5 Flash (High)", "Antigravity", true, "1M tokens", "Free"),
         AIModel("gemini-3.5-flash-low", "Gemini 3.5 Flash (Low)", "Antigravity", false, "1M tokens", "Free"),
         AIModel("gemini-3.5-flash-medium", "Gemini 3.5 Flash (Medium)", "Antigravity", false, "1M tokens", "Free"),

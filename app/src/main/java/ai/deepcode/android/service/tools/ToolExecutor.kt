@@ -238,14 +238,15 @@ class ToolExecutor(private val context: Context? = null) {
     fun getOrInitGitHubService(): GitHubService? {
         gitHubService?.let { return it }
         val ctx = context ?: return null
-        val token = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx).getSetting("github_token", "").trim()
-            .ifEmpty {
-                try {
-                    kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                        ai.deepcode.android.ui.connections.IntegrationRepository(ctx).getIntegrationByAppId("github")?.accessToken?.trim()
-                    } ?: ""
-                } catch (_: Exception) { "" }
+        var token = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx).getSetting("github_token", "").trim()
+        if (token.isEmpty()) {
+            token = try {
+                ai.deepcode.android.data.local.AppDatabase.getDatabase(ctx).integrationDao().getIntegrationByAppIdSync("github")?.accessToken?.trim() ?: ""
+            } catch (_: Exception) { "" }
+            if (token.isNotEmpty()) {
+                ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx).saveSetting("github_token", token)
             }
+        }
         if (token.isNotEmpty()) {
             val svc = GitHubService(token)
             gitHubService = svc
@@ -1146,7 +1147,7 @@ class ToolExecutor(private val context: Context? = null) {
                     val prompt = args.get("prompt")?.asString ?: return "Missing prompt argument"
                     val format = args.get("format")?.asString ?: "markdown"
                     val ctx = context ?: return "Context unavailable"
-                    val bridge = ai.deepcode.android.service.chatgpt.ChatGPTHeadlessBridge.getInstance(ctx)
+                    val bridge = ai.deepcode.android.service.chatgpt.ChatGPTBridge.getInstance(ctx)
                     if (!bridge.isConfigured()) return "ChatGPT access token not configured. Please set chatgpt_access_token in DeepCode settings."
                     try {
                         kotlinx.coroutines.runBlocking { bridge.generateDocument(prompt, format) }
@@ -2110,11 +2111,11 @@ class ToolExecutor(private val context: Context? = null) {
             .trim()
             .ifEmpty { prompt }
 
-        // 1a. ChatGPT Headless Single-Session Image Generation (Default image engine if connected and no specific model requested)
+        // 1a. ChatGPT Integration Image Generation (Default image engine if connected and no specific model requested)
         if (ctx != null && (specifiedModel == "chatgpt" || (specifiedModel.isBlank() && lowerModel.isBlank()) || (specifiedModel == "dalle" && ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx).getApiKey("openai").isBlank()))) {
-            val bridge = ai.deepcode.android.service.chatgpt.ChatGPTHeadlessBridge.getInstance(ctx)
+            val bridge = ai.deepcode.android.service.chatgpt.ChatGPTBridge.getInstance(ctx)
             if (bridge.isConfigured()) {
-                AppLogger.i("ToolExecutor", "Using ChatGPT headless image generation for prompt: $cleanPrompt")
+                AppLogger.i("ToolExecutor", "Using ChatGPT image generation for prompt: $cleanPrompt")
                 try {
                     val result = kotlinx.coroutines.runBlocking { bridge.generateImage(cleanPrompt) }
                     if (result.isNotBlank() && !result.startsWith("Error:") && !result.startsWith("No image")) {
@@ -2122,7 +2123,7 @@ class ToolExecutor(private val context: Context? = null) {
                         return result
                     }
                 } catch (e: Exception) {
-                    AppLogger.e("ToolExecutor", "ChatGPT headless image generation failed: ${e.message}", e)
+                    AppLogger.e("ToolExecutor", "ChatGPT image generation failed: ${e.message}", e)
                     if (specifiedModel == "chatgpt") {
                         return "Error: ${e.message}"
                     }
@@ -4570,7 +4571,7 @@ Always pass the user's exact request as user_prompt.""",
                 )
             ),
             Tool("generate_chatgpt_document",
-                """Generate a high-precision structured document (Markdown, specification, report, table) using the headless ChatGPT single-session engine.
+                """Generate a high-precision structured document (Markdown, specification, report, table) using the ChatGPT integration for image and docs creation.
 Suppresses all conversational filler and returns clean formatted document content and local file path.""",
                 mapOf(
                     "type" to "object",
@@ -4624,9 +4625,9 @@ The task strictly runs within DeepCode's single persistent ChatGPT conversation 
 
         val resolvedSite = if (targetSite == "auto") WebViewAutomator.getTargetSite(taskType, targetSite) else targetSite
 
-        // Route ChatGPT tasks directly to ChatGPTHeadlessBridge if configured
+        // Route ChatGPT tasks directly to ChatGPT integration bridge if configured
         if (resolvedSite.equals("chatgpt", ignoreCase = true)) {
-            val bridge = ai.deepcode.android.service.chatgpt.ChatGPTHeadlessBridge.getInstance(ctx)
+            val bridge = ai.deepcode.android.service.chatgpt.ChatGPTBridge.getInstance(ctx)
             if (bridge.isConfigured()) {
                 return try {
                     val result = kotlinx.coroutines.runBlocking {
@@ -4640,7 +4641,7 @@ The task strictly runs within DeepCode's single persistent ChatGPT conversation 
                     gson.toJson(mapOf(
                         "task_id" to taskId,
                         "status" to "SUCCESS",
-                        "mode" to "HEADLESS",
+                        "mode" to "INTEGRATION",
                         "site_used" to "chatgpt",
                         "target_site_used" to "chatgpt",
                         "capability" to taskType,
@@ -4648,13 +4649,13 @@ The task strictly runs within DeepCode's single persistent ChatGPT conversation 
                         "output" to mapOf<String, Any>(
                             "text_content" to result,
                             "image_urls" to if (isImage) listOf(result.removePrefix("[image:").removeSuffix("]")) else emptyList<String>(),
-                            "description" to "ChatGPT Headless Single-Session delivery"
+                            "description" to "ChatGPT integration for image and docs creation"
                         ),
                         "error" to null
                     ))
                 } catch (e: Exception) {
-                    AppLogger.e("ToolExecutor", "ChatGPTHeadlessBridge failed: ${e.message}", e)
-                    gson.toJson(generateMockWebBridgeResponse(taskId, taskType, resolvedSite, userPrompt, triggeredBy, e.message ?: "ChatGPT headless error"))
+                    AppLogger.e("ToolExecutor", "ChatGPTBridge failed: ${e.message}", e)
+                    gson.toJson(generateMockWebBridgeResponse(taskId, taskType, resolvedSite, userPrompt, triggeredBy, e.message ?: "ChatGPT integration error"))
                 }
             }
         }

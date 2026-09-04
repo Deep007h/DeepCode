@@ -8,7 +8,7 @@ DeepCode for Android delivers an expansive, multi-provider model routing system.
 - [1. Google Antigravity](#1-google-antigravity-google-cloud-code-oauth)
 - [2. OpenCode Zen AI](#2-opencode-zen-ai-free--pro)
 - [3. Ollama Cloud](#3-ollama-cloud-high-speed-cloud-infrastructure)
-- [4. Headless ChatGPT Engine](#4-headless-chatgpt-engine-browser-bridge)
+- [4. ChatGPT Integration (Image & Docs Creation)](#4-chatgpt-integration-image--docs-creation)
 - [5. Google Gemini AI Studio](#5-google-gemini-ai-studio)
 - [6. Groq Cloud LPU](#6-groq-cloud-lpu)
 - [7. GMI Cloud](#7-gmi-cloud)
@@ -31,6 +31,8 @@ Google Antigravity routes through Google's internal Cloud Code infrastructure, o
 ### Supported Models
 | Model ID | Display Name | Context Window | Tier | Specialization |
 |:---|:---|:---|:---|:---|
+| `gemini-3.8-flash` | **Gemini 3.8 Flash** | 1,000,000 tokens | **Free** | Fast workhorse, state-of-the-art SWE reasoning (90.8% Terminal-Bench) |
+| `gemini-3.8-flash-cyber` | **Gemini 3.8 Flash Cyber** | 1,000,000 tokens | Paid | Specialized cybersecurity analysis & automated code patching |
 | `gemini-3-flash-agent` | **Gemini 3.5 Flash (High)** | 1,000,000 tokens | **Free** | Deep multi-step reasoning, agentic coding |
 | `gemini-3.5-flash-medium` | **Gemini 3.5 Flash (Medium)** | 1,000,000 tokens | **Free** | Balanced reasoning and throughput |
 | `gemini-3.5-flash-low` | **Gemini 3.5 Flash (Low)** | 1,000,000 tokens | **Free** | Ultra-low latency quick completions |
@@ -64,23 +66,27 @@ Zen AI is OpenCode's optimized inference network providing instant responses, lo
 | Model ID | Display Name | Context Window | Specialization |
 |:---|:---|:---|:---|
 | `deepseek-v4-flash-free` | **DeepSeek V4 Flash (Free)** | 1,000,000 tokens | Default flagship coder, rapid code generation |
+| `muse-spark-1.3-contributor-free` | **Muse Spark 1.3 (Free)** | 1,000,000 tokens | Frontier multimodal reasoning, 20% fewer tool calls |
+| `muse-spark-1.2-contributor-free` | **Muse Spark 1.2 (Free)** | 128,000 tokens | High-performance contributor model |
 | `mimo-v2.5-free` | **MiMo V2.5 (Free)** | 128,000 tokens | Compact, high-efficiency assistant |
 | `nemotron-3.5-lightning-free` | **Nemotron 3.5 Lightning (Free)** | 128,000 tokens | Fast instruction-following & agent tools |
 | `nemotron-3-ultra-free` | **Nemotron 3 Ultra (Free)** | 128,000 tokens | Deep context analysis |
-| `muse-spark-1.2-contributor-free` | **Muse Spark 1.2 (Free)** | 128,000 tokens | Community contributor model |
 | `ling-3.0-flash-fin-free` | **Ling 3.0 Flash Fin (Free)** | 128,000 tokens | Financial data & structured JSON logic |
 | `laguna-s-2.1-free` | **Laguna S 2.1 (Free)** | 128,000 tokens | Fast conversational agent |
 
 ### Supported Pro & Paid Models
 | Model ID | Display Name | Context Window | Tier |
 |:---|:---|:---|:---|
-| `claude-sonnet-5` | **Claude Sonnet 5** | 200,000 tokens | Paid |
-| `claude-opus-5` | **Claude Opus 5** | 200,000 tokens | Paid |
+| `claude-fable-5.1` | **Claude Fable 5.1** | 1,000,000 tokens | Paid |
 | `claude-fable-5` | **Claude Fable 5** | 200,000 tokens | Paid |
+| `claude-opus-5` | **Claude Opus 5** | 200,000 tokens | Paid |
+| `claude-sonnet-5` | **Claude Sonnet 5** | 200,000 tokens | Paid |
 | `claude-sonnet-4-6` | **Claude Sonnet 4.6** | 200,000 tokens | Paid |
+| `gemini-3.8-flash` | **Gemini 3.8 Flash** | 1,000,000 tokens | Paid |
 | `gemini-3.7-flash` | **Gemini 3.7 Flash** | 1,000,000 tokens | Paid |
 | `gemini-3.6-flash` | **Gemini 3.6 Flash** | 1,000,000 tokens | Paid |
 | `gemini-3.5-flash` | **Gemini 3.5 Flash** | 1,000,000 tokens | Paid |
+| `gpt-6-astra` | **GPT 6 Astra** | 128,000 tokens | Paid |
 | `gpt-5.6-sol` | **GPT 5.6 Sol** | 128,000 tokens | Paid |
 | `gpt-5.5` | **GPT 5.5** | 128,000 tokens | Paid |
 | `gpt-5.4` | **GPT 5.4** | 128,000 tokens | Paid |
@@ -118,13 +124,14 @@ Zen AI is OpenCode's optimized inference network providing instant responses, lo
 
 ---
 
-## 4. 🌐 Headless ChatGPT Engine (Browser Bridge)
+## 4. 🌐 ChatGPT Integration (Image & Docs Creation)
 
-New in **Release 1.1**, the Headless ChatGPT Bridge provides direct conversational inference with OpenAI's consumer web platform without paying API token costs.
+New in **Release 1.1**, the ChatGPT integration provides direct conversational inference with OpenAI's consumer web platform without paying API token costs, tailored specifically for high-quality image generation and structured document creation.
 
 ### Access Type & Authentication
 - **Access Type**: `Browser Session Bridge / Session Cookies`
 - **Setup**: Open the **Connections** screen, tap **ChatGPT**, and sign in via the embedded browser.
+- **Image & Docs Creation**: Rapidly generates high-precision structured documents (markdown specs, reports, tables) and inline DALL-E 3 graphics.
 - **Persistent State**: Executes within a dedicated single-session thread. Conversation history and code context persist across multiple tool turns.
 - **Inline DALL-E 3**: Request images directly in chat; downloads render straight into your Android gallery.
 
@@ -142,6 +149,7 @@ Direct connection to Google's official Gemini developer API.
 ### Supported Models
 | Model ID | Display Name | Context Window | Tier |
 |:---|:---|:---|:---|
+| `gemini-3.8-flash` | **Gemini 3.8 Flash** | 1,000,000 tokens | **Free Tier** |
 | `gemini-2.0-flash` | **Gemini 2.0 Flash** | 1,000,000 tokens | **Free Tier** |
 | `gemini-2.0-flash-lite` | **Gemini 2.0 Flash Lite** | 1,000,000 tokens | **Free Tier** |
 | `gemini-2.0-pro-exp-02-05` | **Gemini 2.0 Pro Experimental** | 2,000,000 tokens | **Free Tier** |
@@ -191,7 +199,7 @@ High-throughput GPU inference cluster serving next-generation weights.
 Official OpenAI developer API endpoints.
 
 - **Base URL**: `https://api.openai.com/v1`
-- **Supported Models**: `gpt-4o`, `gpt-4o-mini`, `o1`, `o1-mini`, `o3-mini`, `gpt-4.5-preview`, `gpt-4-turbo`, `dall-e-3`, `dall-e-2`.
+- **Supported Models**: `gpt-6-astra` (Flagship Sept 2026), `gpt-5.6-sol`, `gpt-4o`, `gpt-4o-mini`, `o1`, `o1-mini`, `o3-mini`, `gpt-4.5-preview`, `gpt-4-turbo`, `dall-e-3`, `dall-e-2`.
 
 ---
 
@@ -200,7 +208,7 @@ Official OpenAI developer API endpoints.
 Official Anthropic developer API endpoints.
 
 - **Base URL**: `https://api.anthropic.com/v1`
-- **Supported Models**: `claude-3-7-sonnet-latest` (Hybrid Thinking), `claude-3-5-sonnet-latest`, `claude-3-5-haiku-latest`, `claude-3-opus-latest`, `claude-4.5-sonnet`, `claude-4.5-opus`, `claude-4.5-haiku`.
+- **Supported Models**: `claude-fable-5.1` (1M tokens, Adaptive Thinking), `claude-opus-5`, `claude-sonnet-5`, `claude-3-7-sonnet-latest` (Hybrid Thinking), `claude-3-5-sonnet-latest`, `claude-3-5-haiku-latest`, `claude-3-opus-latest`, `claude-4.5-sonnet`, `claude-4.5-opus`, `claude-4.5-haiku`.
 
 ---
 

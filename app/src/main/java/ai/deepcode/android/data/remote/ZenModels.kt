@@ -13,6 +13,7 @@ object ZenModels {
 
     val KNOWN_FREE_IDS = listOf(
         "deepseek-v4-flash-free",
+        "muse-spark-1.3-contributor-free",
         "muse-spark-1.2-contributor-free",
         "mimo-v2.5-free",
         "ling-3.0-flash-fin-free",
@@ -22,13 +23,16 @@ object ZenModels {
     )
 
     val KNOWN_PAID_IDS = listOf(
+        "claude-fable-5.1",
         "claude-fable-5",
         "claude-opus-5",
         "claude-sonnet-5",
         "claude-sonnet-4-6",
+        "gemini-3.8-flash",
         "gemini-3.7-flash",
         "gemini-3.6-flash",
         "gemini-3.5-flash",
+        "gpt-6-astra",
         "gpt-5.6-sol",
         "gpt-5.5",
         "gpt-5.4",
@@ -64,6 +68,7 @@ object ZenModels {
             "mimo-v2.5" -> "mimo-v2.5-free"
             "nemotron-3-ultra" -> "nemotron-3-ultra-free"
             "nemotron-3.5-lightning" -> "nemotron-3.5-lightning-free"
+            "muse-spark-1.3", "muse-spark-1.3-contributor", "muse-spark-1.3-free" -> "muse-spark-1.3-contributor-free"
             "muse-spark-1.2" -> "muse-spark-1.2-contributor-free"
             "ling-3.0-flash" -> "ling-3.0-flash-fin-free"
             "laguna-s-2.1" -> "laguna-s-2.1-free"

@@ -23,7 +23,7 @@ class GitHubHandler(private val context: Context) {
         val hasGithubWord = githubWords.any { lower.contains(it) }
         if (!hasGithubWord) return null
 
-        val actionWords = listOf("list", "show", "get", "find", "search", "check", "view", "what", "fetch", "my", "whoami", "profile")
+        val actionWords = listOf("list", "show", "get", "find", "search", "check", "view", "what", "fetch", "my", "whoami", "profile", "access", "read", "see", "display", "all", "repos", "repositories")
         val hasActionWord = actionWords.any { Regex("\\b${it}\\b", RegexOption.IGNORE_CASE).containsMatchIn(lower) }
         if (!hasActionWord) return null
 
@@ -59,10 +59,15 @@ class GitHubHandler(private val context: Context) {
         val parsed = parse(text) ?: return ""
         return withContext(Dispatchers.IO) {
             try {
-                val token = EncryptedPrefs.getInstance(context).getSetting("github_token", "").trim()
-                    .ifEmpty {
-                        IntegrationRepository(context).getIntegrationByAppId("github")?.accessToken?.trim() ?: ""
+                var token = EncryptedPrefs.getInstance(context).getSetting("github_token", "").trim()
+                if (token.isEmpty()) {
+                    token = try {
+                        ai.deepcode.android.data.local.AppDatabase.getDatabase(context).integrationDao().getIntegrationByAppIdSync("github")?.accessToken?.trim() ?: ""
+                    } catch (_: Exception) { "" }
+                    if (token.isNotEmpty()) {
+                        EncryptedPrefs.getInstance(context).saveSetting("github_token", token)
                     }
+                }
 
                 if (token.isBlank()) {
                     return@withContext "GitHub is not connected. Go to Connections → GitHub → Connect and paste your Personal Access Token."

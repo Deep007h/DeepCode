@@ -7,7 +7,7 @@
 ### Autonomous AI Agent, Code Engine & Automation Studio for Android
 
 <a href="https://git.io/typing-svg">
-  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=19&duration=3200&pause=1000&color=22C55E&center=true&vCenter=true&width=680&lines=Autonomous+AI+Coding+Agent+Native+to+Android;Antigravity+%E2%80%A2+Gemini+3.5+%26+3.1+%E2%80%A2+Zen+AI+%E2%80%A2+Groq+LPU;Ollama+Cloud+%E2%80%A2+Headless+ChatGPT+%E2%80%A2+Claude+Sonnet+5;Native+Terminal+Shell+%E2%80%A2+Sora+Editor+%E2%80%A2+PDF+Studio;Exact+AlarmManager+Automations+With+Dedicated+Chat+Threads" alt="DeepCode Typing Animation" />
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=19&duration=3200&pause=1000&color=F97316&center=true&vCenter=true&width=680&lines=Autonomous+AI+Coding+Agent+Native+to+Android;Antigravity+%E2%80%A2+Gemini+3.8+%26+3.5+%E2%80%A2+Zen+AI+(Muse+1.3)+%E2%80%A2+Groq;Ollama+Cloud+%E2%80%A2+ChatGPT+Integration+(Images+%26+Docs)+%E2%80%A2+Claude+Fable+5.1;GPT-6+Astra+%E2%80%A2+Terminal+Shell+%E2%80%A2+Sora+Editor+%E2%80%A2+PDF+Studio;Exact+AlarmManager+Automations+With+Dedicated+Chat+Threads" alt="DeepCode Typing Animation" />
 </a>
 
 <br/>
@@ -34,7 +34,7 @@
 
 ## 🚀 Overview
 
-**DeepCode** transforms your Android device into an autonomous AI development environment. By coupling flagship cloud models (**Google Antigravity**, **OpenCode Zen AI**, **Google Gemini**, **Groq LPU**, **Ollama Cloud**, **OpenAI**, **Anthropic**, **GMI Cloud**) with an integrated **Headless ChatGPT Engine**, native **Dual Terminal Shell**, **Sora Code Editor**, and **Automated PDF Studio**, DeepCode delivers desktop-grade agentic capability directly in the palm of your hand.
+**DeepCode** transforms your Android device into an autonomous AI development environment. By coupling flagship cloud models (**Google Antigravity**, **OpenCode Zen AI**, **Google Gemini**, **Groq LPU**, **Ollama Cloud**, **OpenAI**, **Anthropic**, **GMI Cloud**) with an integrated **ChatGPT integration for image and docs creation**, native **Dual Terminal Shell**, **Sora Code Editor**, and **Automated PDF Studio**, DeepCode delivers desktop-grade agentic capability directly in the palm of your hand.
 
 Whether you need to generate codebases, audit repositories, run complex multi-turn shell commands with root elevation, compile publication-grade PDFs, or schedule recurring autonomous background tasks that wake up your phone on exact intervals, DeepCode executes without compromise.
 
@@ -46,15 +46,16 @@ Whether you need to generate codebases, audit repositories, run complex multi-tu
 <summary><b>✨ Highlights of Release 1.1</b></summary>
 <br/>
 
-- 🌐 **Headless ChatGPT Engine**: Connect your ChatGPT account in **Connections** for zero-API-cost inference, persistent single-session context preservation, and inline **DALL-E 3** image rendering.
+- 🌐 **ChatGPT Integration for Image and Docs Creation**: Connect your ChatGPT account in **Connections** for zero-API-cost inference, persistent single-session context preservation, high-precision document generation, and inline **DALL-E 3** image rendering.
 - ⏰ **Rock-Solid Background Automations**:
   - Exact wakeups powered by Android's `AlarmManager.setExactAndAllowWhileIdle()` and `WAKE_LOCK`.
   - **Dedicated Persistent Threads**: Every scheduled automation task executes inside its own dedicated chat session—never creating duplicate chats on subsequent runs.
   - **Auto-Trigger on App Death**: Fully resilient to process kills and system reboots (`BOOT_COMPLETED`), maintaining scheduled execution reliably.
   - **Interactive Task Editor**: Modify schedules, prompt instructions, repetition intervals, and predefined workflows on the fly.
-- 🌌 **Next-Gen Antigravity Provider**: Built-in support for Google's latest **Gemini 3.5 Flash** (High/Medium/Low), **Gemini 3.1 Pro** (High/Low), **Gemini 3.1 Flash Lite**, and **Claude Sonnet 5 / Opus 4.6**.
+- 🌌 **Next-Gen Antigravity Provider**: Built-in support for Google's latest **Gemini 3.8 Flash** (Terminal-Bench 2.1 state-of-the-art), **Gemini 3.8 Flash Cyber**, **Gemini 3.5 Flash** (High/Medium/Low), **Gemini 3.1 Pro** (High/Low), and **Claude Sonnet 5 / Opus 4.6**.
+- 🌟 **Zen AI Muse Spark 1.3 & Gemini 3.8**: Added **Muse Spark 1.3 Free** (`muse-spark-1.3-contributor-free`, 1M context, 20% fewer tool calls) alongside **Gemini 3.8 Flash**, **Claude Fable 5.1**, and **GPT-6 Astra**.
 - ☁️ **Ollama Cloud Integration**: Transitioned from local daemon reliance to official high-throughput **Ollama Cloud** (`https://ollama.com/v1`) with Gemma 4 31B, GLM 4.7, GPT-OSS 120B, and Qwen 3 Coder 480B.
-- 🔄 **Updated Zen AI Engine**: Streamlined authentication requiring your Zen API key (`Settings → API Keys`), unlocking both high-throughput Free models (DeepSeek V4 Flash Free, MiMo 2.5 Free, Nemotron 3.5 Free) and Pro models (Claude Sonnet 5, Gemini 3.7 Flash, GPT 5.6 Sol).
+- 🔄 **Updated Zen AI Engine**: Streamlined authentication requiring your Zen API key (`Settings → API Keys`), unlocking both high-throughput Free models (DeepSeek V4 Flash Free, Muse Spark 1.3 Free, MiMo 2.5 Free, Nemotron 3.5 Free) and Pro models (Claude Fable 5.1, Gemini 3.8 Flash, GPT 6 Astra, GPT 5.6 Sol).
 
 </details>
 
@@ -72,7 +73,7 @@ Whether you need to generate codebases, audit repositories, run complex multi-tu
   │ • Zen AI (Pro)   │ • Syntax Colors  │ • Root su Shell  │ • Exact Wake  │
   │ • Groq LPU       │ • Git Operations │ • Background PIDs│ • Thread-Safe │
   │ • Ollama Cloud   │ • PDF Studio (6) │ • Grep & Search  │ • Survives OS │
-  │ • Headless GPT   │ • Web Scraping   │ • Sandbox Bypass │   Kills       │
+  │ • ChatGPT (Img/Doc)│ • Web Scraping │ • Sandbox Bypass │   Kills       │
   └──────────────────┴──────────────────┴──────────────────┴───────────────┘
 ```
 
@@ -92,14 +93,14 @@ DeepCode offers seamless routing across over 20 AI providers. Configure your key
 
 | Provider | Access Type | Highlighted Models | Context | Tier |
 |:---|:---|:---|:---|:---|
-| **Google Antigravity** | **Google OAuth 2.0 / Bearer (`ya29.`)** | `gemini-3-flash-agent` (Gemini 3.5 Flash High)<br/>`gemini-3.5-flash-medium`<br/>`gemini-3.5-flash-low`<br/>`gemini-3-pro-preview` (Gemini 3.1 Pro)<br/>`gemini-3.1-pro-high`<br/>`gemini-3.1-pro-low`<br/>`gemini-3.1-flash-lite`<br/>`gemini-2.5-pro` / `gemini-2.5-flash`<br/>`gemini-2.5-flash-thinking`<br/>`claude-sonnet-5` (Thinking)<br/>`claude-opus-4-6-thinking`<br/>`claude-sonnet-4-6`<br/>`gpt-oss-120b-medium` | 1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>200k Tokens<br/>200k Tokens<br/>200k Tokens<br/>128k Tokens | **Free**<br/>**Free**<br/>**Free**<br/>Paid<br/>Paid<br/>Paid<br/>**Free**<br/>**Free**<br/>**Free**<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
-| **OpenCode Zen AI** | **API Key / Bearer Auth**<br/>`https://opencode.ai/zen/v1` | `deepseek-v4-flash-free`<br/>`mimo-v2.5-free`<br/>`nemotron-3.5-lightning-free`<br/>`nemotron-3-ultra-free`<br/>`muse-spark-1.2-contributor-free`<br/>`claude-sonnet-5`<br/>`gemini-3.7-flash` / `gemini-3.5-flash`<br/>`gpt-5.6-sol` / `gpt-5.5`<br/>`deepseek-v4-pro` | 1M Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>200k Tokens<br/>1M Tokens<br/>128k Tokens<br/>1M Tokens | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
+| **Google Antigravity** | **Google OAuth 2.0 / Bearer (`ya29.`)** | `gemini-3.8-flash` (Gemini 3.8 Flash Workhorse)<br/>`gemini-3.8-flash-cyber`<br/>`gemini-3-flash-agent` (Gemini 3.5 Flash High)<br/>`gemini-3.5-flash-medium` / `gemini-3.5-flash-low`<br/>`gemini-3-pro-preview` (Gemini 3.1 Pro)<br/>`gemini-3.1-pro-high` / `gemini-3.1-pro-low`<br/>`gemini-3.1-flash-lite`<br/>`gemini-2.5-pro` / `gemini-2.5-flash`<br/>`claude-sonnet-5` (Thinking)<br/>`claude-opus-4-6-thinking`<br/>`gpt-oss-120b-medium` | 1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>200k Tokens<br/>200k Tokens<br/>128k Tokens | **Free**<br/>Paid<br/>**Free**<br/>**Free**<br/>Paid<br/>Paid<br/>**Free**<br/>**Free**<br/>Paid<br/>Paid<br/>Paid |
+| **OpenCode Zen AI** | **API Key / Bearer Auth**<br/>`https://opencode.ai/zen/v1` | `deepseek-v4-flash-free`<br/>`muse-spark-1.3-contributor-free` (Muse Spark 1.3)<br/>`muse-spark-1.2-contributor-free`<br/>`mimo-v2.5-free`<br/>`nemotron-3.5-lightning-free`<br/>`nemotron-3-ultra-free`<br/>`gemini-3.8-flash`<br/>`claude-fable-5.1`<br/>`claude-sonnet-5`<br/>`gpt-6-astra` / `gpt-5.6-sol`<br/>`deepseek-v4-pro` | 1M Tokens<br/>1M Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>1M Tokens<br/>1M Tokens<br/>200k Tokens<br/>128k Tokens<br/>1M Tokens | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
 | **Ollama Cloud** | **API Key / Bearer Auth**<br/>`https://ollama.com/v1` | `qwen3-coder:480b`<br/>`gpt-oss:120b`<br/>`gemma4` (31B)<br/>`glm-4.7`<br/>`minimax-m3`<br/>`nemotron-3-super` (120B) | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>1M Tokens<br/>128k Tokens | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free** |
-| **Google Gemini** | **Google AI Studio Key** | `gemini-2.0-flash`<br/>`gemini-2.0-flash-lite`<br/>`gemini-2.0-pro-exp-02-05`<br/>`gemini-1.5-pro`<br/>`imagen-3.0-generate-002` | 1M Tokens<br/>1M Tokens<br/>2M Tokens<br/>2M Tokens<br/>Image Gen | **Free**<br/>**Free**<br/>**Free**<br/>Paid<br/>**Free** |
+| **Google Gemini** | **Google AI Studio Key** | `gemini-3.8-flash` (Gemini 3.8 Flash)<br/>`gemini-2.0-flash`<br/>`gemini-2.0-flash-lite`<br/>`gemini-2.0-pro-exp-02-05`<br/>`gemini-1.5-pro`<br/>`imagen-3.0-generate-002` | 1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>2M Tokens<br/>2M Tokens<br/>Image Gen | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>Paid<br/>**Free** |
 | **Groq Cloud** | **Groq API Key (LPU)** | `llama-3.3-70b-versatile`<br/>`llama-3.1-8b-instant`<br/>`deepseek-r1-distill-llama-70b`<br/>`openai/gpt-oss-120b`<br/>`groq/compound` (Agentic) | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free** |
-| **ChatGPT Headless** | **Browser Bridge / Session** | `chatgpt-web` (Persistent Session)<br/>`dall-e-3` (Inline Image Generation) | Dynamic<br/>1024x1024 | **Free**<br/>**Free** |
-| **OpenAI API** | **OpenAI API Key** | `gpt-4o`<br/>`gpt-4o-mini`<br/>`o3-mini`<br/>`o1` / `gpt-4.5-preview`<br/>`dall-e-3` | 128k Tokens<br/>128k Tokens<br/>200k Tokens<br/>200k Tokens<br/>Image Gen | Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
-| **Anthropic** | **Anthropic API Key** | `claude-3-7-sonnet-latest` (Hybrid)<br/>`claude-3-5-sonnet-latest`<br/>`claude-4.5-sonnet` / `claude-4.5-opus` | 200k Tokens<br/>200k Tokens<br/>200k Tokens | Paid<br/>Paid<br/>Paid |
+| **ChatGPT Integration** | **Browser Session Bridge** | `chatgpt-web` (Persistent Session)<br/>`dall-e-3` (Image & Document Generation) | Dynamic<br/>1024x1024 | **Free**<br/>**Free** |
+| **OpenAI API** | **OpenAI API Key** | `gpt-6-astra` (Flagship Sept 2026)<br/>`gpt-5.6-sol`<br/>`gpt-4o`<br/>`gpt-4o-mini`<br/>`o3-mini`<br/>`o1` / `dall-e-3` | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>200k Tokens<br/>200k Tokens | Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
+| **Anthropic** | **Anthropic API Key** | `claude-fable-5.1` (Adaptive Thinking)<br/>`claude-opus-5`<br/>`claude-sonnet-5`<br/>`claude-3-7-sonnet-latest` (Hybrid)<br/>`claude-4.5-sonnet` / `claude-4.5-opus` | 1M Tokens<br/>200k Tokens<br/>200k Tokens<br/>200k Tokens<br/>200k Tokens | Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
 | **GMI Cloud** | **GMI API Key** | `Qwen/Qwen3.8-Flash`<br/>`deepseek-ai/DeepSeek-V4-Flash`<br/>`google/gemini-3.8-flash`<br/>`moonshotai/kimi-k3`<br/>`zai-org/GLM-5.3-Flash` | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens | Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
 | **OpenRouter / Cerebrus / Mistral** | **Respective API Keys** | Llama 3.3 70B, DeepSeek R1, Hermes 3 405B, Codestral, Mixtral 8x22B | Up to 128k | Free / Paid |
 
@@ -164,10 +165,11 @@ Never let a rate limit interrupt an autonomous coding session:
 
 ---
 
-## 🌐 Headless ChatGPT Engine
+## 🌐 ChatGPT Integration (Image & Document Creation)
 
-Available in **Connections** screen:
+Available in the **Connections** screen:
 - **Zero API Fees**: Connect directly via your browser session without incurring token charges.
+- **Image & Docs Creation**: Generate high-fidelity DALL-E 3 images and structured specifications, documentation, and reports.
 - **Single Persistent Session**: Preserves chat context and project state across multiple turns.
 - **Inline DALL-E 3**: Prompt the assistant to create graphics, mockups, or diagrams; rendered directly within the chat bubble with instant download to your gallery.
 
@@ -190,7 +192,7 @@ DeepCode/
 │   ├── ui/
 │   │   ├── automations/   # AutomationsScreen, TaskEditSheet, ScheduleDialog
 │   │   ├── chat/          # ChatScreen, ChatViewModel, AiBubble, SoraEditorView
-│   │   ├── connections/   # ConnectionsScreen, ChatGPTHeadlessBridge
+│   │   ├── connections/   # ConnectionsScreen, ChatGPTBridge
 │   │   ├── dashboard/     # DashboardScreen, Project Cards, Quick Stats
 │   │   └── settings/      # ApiKeysScreen, CustomThemes, LogViewer, Personas
 │   └── DeepCodeApp.kt     # Application lifecycle & dependency container

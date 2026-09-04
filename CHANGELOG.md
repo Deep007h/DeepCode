@@ -7,8 +7,8 @@ All notable changes and milestones for **DeepCode for Android** are documented b
 ## [1.1.0] - 2026-09-04
 
 ### Added
-- **Headless ChatGPT Engine**:
-  - Integrated browser session bridge (`ChatGPTHeadlessBridge`) in the Connections tab allowing seamless interaction with OpenAI's consumer web platform at zero API token cost.
+- **ChatGPT Integration for Image & Docs Creation**:
+  - Integrated browser session bridge in the Connections tab allowing seamless interaction with OpenAI's consumer web platform at zero API token cost for rich document and image generation.
   - Dedicated persistent single-session context preservation across multi-turn queries.
   - Direct inline DALL-E 3 image rendering with immediate download to the Android media gallery.
 - **Background Automations Engine**:

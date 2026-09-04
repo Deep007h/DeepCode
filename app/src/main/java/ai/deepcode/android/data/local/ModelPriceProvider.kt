@@ -27,6 +27,7 @@ object ModelPriceProvider {
         register("minimax-m2.1", ModelPricing(0.15, 0.80, 128_000, 16384))
 
         // ── OpenAI ──────────────────────────────────────────────────────
+        register("gpt-6-astra", ModelPricing(3.50, 14.00, 128_000, 16384, true, 4.00, 1.50))
         register("gpt-4o", ModelPricing(2.50, 10.00, 128_000, 16384, true, 3.75, 1.25))
         register("gpt-4o-mini", ModelPricing(0.15, 0.60, 128_000, 16384, true, 0.25, 0.075))
         register("gpt-4o-2024-11-20", ModelPricing(2.50, 10.00, 128_000, 16384, true, 3.75, 1.25))
@@ -46,6 +47,7 @@ object ModelPriceProvider {
         register("gpt-oss-20b", ModelPricing(0.10, 0.20, 128_000, 16384))
 
         // ── Anthropic ───────────────────────────────────────────────────
+        register("claude-fable-5.1", ModelPricing(3.00, 15.00, 1_000_000, 16384, true, 3.75, 0.30))
         register("claude-sonnet-4-6", ModelPricing(3.00, 15.00, 200_000, 8192, true, 3.75, 0.30))
         register("claude-sonnet-5", ModelPricing(3.00, 15.00, 200_000, 8192, true, 3.75, 0.30))
         register("anthropic/claude-sonnet-4.6", ModelPricing(3.00, 15.00, 200_000, 8192, true, 3.75, 0.30))
@@ -131,6 +133,8 @@ object ModelPriceProvider {
         // ── Unique Zen / Contributor Models ─────────────────────────────
         register("mimo-v2.5-free", ModelPricing(0.15, 0.30, 128_000, 8192))
         register("mimo-v2.5", ModelPricing(0.15, 0.30, 128_000, 8192))
+        register("muse-spark-1.3-contributor-free", ModelPricing(0.15, 0.30, 1_000_000, 16384))
+        register("muse-spark-1.3", ModelPricing(0.15, 0.30, 1_000_000, 16384))
         register("muse-spark-1.2-contributor-free", ModelPricing(0.10, 0.20, 128_000, 8192))
         register("ling-3.0-flash-fin-free", ModelPricing(0.10, 0.20, 128_000, 8192))
         register("laguna-s-2.1-free", ModelPricing(0.10, 0.20, 128_000, 8192))

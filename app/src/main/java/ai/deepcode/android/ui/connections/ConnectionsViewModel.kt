@@ -13,7 +13,7 @@ import ai.deepcode.android.service.telegram.BotConfig
 import ai.deepcode.android.service.telegram.TelegramBridgeService
 import ai.deepcode.android.service.notion.NotionService
 import ai.deepcode.android.service.github.GitHubService
-import ai.deepcode.android.service.chatgpt.ChatGPTHeadlessBridge
+import ai.deepcode.android.service.chatgpt.ChatGPTBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -138,7 +138,7 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
                 } else {
                     repository.insertIntegration(chatgpt)
                 }
-                addLog("Added ChatGPT headless engine to available integrations.")
+                addLog("Added ChatGPT integration for image and docs creation to available integrations.")
             }
         }
     }
@@ -231,8 +231,8 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
 
                 if (appId == "chatgpt") {
                     try {
-                        ChatGPTHeadlessBridge.getInstance(appContext).disconnect()
-                        addLog("ChatGPT headless session and credentials cleared.")
+                        ChatGPTBridge.getInstance(appContext).disconnect()
+                        addLog("ChatGPT session and credentials cleared.")
                     } catch (e: Exception) {
                         addLog("Error disconnecting ChatGPT: ${e.message}")
                     }
@@ -264,9 +264,9 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
         viewModelScope.launch {
             val trimmed = token.trim()
             if (trimmed.isEmpty()) return@launch
-            addLog("Connecting ChatGPT headless integration...")
+            addLog("Connecting ChatGPT integration for image and docs creation...")
             securePrefs.saveChatGPTAccessToken(trimmed)
-            ChatGPTHeadlessBridge.getInstance(appContext).parseAndSaveJwtMetadata(trimmed)
+            ChatGPTBridge.getInstance(appContext).parseAndSaveJwtMetadata(trimmed)
             if (!email.isNullOrBlank()) {
                 securePrefs.saveSetting("chatgpt_user_email", email)
             }
@@ -288,7 +288,7 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
                 )
                 repository.insertIntegration(newIntegration)
             }
-            addLog("ChatGPT connected. Headless image generation and document studio ready.")
+            addLog("ChatGPT connected. ChatGPT integration for image and docs creation ready.")
         }
     }
 

@@ -45,7 +45,15 @@ class DeepCodeRepository(context: Context) {
         if (notionToken.isNotEmpty()) {
             it.notionService = NotionService(notionToken)
         }
-        val githubToken = securePrefs.getSetting("github_token", "")
+        var githubToken = securePrefs.getSetting("github_token", "").trim()
+        if (githubToken.isEmpty()) {
+            githubToken = try {
+                database.integrationDao().getIntegrationByAppIdSync("github")?.accessToken?.trim() ?: ""
+            } catch (_: Exception) { "" }
+            if (githubToken.isNotEmpty()) {
+                securePrefs.saveSetting("github_token", githubToken)
+            }
+        }
         if (githubToken.isNotEmpty()) {
             it.gitHubService = GitHubService(githubToken)
         }

@@ -102,6 +102,9 @@ fun stripThinkingProcess(raw: String, isStreaming: Boolean = false): String {
     text = text.replace(RE_THOUGHT_OPEN, "")
     if (isStreaming) {
         text = text.replace(RE_PARTIAL_THINK_OPEN, "")
+    } else {
+        text = text.replace(Regex("""<tool_calls?>.*?</tool_calls?>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+            .replace(Regex("""<invoke\s+name=[^>]*>.*?</invoke>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
     }
 
     // 3. Untagged thinking process (e.g. "Here's a thinking process: ...")
@@ -3247,6 +3250,27 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 }
             }
 
+            // Direct GitHub action fast-path (instant query resolution)
+            val ghQuery = try { ai.deepcode.android.service.github.GitHubHandler(repository.appContext).parse(text) } catch (_: Exception) { null }
+            if (ghQuery != null) {
+                _mediaProcessingType.value = "tool"
+                _mediaProcessingPrompt.value = "Fetching from GitHub..."
+                _streamedText.value = ""
+                val ghResponse = try {
+                    ai.deepcode.android.service.github.GitHubHandler(repository.appContext).fetch(text)
+                } catch (e: Exception) {
+                    "GitHub Error: ${e.message}"
+                }
+                if (ghResponse.isNotBlank()) {
+                    appendAssistantMessage(ghResponse, sessionId)
+                    _isStreaming.value = false
+                    _streamingMessageId.value = ""
+                    _mediaProcessingType.value = null
+                    _mediaProcessingPrompt.value = ""
+                    return@launch
+                }
+            }
+
             val model = _activeModel.value
             val provider = AIProviderFactory.providers.find { it.name == model.provider }
             if (provider == null) {
@@ -3809,6 +3833,18 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     break
                 }
                 val textToSave = if (_streamedText.value.isNotBlank()) _streamedText.value else _deferredResponse
+                if (!nextStreamHadToolCall && textToSave.isNotBlank()) {
+                    val parsedCalls = parseToolCallsFromText(textToSave)
+                    if (parsedCalls.isNotEmpty()) {
+                        nextStreamHadToolCall = true
+                        _streamedText.value = ""
+                        _deferredResponse = ""
+                        for (tc in parsedCalls) {
+                            maybeAutoApproveTool(tc)
+                        }
+                        break
+                    }
+                }
                 if (textToSave.isNotBlank()) {
                     appendAssistantMessage(textToSave)
                 }
@@ -4000,6 +4036,37 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             "You are DeepCode, an AI coding assistant."
         }
 
+        val isGitHubConnected = try {
+            val t = prefs.getSetting("github_token", "").trim()
+            if (t.isNotEmpty()) true
+            else {
+                val entity = ai.deepcode.android.data.local.AppDatabase.getDatabase(repository.appContext).integrationDao().getIntegrationByAppIdSync("github")
+                entity != null && !entity.accessToken.isNullOrBlank()
+            }
+        } catch (_: Exception) { false }
+
+        val githubSection = if (isGitHubConnected) {
+            """
+- GitHub Integration: ACTIVE & CONNECTED. The user has an active, authenticated GitHub connection.
+When the user asks about GitHub repositories, account profile, issues, pull requests, commits, branches, releases, files, or gists, ALWAYS call the corresponding GitHub tool immediately. NEVER say you cannot access GitHub.
+TOOL CALLING FORMAT:
+If native tool calling is supported, use it. If not, output tool calls using this exact format:
+<tool_call>
+{"name": "tool_name", "arguments": {"param1": "val1"}}
+</tool_call>
+Example for listing repositories:
+<tool_call>
+{"name": "github_list_repos", "arguments": {}}
+</tool_call>
+Example for user profile:
+<tool_call>
+{"name": "github_get_user", "arguments": {}}
+</tool_call>
+Available tools: github_get_user, github_list_repos, github_get_repo, github_create_repo, github_delete_repo, github_fork_repo, github_list_repo_contents, github_get_file_content, github_create_or_update_file, github_delete_file, github_list_branches, github_create_branch, github_list_commits, github_get_commit, github_list_pull_requests, github_get_pull_request, github_get_pr_diff, github_create_pull_request, github_update_pull_request, github_merge_pull_request, github_list_issues, github_get_issue, github_create_issue, github_update_issue, github_list_issue_comments, github_create_issue_comment, github_list_releases, github_get_latest_release, github_create_release, github_list_workflows, github_trigger_workflow, github_list_workflow_runs, github_check_workflow_status, github_download_artifact, github_list_gists, github_create_gist, github_search_code, github_search_repositories, github_search_issues."""
+        } else {
+            "- GitHub Integration: Not connected. If the user asks for GitHub data, instruct them to connect GitHub in the Connections screen."
+        }
+
         return """
 $persona
 
@@ -4012,7 +4079,7 @@ CRITICAL INSTRUCTIONS:
 - Image Generation (generate_image): When the user asks for an image, picture, photo, illustration, drawing, or artwork, ALWAYS call the `generate_image` tool with a detailed prompt describing what to render. NEVER fabricate, hallucinate, or make up local file paths or [image:...] tags yourself.
 - Documents (generate_chatgpt_document): When asked to generate a document or specification with ChatGPT, call `generate_chatgpt_document`.
 - Video Generation (generate_video): Call `generate_video` with a prompt describing the scene.
-- GitHub Integration: When the user asks about GitHub (repositories, code, branches, commits, pull requests, issues, releases, actions/workflows, gists, or searching), use the dedicated GitHub tools (`github_get_user`, `github_list_repos`, `github_get_repo`, `github_create_repo`, `github_delete_repo`, `github_fork_repo`, `github_list_repo_contents`, `github_get_file_content`, `github_create_or_update_file`, `github_delete_file`, `github_list_branches`, `github_create_branch`, `github_list_commits`, `github_get_commit`, `github_list_pull_requests`, `github_get_pull_request`, `github_get_pr_diff`, `github_create_pull_request`, `github_update_pull_request`, `github_merge_pull_request`, `github_list_issues`, `github_get_issue`, `github_create_issue`, `github_update_issue`, `github_list_issue_comments`, `github_create_issue_comment`, `github_list_releases`, `github_get_latest_release`, `github_create_release`, `github_list_workflows`, `github_trigger_workflow`, `github_list_workflow_runs`, `github_check_workflow_status`, `github_download_artifact`, `github_list_gists`, `github_create_gist`, `github_search_code`, `github_search_repositories`, `github_search_issues`). Always call the appropriate tool directly to fetch or modify GitHub data.
+$githubSection
 """.trim()
     }
 
@@ -4082,6 +4149,76 @@ CRITICAL INSTRUCTIONS:
             timestamp = System.currentTimeMillis()
         )
         repository.insertMessage(msg)
+    }
+
+    private fun parseToolCallsFromText(rawText: String): List<ToolCall> {
+        val text = rawText.trim()
+        val lower = text.lowercase()
+        if (!lower.contains("tool_call") && !lower.contains("tool_calls") && !lower.contains("invoke") && !lower.contains("github_")) return emptyList()
+        val result = mutableListOf<ToolCall>()
+
+        // Format 1: XML invoke — <invoke name="tool_name"><parameter name="param">val</parameter></invoke>
+        val invokeRegex = Regex("""<invoke\s+name="([^"]+)"[^>]*>(.*?)</invoke>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        for (m in invokeRegex.findAll(text)) {
+            val name = m.groupValues[1].trim()
+            val paramsBlock = m.groupValues[2]
+            val args = com.google.gson.JsonObject()
+            val paramRegex = Regex("""<parameter\s+name="([^"]+)"[^>]*>(.*?)</parameter>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+            for (pm in paramRegex.findAll(paramsBlock)) {
+                args.addProperty(pm.groupValues[1].trim(), pm.groupValues[2].trim())
+            }
+            result.add(ToolCall("tc_${UUID.randomUUID().toString().take(8)}", name, args.toString()))
+        }
+        if (result.isNotEmpty()) return result
+
+        // Format 2: JSON inside <tool_call> — <tool_call>{"name": "...", "arguments": {...}}</tool_call>
+        val jsonToolCallRegex = Regex("""<tool_calls?>\s*(\{[^<]+\})\s*</tool_calls?>""", RegexOption.IGNORE_CASE)
+        for (m in jsonToolCallRegex.findAll(text)) {
+            val jsonContent = m.groupValues[1].trim()
+            try {
+                val obj = com.google.gson.JsonParser.parseString(jsonContent).asJsonObject
+                val name = obj.get("name")?.asString ?: ""
+                val argsObj = obj.get("arguments")
+                val argsStr = when {
+                    argsObj == null -> "{}"
+                    argsObj.isJsonPrimitive -> argsObj.asString
+                    else -> com.google.gson.Gson().toJson(argsObj)
+                }
+                if (name.isNotEmpty()) {
+                    result.add(ToolCall("tc_${UUID.randomUUID().toString().take(8)}", name, argsStr))
+                }
+            } catch (_: Exception) {}
+        }
+        if (result.isNotEmpty()) return result
+
+        // Format 3: Named tool call with JSON — <tool_call> tool_name {"arg": "val"} </tool_call>
+        val namedJsonRegex = Regex("""<tool_calls?>\s*([a-zA-Z0-9_-]+)\s*(\{[^<]*\})\s*</tool_calls?>""", RegexOption.IGNORE_CASE)
+        for (m in namedJsonRegex.findAll(text)) {
+            val name = m.groupValues[1].trim()
+            val jsonArgs = m.groupValues[2].trim()
+            result.add(ToolCall("tc_${UUID.randomUUID().toString().take(8)}", name, jsonArgs))
+        }
+        if (result.isNotEmpty()) return result
+
+        // Format 4: Pipe-delimited — <tool_call> name [key1:val1 | key2:val2] </tool_call>
+        val pipeRegex = Regex("""<tool_calls?>\s*([a-zA-Z0-9_-]+)\s*\[([^\]]*)\]\s*</tool_calls?>""", RegexOption.IGNORE_CASE)
+        for (m in pipeRegex.findAll(text)) {
+            val name = m.groupValues[1].trim()
+            val argsText = m.groupValues[2].trim()
+            val args = if (argsText.startsWith("{") && argsText.endsWith("}")) {
+                argsText
+            } else {
+                val obj = com.google.gson.JsonObject()
+                for (p in argsText.split("|")) {
+                    val ci = p.indexOf(':')
+                    if (ci > 0) obj.addProperty(p.substring(0, ci).trim(), p.substring(ci + 1).trim())
+                }
+                obj.toString()
+            }
+            result.add(ToolCall("tc_${UUID.randomUUID().toString().take(8)}", name, args))
+        }
+
+        return result
     }
 
     private fun maybeAutoApproveTool(toolCall: ToolCall) {

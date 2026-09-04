@@ -346,8 +346,9 @@ fun IntegrationIcon(
             else -> Pair(Color(0xFF6B7280), Color(0xFF374151))
         }
     }
-    val initials = remember(appName) {
-        if (appName.isBlank()) "?"
+    val initials = remember(appName, appId) {
+        if (appId.equals("github", ignoreCase = true) || appName.equals("github", ignoreCase = true)) "GH"
+        else if (appName.isBlank()) "?"
         else {
             val words = appName.split(" ", "_", "-").filter { it.isNotBlank() }
             if (words.size >= 2) "${words[0].first().uppercase()}${words[1].first().uppercase()}"

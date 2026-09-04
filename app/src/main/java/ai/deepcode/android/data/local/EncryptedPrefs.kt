@@ -156,11 +156,11 @@ class EncryptedPrefs private constructor(context: Context) {
     fun getChatGPTAccountId(): String = getSetting("chatgpt_account_id", "")
     fun saveChatGPTAccountId(id: String) = saveSetting("chatgpt_account_id", id)
 
-    fun getChatGPTHeadlessConversationId(): String = getSetting("chatgpt_headless_conversation_id", "")
-    fun saveChatGPTHeadlessConversationId(convId: String) = saveSetting("chatgpt_headless_conversation_id", convId)
+    fun getChatGPTConversationId(): String = getSetting("chatgpt_conversation_id", "").ifEmpty { getSetting("chatgpt_headless_conversation_id", "") }
+    fun saveChatGPTConversationId(convId: String) = saveSetting("chatgpt_conversation_id", convId)
 
-    fun getChatGPTHeadlessParentMessageId(): String = getSetting("chatgpt_headless_parent_message_id", "")
-    fun saveChatGPTHeadlessParentMessageId(msgId: String) = saveSetting("chatgpt_headless_parent_message_id", msgId)
+    fun getChatGPTParentMessageId(): String = getSetting("chatgpt_parent_message_id", "").ifEmpty { getSetting("chatgpt_headless_parent_message_id", "") }
+    fun saveChatGPTParentMessageId(msgId: String) = saveSetting("chatgpt_parent_message_id", msgId)
 }
 
 private const val DEFAULT_CUSTOM_PERSONA = ""

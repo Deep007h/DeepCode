@@ -14,7 +14,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.CookieManager
-import ai.deepcode.android.service.chatgpt.ChatGPTHeadlessBridge
+import ai.deepcode.android.service.chatgpt.ChatGPTBridge
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.Image
@@ -57,7 +57,7 @@ data class BrandConfig(
 )
 
 val INTEGRATION_BRANDS = mapOf(
-    "chatgpt" to BrandConfig("GPT", Color(0xFF10A37F), "Headless AI engine for images, docs & automations"),
+    "chatgpt" to BrandConfig("GPT", Color(0xFF10A37F), "ChatGPT integration for image and docs creation"),
     "airtable" to BrandConfig("AI", Color(0xFF18BFFF), "Powerful data collaboration"),
     "asana" to BrandConfig("AS", Color(0xFFF06A6A), "Task management platform"),
     "discord" to BrandConfig("DI", Color(0xFF5865F2), "Community communication"),
@@ -758,7 +758,7 @@ fun ConnectionsScreen(
         )
     }
 
-    // ChatGPT Headless Integration Dialog (Google Sign-In & Token)
+    // ChatGPT Integration Dialog (Google Sign-In & Token)
     if (showChatGPTDialog) {
         Dialog(
             onDismissRequest = {
@@ -810,7 +810,7 @@ fun ConnectionsScreen(
                                     color = AppWhite
                                 )
                                 Text(
-                                    text = "Headless image & document studio",
+                                    text = "ChatGPT integration for image and docs creation",
                                     fontSize = 11.sp,
                                     color = AppMuted
                                 )
@@ -936,7 +936,7 @@ fun ConnectionsScreen(
                                                             isCheckingChatGPTLogin = true
                                                             chatGPTStatusMessage = "Session detected! Authenticating..."
                                                             coroutineScope.launch {
-                                                                val bridge = ChatGPTHeadlessBridge.getInstance(ctx)
+                                                                val bridge = ChatGPTBridge.getInstance(ctx)
                                                                 val token = bridge.fetchAccessTokenFromSessionCookie(cookies)
                                                                 if (token != null && token.isNotBlank()) {
                                                                     viewModel.connectChatGPT(token)
@@ -974,7 +974,7 @@ fun ConnectionsScreen(
                                     coroutineScope.launch {
                                         isCheckingChatGPTLogin = true
                                         chatGPTStatusMessage = "Checking cookies..."
-                                        val bridge = ChatGPTHeadlessBridge.getInstance(context)
+                                        val bridge = ChatGPTBridge.getInstance(context)
                                         val token = bridge.fetchAccessTokenFromSessionCookie(cookies)
                                         if (token != null && token.isNotBlank()) {
                                             viewModel.connectChatGPT(token)
@@ -1047,7 +1047,7 @@ fun ConnectionsScreen(
                                     if (chatGPTManualToken.isNotBlank()) {
                                         coroutineScope.launch {
                                             val input = chatGPTManualToken.trim()
-                                            val bridge = ChatGPTHeadlessBridge.getInstance(context)
+                                            val bridge = ChatGPTBridge.getInstance(context)
                                             val token = bridge.fetchAccessTokenFromSessionCookie(input) ?: input
                                             viewModel.connectChatGPT(token)
                                             showChatGPTDialog = false
