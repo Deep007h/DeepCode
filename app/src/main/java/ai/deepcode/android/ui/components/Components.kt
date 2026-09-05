@@ -1026,6 +1026,20 @@ private val RE_STRIP_SEDIMENT = Regex("""sediment://file[_-][a-zA-Z0-9_-]+""")
 private val RE_STRIP_FILE_DASH = Regex("""file-[a-zA-Z0-9_-]{8,}""")
 private val RE_STRIP_FILE_UNDER = Regex("""file_[a-zA-Z0-9_-]{8,}""")
 
+private val RE_CONTROL_SEQUENCE_DELIMITED = Regex("""\u0003[^\u0006\n]*(\u0006|$)""")
+private val RE_CHATGPT_CITATION = Regex("""(?:\u0003|\[)?cite[\s\u0004][^\u0006\]\n]*(?:\u0006|\])?""")
+private val RE_BRACKET_CITATION = Regex("""\[(?:cite|citation)[^\]\n]*\]""", RegexOption.IGNORE_CASE)
+private val RE_ASCII_CONTROL_CHARS = Regex("""[\u0000-\u0008\u000B\u000C\u000E-\u001F]""")
+
+fun cleanControlAndCitationTokens(input: String): String {
+    if (input.isEmpty()) return input
+    return input
+        .replace(RE_CONTROL_SEQUENCE_DELIMITED, "")
+        .replace(RE_CHATGPT_CITATION, "")
+        .replace(RE_BRACKET_CITATION, "")
+        .replace(RE_ASCII_CONTROL_CHARS, "")
+}
+
 fun buildStreamingMarkdown(
     text: String,
     codeBg: Color,
@@ -1035,10 +1049,11 @@ fun buildStreamingMarkdown(
 ): AnnotatedString = buildAnnotatedString {
     if (text.isEmpty()) return@buildAnnotatedString
 
-    val clean = if (!text.contains("![") && !text.contains("[image:") && !text.contains("sediment") && !text.contains("file-") && !text.contains("file_")) {
-        text
+    val cleanTokens = cleanControlAndCitationTokens(text)
+    val clean = if (!cleanTokens.contains("![") && !cleanTokens.contains("[image:") && !cleanTokens.contains("sediment") && !cleanTokens.contains("file-") && !cleanTokens.contains("file_")) {
+        cleanTokens
     } else {
-        text.replace(RE_STRIP_MD_IMAGE, "")
+        cleanTokens.replace(RE_STRIP_MD_IMAGE, "")
             .replace(RE_STRIP_TAG_IMAGE, "")
             .replace(RE_STRIP_SEDIMENT, "")
             .replace(RE_STRIP_FILE_DASH, "")
@@ -1183,7 +1198,7 @@ fun MarkdownText(
     isStreaming: Boolean = false
 ) {
     val context = LocalContext.current
-    val cleanText = remember(text) { text }
+    val cleanText = remember(text) { cleanControlAndCitationTokens(text) }
 
     // 1. Extract raw file IDs and image URLs with fast-path check
     val allImages = remember(cleanText) {
@@ -1667,7 +1682,7 @@ fun parseMessageContent(content: String, isUser: Boolean): List<MessageContentPa
 
 fun parseMessageContentInternal(content: String, isUser: Boolean): List<MessageContentPart> {
     val parts = mutableListOf<MessageContentPart>()
-    var remaining = content
+    var remaining = cleanControlAndCitationTokens(content)
     // Clean raw DSML markup if present using pre-compiled regexes
     remaining = remaining.replace(DSML_TOOL_CALLS_REGEX, "")
     remaining = remaining.replace(DSML_INVOKE_REGEX, "")

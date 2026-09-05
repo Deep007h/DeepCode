@@ -51,6 +51,20 @@ class ChatGPTBridge private constructor(private val context: Context) {
         private const val TAG = "ChatGPTBridge"
         private const val USER_AGENT = "ChatGPT/1.2026.216 (Android 14; Mobile; build 2621621)"
 
+        private val RE_CONTROL_SEQUENCE_DELIMITED = Regex("""\u0003[^\u0006\n]*(\u0006|$)""")
+        private val RE_CHATGPT_CITATION = Regex("""(?:\u0003|\[)?cite[\s\u0004][^\u0006\]\n]*(?:\u0006|\])?""")
+        private val RE_BRACKET_CITATION = Regex("""\[(?:cite|citation)[^\]\n]*\]""", RegexOption.IGNORE_CASE)
+        private val RE_ASCII_CONTROL_CHARS = Regex("""[\u0000-\u0008\u000B\u000C\u000E-\u001F]""")
+
+        fun cleanGptText(input: String): String {
+            if (input.isEmpty()) return input
+            return input
+                .replace(RE_CONTROL_SEQUENCE_DELIMITED, "")
+                .replace(RE_CHATGPT_CITATION, "")
+                .replace(RE_BRACKET_CITATION, "")
+                .replace(RE_ASCII_CONTROL_CHARS, "")
+        }
+
         @Volatile
         private var instance: ChatGPTBridge? = null
 
@@ -553,7 +567,7 @@ class ChatGPTBridge private constructor(private val context: Context) {
         }
 
         SessionTurnResult(
-            text = collected.toString().trim(),
+            text = cleanGptText(collected.toString().trim()),
             assetPointers = emptyList(),
             conversationId = "",
             messageId = ""
@@ -700,7 +714,8 @@ class ChatGPTBridge private constructor(private val context: Context) {
                             val parts = contentObj.getAsJsonArray("parts")
                             if (parts.size() > 0) {
                                 val p = parts[0]
-                                val text = if (p.isJsonPrimitive) p.asString else ""
+                                val rawText = if (p.isJsonPrimitive) p.asString else ""
+                                val text = cleanGptText(rawText)
                                 if (text.isNotEmpty() && text != lastExtractedText) {
                                     val delta = if (text.startsWith(lastExtractedText)) {
                                         text.substring(lastExtractedText.length)
@@ -736,7 +751,7 @@ class ChatGPTBridge private constructor(private val context: Context) {
         }
 
         SessionTurnResult(
-            text = collectedText.toString().trim(),
+            text = cleanGptText(collectedText.toString().trim()),
             assetPointers = extractedAssets.distinct(),
             conversationId = returnedConvId ?: conversationId ?: "",
             messageId = returnedMsgId ?: ""
@@ -882,7 +897,7 @@ class ChatGPTBridge private constructor(private val context: Context) {
                     finalText = finalText.replace(m.value, "[image:$local]")
                 }
             }
-            onComplete(finalText)
+            onComplete(cleanGptText(finalText))
         } catch (t: Throwable) {
             if (t is kotlin.coroutines.cancellation.CancellationException) throw t
             AppLogger.e(TAG, "streamTurn failed: ${t.message}", t)

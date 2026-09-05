@@ -3637,25 +3637,29 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 }
             }
 
-            // Route uploaded images or image action buttons to ChatGPT
+            val isChatGptSession = _activeModel.value.provider.equals("ChatGPT", ignoreCase = true) ||
+                    _activeModel.value.id.equals("chatgpt-4o", ignoreCase = true) ||
+                    repository.securePrefs.getSetting("session_provider_$sessionId", "").equals("ChatGPT", ignoreCase = true)
+
+            // Route uploaded images or image action buttons to ChatGPT, or route all messages in dedicated ChatGPT session
             val isImageAction = text.contains("Remove background", ignoreCase = true) ||
                     text.contains("Erase the", ignoreCase = true) ||
                     text.contains("Resize and reframe", ignoreCase = true) ||
                     text.contains("For this image:", ignoreCase = true)
             val hasImageTag = RE_IMAGE_TAG.containsMatchIn(msgText) || RE_MARKDOWN_IMAGE.containsMatchIn(msgText)
-            val shouldRouteToChatGPT = uploadedImage != null || isImageAction || (hasImageTag && !isAudioCreationRequest(text))
+            val shouldRouteToChatGPT = isChatGptSession || uploadedImage != null || isImageAction || (hasImageTag && !isAudioCreationRequest(text))
 
             if (shouldRouteToChatGPT) {
-                _mediaProcessingType.value = "chatgpt"
-                _mediaProcessingPrompt.value = "ChatGPT analyzing image..."
-                _streamedText.value = ""
-
                 val targetImagePath = uploadedImage?.filePath
                     ?: RE_IMAGE_TAG.find(msgText)?.groupValues?.get(1)?.trim()
                     ?: RE_MARKDOWN_IMAGE.find(msgText)?.groupValues?.get(2)?.trim()
 
+                _mediaProcessingType.value = "chatgpt"
+                _mediaProcessingPrompt.value = if (targetImagePath != null) "ChatGPT analyzing image..." else "ChatGPT thinking..."
+                _streamedText.value = ""
+
                 val promptForGpt = text.replace(RE_IMAGE_TAG, "").replace(RE_MARKDOWN_IMAGE, "").trim().ifEmpty {
-                    "Describe and analyze this image in detail."
+                    if (targetImagePath != null) "Describe and analyze this image in detail." else text
                 }
 
                 val bridge = ai.deepcode.android.service.chatgpt.ChatGPTBridge.getInstance(repository.appContext)
