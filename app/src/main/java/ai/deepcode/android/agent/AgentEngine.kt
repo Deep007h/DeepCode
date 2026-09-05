@@ -348,7 +348,7 @@ class AgentEngine(private val context: Context) {
             AppLogger.e("AgentEngine", "No AI providers available!")
             throw IllegalStateException("No AI providers configured")
         }
-        var provider = providers.firstOrNull { it.name == providerSetting }
+        var provider = providers.firstOrNull { it.name.equals(providerSetting, ignoreCase = true) }
             ?: providers.firstOrNull { it.name == "Zen AI" }
             ?: providers.first()
 
@@ -368,7 +368,13 @@ class AgentEngine(private val context: Context) {
         }
 
         val hasModel = provider.models.any { it.id == modelSetting }
-        val finalModel = if (hasModel) modelSetting else (provider.models.firstOrNull()?.id ?: "")
+        val finalModel = if (!modelOverride.isNullOrBlank()) {
+            modelOverride
+        } else if (hasModel) {
+            modelSetting
+        } else {
+            provider.models.firstOrNull()?.id ?: ""
+        }
         return Pair(provider, finalModel)
     }
     // Helper to get API key for the chosen provider
@@ -1533,6 +1539,7 @@ class AgentEngine(private val context: Context) {
         // Apply per-invocation overrides
         val effectiveProvider = providerOverride
         val effectiveModel = modelOverride
+        var activeProviderName = effectiveProvider ?: securePrefs.getSetting("agent_provider", "Zen AI")
         val agentJob = launch(Dispatchers.IO) {
             try {
                 // Insert user message once
@@ -1576,7 +1583,7 @@ class AgentEngine(private val context: Context) {
 
                 // Build fallback provider chain: primary first, then all other providers
                 val primaryProvider = resolveProviderAndModel(effectiveProvider, effectiveModel)
-                val fallbackProviders = if (noFallback) {
+                val fallbackProviders = if (noFallback || effectiveProvider != null) {
                     linkedSetOf(primaryProvider)
                 } else {
                     val allProviders = AIProviderFactory.providers
@@ -1642,11 +1649,17 @@ class AgentEngine(private val context: Context) {
                     if (ai.deepcode.android.data.remote.ApiKeyRotator.isKeyExhausted(storageId, candidate.slotIndex, candidate.apiKey)) 1 else 0
                 }.thenBy { it.slotIndex })
 
+                if (resolvedFallback.isEmpty()) {
+                    val pName = primaryProvider.first.name
+                    throw IllegalStateException("No API key configured for $pName. Please configure your API key in Settings → API Keys.")
+                }
+
                 val providerCount = resolvedFallback.size
                 var providerIndex = 0
 
                 for ((provider, modelId, apiKey, slotIndex) in resolvedFallback) {
                     if (delivered) break
+                    activeProviderName = provider.name
                     providerIndex++
                     val customUrl = getCustomUrlForProvider(provider)
 
@@ -2072,10 +2085,22 @@ class AgentEngine(private val context: Context) {
                 AppLogger.e("AgentEngine", "Error in agent loop", e)
                 val isRateLimit = ai.deepcode.android.data.remote.ApiKeyRotator.isRotatableError(e, null, e.message)
 
-                val reply = if (isRateLimit && sessionId.startsWith("telegram_")) {
-                    ai.deepcode.android.service.telegram.TelegramBridgeService.TELEGRAM_RATE_LIMIT_REPLY
+                val reply = if (sessionId.startsWith("telegram_")) {
+                    if (isRateLimit) {
+                        ai.deepcode.android.service.telegram.TelegramBridgeService.getRateLimitReply(activeProviderName)
+                    } else if (e is IllegalStateException && e.message?.contains("API key configured") == true) {
+                        "⚠️ " + (e.message ?: "API key required for $activeProviderName")
+                    } else {
+                        getLocalBasicReply(userPrompt, e)
+                    }
                 } else {
-                    getLocalBasicReply(userPrompt, e)
+                    if (isRateLimit) {
+                        "Rate limit exceeded for $activeProviderName. Please try again later or switch providers."
+                    } else if (e is IllegalStateException && e.message?.contains("API key configured") == true) {
+                        "⚠️ " + (e.message ?: "API key required for $activeProviderName")
+                    } else {
+                        getLocalBasicReply(userPrompt, e)
+                    }
                 }
                 try {
                     repository.insertMessage(Message(

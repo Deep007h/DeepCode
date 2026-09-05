@@ -403,25 +403,56 @@ fun ChatScreen(
     val isImeVisible = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    // With reverseLayout = true, index 0 is at the bottom (newest message).
-    // When keyboard opens, if user is already near the bottom (index <= 1), cleanly ensure index 0 is in view.
-    LaunchedEffect(isImeVisible) {
-        if (isImeVisible && lazyListState.firstVisibleItemIndex <= 1) {
-            try {
-                lazyListState.scrollToItem(0)
-            } catch (_: Exception) {}
+    val isNearBottom by remember {
+        derivedStateOf {
+            val info = lazyListState.layoutInfo
+            val lastVis = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            info.totalItemsCount == 0 || lastVis >= (info.totalItemsCount - 2).coerceAtLeast(0)
         }
     }
 
     var lastScrolledSessionId by remember { mutableStateOf("") }
+    LaunchedEffect(messages.size, activeSessionId) {
+        if (messages.isNotEmpty()) {
+            val isNewSession = (activeSessionId != lastScrolledSessionId)
+            if (isNewSession) {
+                lastScrolledSessionId = activeSessionId
+                val total = lazyListState.layoutInfo.totalItemsCount
+                if (total > 0) {
+                    try {
+                        lazyListState.scrollToItem(total - 1)
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+    }
 
-    // When switching to a new session, ensure we start anchored at the newest messages (index 0).
-    LaunchedEffect(activeSessionId) {
-        if (activeSessionId != lastScrolledSessionId) {
-            lastScrolledSessionId = activeSessionId
-            try {
-                lazyListState.scrollToItem(0)
-            } catch (_: Exception) {}
+    LaunchedEffect(isImeVisible) {
+        if (isImeVisible && isNearBottom) {
+            kotlinx.coroutines.delay(100L)
+            val total = lazyListState.layoutInfo.totalItemsCount
+            if (total > 0 && !lazyListState.isScrollInProgress) {
+                try {
+                    lazyListState.scrollToItem(total - 1)
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    // Follow streaming text gently at ~4fps without micro-jitter
+    LaunchedEffect(Unit) {
+        var lastScrollTime = 0L
+        viewModel.streamedText.collect {
+            val now = System.currentTimeMillis()
+            if (now - lastScrollTime >= 200L && isStreaming && isNearBottom && !lazyListState.isScrollInProgress) {
+                lastScrollTime = now
+                val total = lazyListState.layoutInfo.totalItemsCount
+                if (total > 0) {
+                    try {
+                        lazyListState.scrollToItem(total - 1)
+                    } catch (_: Exception) {}
+                }
+            }
         }
     }
 
@@ -518,7 +549,9 @@ fun ChatScreen(
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             val showScrollToBottomButton by remember {
                 derivedStateOf {
-                    lazyListState.firstVisibleItemIndex > 2
+                    val info = lazyListState.layoutInfo
+                    val lastVis = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+                    info.totalItemsCount > 4 && lastVis < info.totalItemsCount - 2
                 }
             }
 
@@ -999,23 +1032,14 @@ fun ChatScreen(
                         }
                     }
 
-                    val reversedItems = remember(combinedItems) { combinedItems.asReversed() }
-
-                    val lastUserMessageId = remember(messages) {
-                        messages.findLast { it.role == "user" }?.id
-                    }
-                    val lastAiMessageId = remember(messages) {
-                        messages.findLast { it.role == "assistant" && !it.isToolCall }?.id
-                    }
-
                     LazyColumn(
                         state = lazyListState,
-                        reverseLayout = true,
+                        reverseLayout = false,
                         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
                         contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                    items(reversedItems, key = { item ->
+                    items(combinedItems, key = { item ->
                         when (item) {
                             is ChatItem.NormalMessage -> "msg_${item.message.id}"
                             is ChatItem.ToolExecutionGroup -> "group_${item.groupId}"
@@ -1034,24 +1058,25 @@ fun ChatScreen(
                             is ChatItem.NormalMessage -> {
                                 val onSelect = remember(viewModel) { { layoutName: String ->
                                     viewModel.sendMessage("Use $layoutName layout")
-                                    if (lazyListState.firstVisibleItemIndex > 0) {
-                                        scope.launch { lazyListState.animateScrollToItem(0) }
+                                    scope.launch {
+                                        kotlinx.coroutines.delay(40L)
+                                        val total = lazyListState.layoutInfo.totalItemsCount
+                                        if (total > 0) lazyListState.animateScrollToItem(total - 1)
                                     }
+                                    Unit
                                 } }
                                 val onSendSug = remember(viewModel) { { suggestion: String ->
                                     viewModel.sendMessage(suggestion)
-                                    if (lazyListState.firstVisibleItemIndex > 0) {
-                                        scope.launch { lazyListState.animateScrollToItem(0) }
+                                    scope.launch {
+                                        kotlinx.coroutines.delay(40L)
+                                        val total = lazyListState.layoutInfo.totalItemsCount
+                                        if (total > 0) lazyListState.animateScrollToItem(total - 1)
                                     }
+                                    Unit
                                 } }
-                                val showTimestamp = when (item.message.role) {
-                                    "user" -> item.message.id == lastUserMessageId
-                                    "assistant" -> item.message.id == lastAiMessageId
-                                    else -> false
-                                }
                                 MessageBubble(
                                     message = item.message,
-                                    showTimestamp = showTimestamp,
+                                    showTimestamp = true,
                                     imageCache = imageCache,
                                     onSelectLayout = onSelect,
                                     onSendSuggestion = onSendSug
@@ -1214,9 +1239,11 @@ fun ChatScreen(
                                 val toSend = inputMsg
                                 inputMsg = ""
                                 viewModel.sendMessage(toSend)
-                                if (lazyListState.firstVisibleItemIndex > 0) {
-                                    scope.launch {
-                                        lazyListState.animateScrollToItem(0)
+                                scope.launch {
+                                    kotlinx.coroutines.delay(40L)
+                                    val total = lazyListState.layoutInfo.totalItemsCount
+                                    if (total > 0) {
+                                        lazyListState.animateScrollToItem(total - 1)
                                     }
                                 }
                             }
@@ -1284,9 +1311,11 @@ fun ChatScreen(
                                         val toSend = inputMsg
                                         inputMsg = ""
                                         viewModel.sendMessage(toSend)
-                                        if (lazyListState.firstVisibleItemIndex > 0) {
-                                            scope.launch {
-                                                lazyListState.animateScrollToItem(0)
+                                        scope.launch {
+                                            kotlinx.coroutines.delay(40L)
+                                            val total = lazyListState.layoutInfo.totalItemsCount
+                                            if (total > 0) {
+                                                lazyListState.animateScrollToItem(total - 1)
                                             }
                                         }
                                     }
@@ -1369,7 +1398,10 @@ private fun BoxScope.ScrollToBottomButton(visible: Boolean, lazyListState: LazyL
         val scope = rememberCoroutineScope()
         FloatingActionButton(
             onClick = { scope.launch {
-                lazyListState.animateScrollToItem(0)
+                val total = lazyListState.layoutInfo.totalItemsCount
+                if (total > 0) {
+                    lazyListState.animateScrollToItem(total - 1)
+                }
             }},
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -3618,7 +3650,10 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 content = msgText,
                 timestamp = System.currentTimeMillis()
             )
-            repository.insertMessage(userMsg)
+            // 1. Synchronously update in-memory message list so UI renders userMsg instantly
+            _messages.update { current ->
+                if (current.none { it.id == userMsg.id }) current + userMsg else current
+            }
             _attachedFiles.value = emptyList()
             _streamedText.value = ""
             toolCallDepth = 0
@@ -3628,6 +3663,9 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             val msgId = UUID.randomUUID().toString()
             _streamingMessageId.value = msgId
             _isStreaming.value = true
+
+            // 2. Persist to Room SQLite in background
+            repository.insertMessage(userMsg)
 
             if (isAudioCreationRequest(text)) {
                 val isMeta = isMetaReferenceText(text)
@@ -4755,6 +4793,9 @@ $githubSection
             content = finalContent,
             timestamp = System.currentTimeMillis()
         )
+        _messages.update { current ->
+            if (current.none { it.id == msg.id }) current + msg else current
+        }
         repository.insertMessage(msg)
     }
 

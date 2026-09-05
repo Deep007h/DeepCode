@@ -223,6 +223,7 @@ val OPENAI_PROVIDERS = listOf(
         "google/gemini-3.8-flash" to "Gemini 3.8 Flash", "moonshotai/kimi-k3" to "Kimi K3",
         "zai-org/GLM-5.3-Flash" to "GLM 5.3 Flash", "openai/gpt-5.4" to "GPT 5.4",
         "anthropic/claude-sonnet-4.6" to "Claude Sonnet 4.6", "MiniMaxAI/MiniMax-M3" to "MiniMax M3",
+        "MiniMax-M3" to "MiniMax M3", "minimax-m3" to "MiniMax M3",
         "MiniMaxAI/MiniMax-M2.7" to "MiniMax M2.7",
         "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16" to "Nemotron 3.5 Lightning"
     )),
