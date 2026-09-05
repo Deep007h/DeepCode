@@ -1850,6 +1850,20 @@ class ToolExecutor(private val context: Context? = null) {
         return "<speak version=\"1.0\" xmlns=\"http://www.w3.org/2001/10/synthesis\"$ns xml:lang=\"$locale\">$voiceTag</speak>"
     }
 
+    private fun getEdgeTtsClientToken(): String {
+        val prefToken = context?.let {
+            try {
+                ai.deepcode.android.data.local.EncryptedPrefs.getInstance(it).getSetting("edge_tts_client_token", "")
+            } catch (_: Exception) { "" }
+        } ?: ""
+        if (prefToken.isNotBlank()) return prefToken
+
+        val envToken = System.getenv("EDGE_TTS_CLIENT_TOKEN") ?: System.getProperty("EDGE_TTS_CLIENT_TOKEN") ?: ""
+        if (envToken.isNotBlank()) return envToken
+
+        return "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
+    }
+
     private fun edgeWsSynthesize(ssml: String): ByteArray? {
         val latch = CountDownLatch(1)
         val audioBuf = ByteArrayOutputStream()
@@ -1861,7 +1875,7 @@ class ToolExecutor(private val context: Context? = null) {
             .build()
 
         val connectionId = java.util.UUID.randomUUID().toString()
-        val clientToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
+        val clientToken = getEdgeTtsClientToken()
         val winEpoch = 11644473600L
         val now = System.currentTimeMillis() / 1000L + winEpoch
         val roundedSec = now - (now % 300)
