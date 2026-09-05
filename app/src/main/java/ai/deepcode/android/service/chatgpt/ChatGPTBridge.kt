@@ -52,17 +52,25 @@ class ChatGPTBridge private constructor(private val context: Context) {
         private const val USER_AGENT = "ChatGPT/1.2026.216 (Android 14; Mobile; build 2621621)"
 
         private val RE_CONTROL_SEQUENCE_DELIMITED = Regex("""\u0003[^\u0006\n]*(\u0006|$)""")
-        private val RE_CHATGPT_CITATION = Regex("""(?:\u0003|\[)?cite[\s\u0004][^\u0006\]\n]*(?:\u0006|\])?""")
+        private val RE_CHATGPT_CITATION = Regex("""[^\w\s]*\bcite\b[^\w\s]*(?:turn\d+[a-zA-Z0-9_\-]*[^\w\s]*)+""", RegexOption.IGNORE_CASE)
         private val RE_BRACKET_CITATION = Regex("""\[(?:cite|citation)[^\]\n]*\]""", RegexOption.IGNORE_CASE)
-        private val RE_ASCII_CONTROL_CHARS = Regex("""[\u0000-\u0008\u000B\u000C\u000E-\u001F]""")
 
         fun cleanGptText(input: String): String {
             if (input.isEmpty()) return input
-            return input
+            val withoutCitations = input
                 .replace(RE_CONTROL_SEQUENCE_DELIMITED, "")
                 .replace(RE_CHATGPT_CITATION, "")
                 .replace(RE_BRACKET_CITATION, "")
-                .replace(RE_ASCII_CONTROL_CHARS, "")
+
+            val sb = StringBuilder(withoutCitations.length)
+            for (c in withoutCitations) {
+                val isControl = (c in '\u0000'..'\u0008') || (c in '\u000B'..'\u000C') || (c in '\u000E'..'\u001F') || (c in '\u007F'..'\u009F')
+                val isPua = (c in '\uE000'..'\uF8FF')
+                if (!isControl && !isPua && c != '\uFFFD') {
+                    sb.append(c)
+                }
+            }
+            return sb.toString()
         }
 
         @Volatile

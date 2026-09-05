@@ -28,7 +28,11 @@ class AutomationAlarmReceiver : BroadcastReceiver() {
 
         CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
             try {
-                AutomationForegroundService.start(context, "Automation Task")
+                val rule = try {
+                    AutomationRepository(context).getAutomationById(automationId)
+                } catch (_: Exception) { null }
+                val taskName = rule?.name ?: "Automation Task"
+                AutomationForegroundService.start(context, taskName)
                 AutomationRunner.executeAutomation(context.applicationContext, automationId, forceRun)
             } catch (e: Exception) {
                 AppLogger.e("AutomationAlarmReceiver", "Failed to execute automation $automationId", e)

@@ -10,7 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -91,7 +91,7 @@ fun SettingsScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Transparent)
+            .background(AppScreenBg)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)
@@ -275,7 +275,7 @@ fun SettingsScreen(
 
                 // Manage Templates Row
                 SettingsNavRow(
-                    icon = Icons.Default.Article,
+                    icon = Icons.AutoMirrored.Filled.Article,
                     title = "Manage Templates",
                     onClick = onManageTemplates
                 )
@@ -372,7 +372,7 @@ fun SettingsScreen(
                     icon = Icons.Default.Info,
                     title = "About",
                     subtitle = "App information, version, policies, and legal.",
-                    onClick = { Toast.makeText(context, "DeepCode v1.0.0 (Stable)", Toast.LENGTH_SHORT).show() }
+                    onClick = { Toast.makeText(context, "DeepCode v${ai.deepcode.android.BuildConfig.VERSION_NAME} (Build ${ai.deepcode.android.BuildConfig.VERSION_CODE})", Toast.LENGTH_SHORT).show() }
                 )
             }
         }
@@ -388,7 +388,7 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
                     .border(1.dp, Color(0xFFE53935), RoundedCornerShape(12.dp))
-                    .clickable { showDeleteAccountDialog = true }
+                    .bouncyClickable(provideHaptic = true) { showDeleteAccountDialog = true }
                     .padding(vertical = 12.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -652,7 +652,7 @@ fun SettingsSubscreenRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
+            .bouncyClickable(provideHaptic = true) { onClick() }
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween

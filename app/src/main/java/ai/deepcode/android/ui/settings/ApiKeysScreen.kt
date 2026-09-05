@@ -472,7 +472,7 @@ fun ApiKeysScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Transparent)
+            .background(AppScreenBg)
     ) {
         Row(
             modifier = Modifier
