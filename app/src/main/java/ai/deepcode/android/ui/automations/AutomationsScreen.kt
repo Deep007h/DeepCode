@@ -5,8 +5,7 @@ import ai.deepcode.android.ui.components.NeoBrutalistButton
 import ai.deepcode.android.ui.theme.*
 import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -139,10 +138,21 @@ fun AutomationsScreen(
         "Custom" to "*/30 * * * *"
     )
 
+    val infiniteGlow = rememberInfiniteTransition(label = "activeRuleGlow")
+    val glowAlpha by infiniteGlow.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowAlpha"
+    )
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF0D0E12))
+            .background(AppScreenBg)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(top = 16.dp, bottom = 32.dp)
@@ -161,7 +171,7 @@ fun AutomationsScreen(
                             .clip(CircleShape)
                             .background(Color(0xFF1E2028))
                             .border(1.dp, Color(0xFF2E323D), CircleShape)
-                            .clickable { onBack() },
+                            .bouncyClickable(provideHaptic = true) { onBack() },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -193,7 +203,7 @@ fun AutomationsScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(24.dp))
                         .background(Color(0xFFF59E0B))
-                        .clickable {
+                        .bouncyClickable(provideHaptic = true) {
                             editingRuleId = null
                             newRuleName = ""
                             newRuleDesc = ""
@@ -361,6 +371,7 @@ fun AutomationsScreen(
 
                 Box(
                     modifier = Modifier
+                        .animateItem()
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
                         .background(Color(0xFF12141A))
@@ -421,7 +432,7 @@ fun AutomationsScreen(
                                         )
                                     } else if (rule.category.equals("MESSAGING", ignoreCase = true) || rule.name.contains("responder", ignoreCase = true)) {
                                         Icon(
-                                            imageVector = Icons.Default.Chat,
+                                            imageVector = Icons.AutoMirrored.Filled.Chat,
                                             contentDescription = null,
                                             tint = Color(0xFFA78BFA),
                                             modifier = Modifier.size(22.dp)
@@ -446,14 +457,26 @@ fun AutomationsScreen(
                                 Spacer(modifier = Modifier.width(12.dp))
 
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = rule.name,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White,
-                                        fontSize = 15.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = rule.name,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            fontSize = 15.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        if (rule.isEnabled) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(7.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF34D399).copy(alpha = glowAlpha))
+                                            )
+                                        }
+                                    }
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = rule.description.ifEmpty { "Automation task" },
@@ -564,7 +587,7 @@ fun AutomationsScreen(
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(Color(0xFF1A1C23))
                                             .border(1.dp, if (isGpt) Color(0xFF10A37F).copy(alpha = 0.5f) else Color(0xFF2A2D38), RoundedCornerShape(8.dp))
-                                            .clickable { onOpenChat(chatId, isGpt, rule.name) }
+                                            .bouncyClickable(provideHaptic = true) { onOpenChat(chatId, isGpt, rule.name) }
                                             .padding(horizontal = 7.dp, vertical = 4.dp)
                                     ) {
                                         Row(
@@ -592,7 +615,7 @@ fun AutomationsScreen(
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(Color(0xFF1A1C23))
                                         .border(1.dp, Color(0xFF2A2D38), RoundedCornerShape(8.dp))
-                                        .clickable {
+                                        .bouncyClickable(provideHaptic = true) {
                                             editingRuleId = rule.id
                                             newRuleName = rule.name
                                             newRuleDesc = rule.description
@@ -624,7 +647,7 @@ fun AutomationsScreen(
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(Color(0xFF0F2D20))
                                         .border(1.dp, Color(0xFF155E3E), RoundedCornerShape(8.dp))
-                                        .clickable {
+                                        .bouncyClickable(provideHaptic = true) {
                                             viewModel.runAutomationNow(rule.id)
                                             Toast.makeText(context, "Running '${rule.name}'...", Toast.LENGTH_SHORT).show()
                                         }
@@ -646,7 +669,7 @@ fun AutomationsScreen(
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(Color(0xFF321417))
                                         .border(1.dp, Color(0xFF591C22), RoundedCornerShape(8.dp))
-                                        .clickable { ruleToDelete = rule },
+                                        .bouncyClickable(provideHaptic = true) { ruleToDelete = rule },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(

@@ -28,17 +28,34 @@ class AutomationsViewModel(private val context: Context) : ViewModel() {
     fun enableTemplate(template: TemplateData) {
         viewModelScope.launch {
             val sessionId = UUID.randomUUID().toString()
+            val isGpt = template.category.equals("CHATGPT", ignoreCase = true) ||
+                    template.id.contains("chatgpt", ignoreCase = true) ||
+                    template.name.contains("chatgpt", ignoreCase = true)
+            val sessionTitle = if (isGpt) {
+                if (template.name.contains("ChatGPT", ignoreCase = true)) "🤖 ${template.name}" else "🤖 ${template.name} (ChatGPT)"
+            } else {
+                "🤖 ${template.name}"
+            }
             val session = ai.deepcode.android.data.local.SessionEntity(
                 id = sessionId,
-                title = "🤖 ${template.name}",
+                title = sessionTitle,
                 createdAt = System.currentTimeMillis()
             )
             val db = ai.deepcode.android.data.local.AppDatabase.getDatabase(context)
             db.sessionDao().insertSession(session)
 
+            if (isGpt) {
+                val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context)
+                prefs.saveSetting("session_provider_$sessionId", "ChatGPT")
+                prefs.saveSetting("session_model_$sessionId", "chatgpt-4o")
+            }
+
             val config = JsonObject().apply {
                 addProperty("action_prompt", template.description)
                 addProperty("chat_session_id", sessionId)
+                if (isGpt) {
+                    addProperty("target", "chatgpt")
+                }
                 defaultTelegramChatId()?.let { addProperty("telegram_chat_id", it) }
             }
             val nextRun = AutomationScheduler.computeNextRunAt(template.cron)
@@ -84,15 +101,20 @@ class AutomationsViewModel(private val context: Context) : ViewModel() {
     fun addCustomRule(name: String, description: String, category: String, cron: String, actionPrompt: String) {
         viewModelScope.launch {
             val sessionId = UUID.randomUUID().toString()
+            val isGpt = category.equals("CHATGPT", ignoreCase = true) || name.contains("chatgpt", ignoreCase = true)
+            val sessionTitle = if (isGpt) {
+                if (name.contains("ChatGPT", ignoreCase = true)) "🤖 $name" else "🤖 $name (ChatGPT)"
+            } else {
+                "🤖 $name"
+            }
             val session = ai.deepcode.android.data.local.SessionEntity(
                 id = sessionId,
-                title = "🤖 $name",
+                title = sessionTitle,
                 createdAt = System.currentTimeMillis()
             )
             val db = ai.deepcode.android.data.local.AppDatabase.getDatabase(context)
             db.sessionDao().insertSession(session)
 
-            val isGpt = category.equals("CHATGPT", ignoreCase = true)
             if (isGpt) {
                 val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context)
                 prefs.saveSetting("session_provider_$sessionId", "ChatGPT")
@@ -138,21 +160,26 @@ class AutomationsViewModel(private val context: Context) : ViewModel() {
             val db = ai.deepcode.android.data.local.AppDatabase.getDatabase(context)
             val sessionDao = db.sessionDao()
 
+            val isGpt = category.equals("CHATGPT", ignoreCase = true) || name.contains("chatgpt", ignoreCase = true)
+            val sessionTitle = if (isGpt) {
+                if (name.contains("ChatGPT", ignoreCase = true)) "🤖 $name" else "🤖 $name (ChatGPT)"
+            } else {
+                "🤖 $name"
+            }
+
             var sessionId = existing.getEffectiveChatSessionId()
             if (sessionId.isNullOrBlank()) {
                 val newSessionId = UUID.randomUUID().toString()
                 val session = ai.deepcode.android.data.local.SessionEntity(
                     id = newSessionId,
-                    title = "🤖 $name",
+                    title = sessionTitle,
                     createdAt = System.currentTimeMillis()
                 )
                 sessionDao.insertSession(session)
                 sessionId = newSessionId
             } else {
-                sessionDao.renameSession(sessionId, "🤖 $name")
+                sessionDao.renameSession(sessionId, sessionTitle)
             }
-
-            val isGpt = category.equals("CHATGPT", ignoreCase = true)
             if (isGpt && !sessionId.isNullOrBlank()) {
                 val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context)
                 prefs.saveSetting("session_provider_$sessionId", "ChatGPT")

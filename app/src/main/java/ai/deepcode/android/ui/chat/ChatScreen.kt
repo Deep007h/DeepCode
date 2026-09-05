@@ -403,92 +403,25 @@ fun ChatScreen(
     val isImeVisible = WindowInsets.isImeVisible
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    // Auto-scroll to latest message when keyboard opens.
-    // Use instant scrollToItem (not animate) so it can't fight the streaming
-    // follow-scroll below; both write to the same LazyListState.
+    // With reverseLayout = true, index 0 is at the bottom (newest message).
+    // When keyboard opens, if user is already near the bottom (index <= 1), cleanly ensure index 0 is in view.
     LaunchedEffect(isImeVisible) {
-        if (isImeVisible) {
-            kotlinx.coroutines.delay(150L)
-            val total = lazyListState.layoutInfo.totalItemsCount
-            if (total > 0 && !lazyListState.isScrollInProgress) {
-                try {
-                    lazyListState.scrollToItem(total - 1)
-                } catch (_: Exception) {}
-            }
+        if (isImeVisible && lazyListState.firstVisibleItemIndex <= 1) {
+            try {
+                lazyListState.scrollToItem(0)
+            } catch (_: Exception) {}
         }
     }
 
     var lastScrolledSessionId by remember { mutableStateOf("") }
-    var lastObservedMessageCount by remember { mutableIntStateOf(0) }
 
-    // Single authority for "new settled message" scrolls: only when NOT streaming,
-    // so streaming tokens never trigger a competing animated scroll.
-    LaunchedEffect(messages.size, isStreaming, activeSessionId) {
-        if (messages.isNotEmpty() && !isStreaming) {
-            val isNewSession = (activeSessionId != lastScrolledSessionId)
-            val isNewMessageAdded = (messages.size > lastObservedMessageCount)
+    // When switching to a new session, ensure we start anchored at the newest messages (index 0).
+    LaunchedEffect(activeSessionId) {
+        if (activeSessionId != lastScrolledSessionId) {
             lastScrolledSessionId = activeSessionId
-            lastObservedMessageCount = messages.size
-
-            if (isNewSession) {
-                // Instantly position at the bottom of the loaded session without animating across huge content
-                val totalItems = lazyListState.layoutInfo.totalItemsCount
-                if (totalItems > 0) {
-                    try {
-                        lazyListState.scrollToItem(totalItems - 1)
-                    } catch (_: Exception) {}
-                }
-            } else if (isNewMessageAdded) {
-                kotlinx.coroutines.delay(60L)
-                val totalItems = lazyListState.layoutInfo.totalItemsCount
-                if (totalItems > 0 && !lazyListState.isScrollInProgress) {
-                    val lastVisible = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                    if (lastVisible >= totalItems - 3) {
-                        try {
-                            lazyListState.animateScrollToItem(totalItems - 1)
-                        } catch (_: Exception) {}
-                    }
-                }
-            }
-        }
-    }
-
-    // Follow streaming output in real time, but only while the user is already
-    // near the bottom (never yank the list if they scrolled up to read).
-    val isNearBottom by remember {
-        derivedStateOf {
-            val info = lazyListState.layoutInfo
-            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
-            lastVisible >= info.totalItemsCount - 3
-        }
-    }
-    LaunchedEffect(Unit) {
-        var lastScrollTime = 0L
-        viewModel.streamedText.collect {
-            val now = System.currentTimeMillis()
-            // Throttled to ~8fps: token flow can emit 30-60x/sec, and every
-            // scrollBy forces a remeasure. 120ms is smooth without jank.
-            // scrollToItem/scrollBy are instant (no animation) so consecutive
-            // frames never stack competing animations.
-            if (now - lastScrollTime >= 120L && !lazyListState.isScrollInProgress && isNearBottom && isStreaming) {
-                lastScrollTime = now
-                val total = lazyListState.layoutInfo.totalItemsCount
-                if (total > 0) {
-                    try {
-                        val lastVisibleItem = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()
-                        if (lastVisibleItem != null && lastVisibleItem.index == total - 1) {
-                            val overflow = (lastVisibleItem.offset + lastVisibleItem.size) - lazyListState.layoutInfo.viewportEndOffset
-                            // Ignore tiny (<4px) overflow: scrolling sub-pixel
-                            // leftovers every frame is a major jitter source.
-                            if (overflow > 4) {
-                                lazyListState.scrollBy(overflow.toFloat())
-                            }
-                        } else {
-                            lazyListState.scrollToItem(total - 1)
-                        }
-                    } catch (_: Exception) {}
-                }
-            }
+            try {
+                lazyListState.scrollToItem(0)
+            } catch (_: Exception) {}
         }
     }
 
@@ -501,7 +434,7 @@ fun ChatScreen(
     val activeWallpaperId = remember { repository.securePrefs.getSetting("chat_wallpaper", "default") }
     val customWallpaperPath = remember { repository.securePrefs.getSetting("chat_wallpaper_custom", "") }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize().background(AppScreenBg)) {
         val wallpaperOpt = remember(activeWallpaperId) {
             ai.deepcode.android.ui.settings.PresetWallpapers.find { it.id == activeWallpaperId }
         }
@@ -543,7 +476,7 @@ fun ChatScreen(
                     contentScale = androidx.compose.ui.layout.ContentScale.Crop
                 )
             } else {
-                Box(modifier = Modifier.fillMaxSize().background(Color(0xFF000000)))
+                Box(modifier = Modifier.fillMaxSize().background(AppScreenBg))
             }
         } else if (wallpaperOpt != null && wallpaperOpt.gradientColors != null) {
             Box(
@@ -552,7 +485,7 @@ fun ChatScreen(
                     .background(Brush.verticalGradient(wallpaperOpt.gradientColors))
             )
         } else {
-            Box(modifier = Modifier.fillMaxSize().background(Color(0xFF000000)))
+            Box(modifier = Modifier.fillMaxSize().background(AppScreenBg))
         }
         Column(Modifier.fillMaxSize()) {
             TopBar(
@@ -582,24 +515,22 @@ fun ChatScreen(
                 onOpenApiKeys = onOpenApiKeys
             )
 
-        Column(Modifier.weight(1f).fillMaxWidth()) {
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             val showScrollToBottomButton by remember {
                 derivedStateOf {
-                    val lastVis = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                    val total = lazyListState.layoutInfo.totalItemsCount
-                    total > 5 && lastVis < total - 2
+                    lazyListState.firstVisibleItemIndex > 2
                 }
             }
 
-            if (messages.isEmpty() && !isStreaming) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(top = 28.dp, bottom = 16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.SpaceBetween
-                ) {
+            val isChatEmpty = messages.isEmpty() && !isStreaming
+            if (isChatEmpty) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(top = 28.dp, bottom = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
                     // 1. Top Section: Robot Icon + DeepCode Title + Subtitle
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1068,13 +999,23 @@ fun ChatScreen(
                         }
                     }
 
+                    val reversedItems = remember(combinedItems) { combinedItems.asReversed() }
+
+                    val lastUserMessageId = remember(messages) {
+                        messages.findLast { it.role == "user" }?.id
+                    }
+                    val lastAiMessageId = remember(messages) {
+                        messages.findLast { it.role == "assistant" && !it.isToolCall }?.id
+                    }
+
                     LazyColumn(
                         state = lazyListState,
+                        reverseLayout = true,
                         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                        contentPadding = PaddingValues(bottom = 16.dp),
+                        contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                    items(combinedItems, key = { item ->
+                    items(reversedItems, key = { item ->
                         when (item) {
                             is ChatItem.NormalMessage -> "msg_${item.message.id}"
                             is ChatItem.ToolExecutionGroup -> "group_${item.groupId}"
@@ -1083,7 +1024,7 @@ fun ChatScreen(
                         }
                     }, contentType = { item ->
                         when (item) {
-                            is ChatItem.NormalMessage -> "normal"
+                            is ChatItem.NormalMessage -> if (item.message.role == "user") "user_msg" else "ai_msg"
                             is ChatItem.ToolExecutionGroup -> "tool"
                             is ChatItem.Streaming -> "streaming"
                             is ChatItem.OrchestrationPanel -> "orchestration"
@@ -1091,9 +1032,30 @@ fun ChatScreen(
                     }) { item ->
                         when (item) {
                             is ChatItem.NormalMessage -> {
-                                val onSelect = remember(viewModel) { { layoutName: String -> viewModel.sendMessage("Use $layoutName layout") } }
-                                val onSendSug = remember(viewModel) { { suggestion: String -> viewModel.sendMessage(suggestion) } }
-                                MessageBubble(message = item.message, imageCache = imageCache, onSelectLayout = onSelect, onSendSuggestion = onSendSug)
+                                val onSelect = remember(viewModel) { { layoutName: String ->
+                                    viewModel.sendMessage("Use $layoutName layout")
+                                    if (lazyListState.firstVisibleItemIndex > 0) {
+                                        scope.launch { lazyListState.animateScrollToItem(0) }
+                                    }
+                                } }
+                                val onSendSug = remember(viewModel) { { suggestion: String ->
+                                    viewModel.sendMessage(suggestion)
+                                    if (lazyListState.firstVisibleItemIndex > 0) {
+                                        scope.launch { lazyListState.animateScrollToItem(0) }
+                                    }
+                                } }
+                                val showTimestamp = when (item.message.role) {
+                                    "user" -> item.message.id == lastUserMessageId
+                                    "assistant" -> item.message.id == lastAiMessageId
+                                    else -> false
+                                }
+                                MessageBubble(
+                                    message = item.message,
+                                    showTimestamp = showTimestamp,
+                                    imageCache = imageCache,
+                                    onSelectLayout = onSelect,
+                                    onSendSuggestion = onSendSug
+                                )
                             }
                             is ChatItem.ToolExecutionGroup -> ToolExecutionGroupBubble(group = item)
                             is ChatItem.Streaming -> StreamingItem(
@@ -1247,11 +1209,16 @@ fun ChatScreen(
                                 innerTextField()
                             }
                         },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                         keyboardActions = KeyboardActions(onSend = {
                             if ((inputMsg.isNotEmpty() || attachedFiles.isNotEmpty()) && !viewModel.isStreaming.value) {
-                                viewModel.sendMessage(inputMsg)
+                                val toSend = inputMsg
                                 inputMsg = ""
+                                viewModel.sendMessage(toSend)
+                                if (lazyListState.firstVisibleItemIndex > 0) {
+                                    scope.launch {
+                                        lazyListState.animateScrollToItem(0)
+                                    }
+                                }
                             }
                         })
                     )
@@ -1276,47 +1243,79 @@ fun ChatScreen(
                     }
                 }
 
+                val infinitePulse = rememberInfiniteTransition(label = "stopPulse")
+                val pulseScale by infinitePulse.animateFloat(
+                    initialValue = 1f,
+                    targetValue = 1.14f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(600, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "pulseScale"
+                )
+
                 // Right action button: Send circle when typing/streaming, Green Voice Wave circle when empty
                 val isSendActive = inputMsg.isNotBlank() || attachedFiles.isNotEmpty() || isStreaming
-                if (isSendActive) {
-                    Box(
-                        modifier = Modifier
-                            .size(50.dp)
-                            .clip(CircleShape)
-                            .background(if (isStreaming) Color(0xFFDC2626) else Color.White)
-                            .bouncyClickable(provideHaptic = true) {
-                                if (isStreaming) {
-                                    viewModel.cancelActiveChat()
-                                } else if (inputMsg.isNotEmpty() || attachedFiles.isNotEmpty()) {
-                                    viewModel.sendMessage(inputMsg)
-                                    inputMsg = ""
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (isStreaming) Icons.Rounded.Stop else Icons.AutoMirrored.Rounded.Send,
-                            contentDescription = "Send",
-                            tint = if (isStreaming) Color.White else Color.Black,
-                            modifier = Modifier.size(20.dp)
+                AnimatedContent(
+                    targetState = isSendActive,
+                    transitionSpec = {
+                        (scaleIn(spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn()).togetherWith(
+                            scaleOut(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
                         )
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(50.dp)
-                            .clip(CircleShape)
-                            .background(Brush.linearGradient(listOf(AppPrimary, AppPrimaryGradientEnd)))
-                            .bouncyClickable(provideHaptic = true) {
-                                Toast.makeText(context, "Voice mode activated", Toast.LENGTH_SHORT).show()
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        VoiceWaveIcon(color = Color.White)
+                    },
+                    label = "actionButtonMorph"
+                ) { sendActive ->
+                    if (sendActive) {
+                        Box(
+                            modifier = Modifier
+                                .size(50.dp)
+                                .graphicsLayer {
+                                    if (isStreaming) {
+                                        scaleX = pulseScale
+                                        scaleY = pulseScale
+                                    }
+                                }
+                                .clip(CircleShape)
+                                .background(if (isStreaming) Color(0xFFDC2626) else Color.White)
+                                .bouncyClickable(provideHaptic = true) {
+                                    if (isStreaming) {
+                                        viewModel.cancelActiveChat()
+                                    } else if (inputMsg.isNotEmpty() || attachedFiles.isNotEmpty()) {
+                                        val toSend = inputMsg
+                                        inputMsg = ""
+                                        viewModel.sendMessage(toSend)
+                                        if (lazyListState.firstVisibleItemIndex > 0) {
+                                            scope.launch {
+                                                lazyListState.animateScrollToItem(0)
+                                            }
+                                        }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isStreaming) Icons.Rounded.Stop else Icons.AutoMirrored.Rounded.Send,
+                                contentDescription = if (isStreaming) "Stop" else "Send",
+                                tint = if (isStreaming) Color.White else Color.Black,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(CircleShape)
+                                .background(Brush.linearGradient(listOf(AppPrimary, AppPrimaryGradientEnd)))
+                                .bouncyClickable(provideHaptic = true) {
+                                    Toast.makeText(context, "Voice mode activated", Toast.LENGTH_SHORT).show()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            VoiceWaveIcon(color = Color.White)
+                        }
                     }
                 }
             }
-        }
         }
         }
     }
@@ -1370,8 +1369,7 @@ private fun BoxScope.ScrollToBottomButton(visible: Boolean, lazyListState: LazyL
         val scope = rememberCoroutineScope()
         FloatingActionButton(
             onClick = { scope.launch {
-                val total = lazyListState.layoutInfo.totalItemsCount
-                if (total > 0) lazyListState.animateScrollToItem(total - 1)
+                lazyListState.animateScrollToItem(0)
             }},
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -1526,6 +1524,7 @@ private fun TopBar(
 @Composable
 fun MessageBubble(
     message: Message,
+    showTimestamp: Boolean = false,
     imageCache: Map<String, ImageBitmap> = emptyMap(),
     onSelectLayout: (String) -> Unit = {},
     onSendSuggestion: (String) -> Unit = {}
@@ -1552,10 +1551,10 @@ fun MessageBubble(
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalAlignment = alignment) {
         if (!isInterrupted || cleanedContent.isNotEmpty()) {
             if (isUser) {
-                UserBubble(cleanedContent = cleanedContent, parsedParts = parsedParts, message = message, context = context)
+                UserBubble(cleanedContent = cleanedContent, parsedParts = parsedParts, message = message, showTimestamp = showTimestamp, context = context)
             } else {
                 if (cleanedContent.isNotEmpty()) {
-                    AiBubble(cleanedContent = cleanedContent, parsedParts = parsedParts, message = message, imageCache = imageCache, onSelectLayout = onSelectLayout, onSendSuggestion = onSendSuggestion)
+                    AiBubble(cleanedContent = cleanedContent, parsedParts = parsedParts, message = message, showTimestamp = showTimestamp, imageCache = imageCache, onSelectLayout = onSelectLayout, onSendSuggestion = onSendSuggestion)
                 }
             }
         }
@@ -1568,6 +1567,7 @@ private fun UserBubble(
     cleanedContent: String,
     parsedParts: List<MessageContentPart>,
     message: Message,
+    showTimestamp: Boolean = false,
     context: android.content.Context
 ) {
     val showMenu = remember { mutableStateOf(false) }
@@ -1590,14 +1590,6 @@ private fun UserBubble(
             .widthIn(min = 48.dp, max = 300.dp)
             .clip(RoundedCornerShape(22.dp))
             .background(bubbleBg)
-            // Animate height on Show more/less: previously instant, jumping
-            // neighboring messages.
-            .animateContentSize(
-                animationSpec = androidx.compose.animation.core.tween(
-                    220,
-                    easing = androidx.compose.animation.core.FastOutSlowInEasing
-                )
-            )
             .padding(horizontal = 18.dp, vertical = 14.dp)
             .pointerInput(Unit) {
                 detectTapGestures(onLongPress = { offset ->
@@ -1638,6 +1630,22 @@ private fun UserBubble(
                     )
                 }
             }
+
+            if (showTimestamp) {
+                val timeStr = remember(message.timestamp) {
+                    try { timeFormatter.get()?.format(java.util.Date(message.timestamp)) ?: "" } catch (e: Exception) { "" }
+                }
+                if (timeStr.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = timeStr,
+                        color = Color.White.copy(alpha = 0.55f),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.align(Alignment.End)
+                    )
+                }
+            }
         }
         if (showMenu.value) {
             TextContextMenu(showMenu = showMenu, pressOffset = pressOffset, text = cleanedContent, context = context)
@@ -1650,6 +1658,7 @@ private fun AiBubble(
     cleanedContent: String,
     parsedParts: List<MessageContentPart>,
     message: Message,
+    showTimestamp: Boolean = false,
     imageCache: Map<String, ImageBitmap>,
     onSelectLayout: (String) -> Unit = {},
     onSendSuggestion: (String) -> Unit = {}
@@ -1715,13 +1724,20 @@ private fun AiBubble(
                         is MessageContentPart.LayoutSelector -> LayoutSelectorCard(onSelect = onSelectLayout)
                     }
                 }
-                Spacer(Modifier.height(6.dp))
-                val timeStr = remember(message.timestamp) {
-                    try { timeFormatter.get()?.format(java.util.Date(message.timestamp)) ?: "" } catch (e: Exception) { "" }
-                }
-                if (timeStr.isNotEmpty()) {
-                    Text(timeStr, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                        fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.align(Alignment.End))
+                if (showTimestamp) {
+                    val timeStr = remember(message.timestamp) {
+                        try { timeFormatter.get()?.format(java.util.Date(message.timestamp)) ?: "" } catch (e: Exception) { "" }
+                    }
+                    if (timeStr.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            timeStr,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.align(Alignment.End)
+                        )
+                    }
                 }
             }
             if (showAiMenu.value) {
@@ -2553,36 +2569,141 @@ fun ModelPickerDialog(
 ) {
     var searchFilter by remember { mutableStateOf("") }
     val allModels = remember { AIProviderFactory.providers.flatMap { it.models } }
-    val filteredModels = allModels.filter {
-        it.name.contains(searchFilter, ignoreCase = true) || it.provider.contains(searchFilter, ignoreCase = true)
+    val filteredModels = remember(searchFilter, allModels) {
+        if (searchFilter.isBlank()) allModels
+        else allModels.filter {
+            it.name.contains(searchFilter, ignoreCase = true) || it.provider.contains(searchFilter, ignoreCase = true)
+        }
     }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Select AI Model") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.height(300.dp)) {
-                OutlinedTextField(value = searchFilter, onValueChange = { searchFilter = it },
-                    label = { Text("Search models...") }, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(4.dp))
-                LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp)),
+            color = AppCard,
+            border = BorderStroke(1.dp, AppBorder),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            "Select AI Model",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp,
+                            color = AppWhite
+                        )
+                        Text(
+                            "${allModels.size} models available",
+                            fontSize = 11.sp,
+                            color = AppMuted
+                        )
+                    }
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = AppMuted,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                // Search Bar
+                OutlinedTextField(
+                    value = searchFilter,
+                    onValueChange = { searchFilter = it },
+                    placeholder = { Text("Search models or providers...", fontSize = 13.sp, color = AppMuted) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp, color = AppWhite),
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, null, tint = AppMuted, modifier = Modifier.size(16.dp))
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = AppPrimary.copy(alpha = 0.6f),
+                        unfocusedBorderColor = AppBorder,
+                        focusedContainerColor = AppField,
+                        unfocusedContainerColor = AppField
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                )
+
+                // Models list
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     items(filteredModels, key = { it.id }) { model ->
-                        Row(Modifier.fillMaxWidth().clickable { onModelSelected(model) }.padding(vertical = 10.dp, horizontal = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                            Column {
-                                Text(model.name, fontWeight = FontWeight.Bold,
-                                    color = if (model.id == currentSelected.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                        val isSelected = model.id == currentSelected.id
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isSelected) AppPrimary.copy(alpha = 0.12f) else AppField.copy(alpha = 0.4f))
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isSelected) AppPrimary.copy(alpha = 0.4f) else AppBorder.copy(alpha = 0.4f),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .bouncyClickable(provideHaptic = true) {
+                                    onModelSelected(model)
+                                }
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    model.name,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 14.sp,
+                                    color = if (isSelected) AppPrimary else AppWhite
+                                )
                                 val displayProvider = if (model.provider == "Zen (Free)" || model.provider == "Zen AI") "Zen AI" else model.provider
-                                Text("$displayProvider • Context: ${model.contextWindow}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                                Text(
+                                    "$displayProvider • Context: ${model.contextWindow}",
+                                    fontSize = 11.sp,
+                                    color = AppMuted
+                                )
                             }
-                            AssistChip(onClick = {}, label = { Text(model.badge, fontSize = 9.sp) })
+                            Spacer(Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isSelected) AppPrimary.copy(alpha = 0.2f) else AppCard)
+                                    .border(1.dp, if (isSelected) AppPrimary.copy(alpha = 0.4f) else AppBorder, RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    model.badge,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isSelected) AppPrimary else AppMuted
+                                )
+                            }
                         }
-                        HorizontalDivider()
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
-    )
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════

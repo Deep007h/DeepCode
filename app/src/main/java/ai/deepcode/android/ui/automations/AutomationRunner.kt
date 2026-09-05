@@ -48,12 +48,15 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
             val automationRepository = AutomationRepository(context)
             val database = AppDatabase.getDatabase(context)
             val sessionDao = database.sessionDao()
+            var ruleName = "Automation Task"
+            var targetSessionId = ""
 
             try {
                 val rule = automationRepository.getAutomationById(automationId) ?: run {
                     AppLogger.w("AutomationRunner", "Automation not found: $automationId")
                     return false
                 }
+                ruleName = rule.name
 
                 if (!rule.isEnabled && !forceRun) {
                     AppLogger.i("AutomationRunner", "Rule '${rule.name}' is disabled and not forced, skipping execution")
@@ -66,7 +69,6 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
                     sessionDao.getSessionById(existingSessionId)
                 } else null
 
-                val targetSessionId: String
                 if (existingSession != null) {
                     targetSessionId = existingSession.id
                     AppLogger.i("AutomationRunner", "Reusing existing chat session $targetSessionId for task '${rule.name}'")
@@ -205,6 +207,16 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
 
                 AppLogger.i("AutomationRunner", "Execution completed in session $targetSessionId (output length: ${finalOutput.length})")
 
+                // Post completion notification so the user is immediately alerted that the task executed
+                AutomationNotificationHelper.showCompletionNotification(
+                    context = context,
+                    automationId = automationId,
+                    ruleName = rule.name,
+                    sessionId = targetSessionId,
+                    output = finalOutput,
+                    isChatGPT = isChatGPT
+                )
+
                 // 4. Mirror to Telegram if chat ID is configured
                 if (!telegramChatId.isNullOrBlank() && finalOutput.isNotEmpty()) {
                     try {
@@ -232,6 +244,15 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
                 return true
             } catch (e: Exception) {
                 AppLogger.e("AutomationRunner", "Fatal error executing automation $automationId", e)
+                try {
+                    AutomationNotificationHelper.showFailureNotification(
+                        context = context,
+                        automationId = automationId,
+                        ruleName = ruleName,
+                        sessionId = targetSessionId,
+                        errorMessage = e.message ?: "Task execution failed"
+                    )
+                } catch (_: Exception) {}
                 // Even on error, try to reschedule to prevent the task from stalling permanently
                 try {
                     val currentRule = automationRepository.getAutomationById(automationId)

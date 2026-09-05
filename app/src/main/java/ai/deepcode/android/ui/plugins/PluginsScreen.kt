@@ -69,7 +69,7 @@ fun PluginsScreen(onBack: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Transparent)
+            .background(AppScreenBg)
     ) {
         // Top Header Section matching SS
         Row(

@@ -67,14 +67,18 @@ class AutomationForegroundService : Service() {
                 true
             }
 
-            if (hasNotificationPermission && areNotificationsEnabled) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(intent)
+            try {
+                if (hasNotificationPermission && areNotificationsEnabled) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.startForegroundService(intent)
+                    } else {
+                        context.startService(intent)
+                    }
                 } else {
                     context.startService(intent)
                 }
-            } else {
-                context.startService(intent)
+            } catch (e: Exception) {
+                AppLogger.w("AutomationForegroundService", "Cannot start foreground service: ${e.message}")
             }
         }
 

@@ -17,6 +17,7 @@ import android.webkit.CookieManager
 import ai.deepcode.android.service.chatgpt.ChatGPTBridge
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -150,13 +152,32 @@ fun ConnectionsScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Transparent)
+            .background(AppScreenBg)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)
     ) {
         // Top Connection / Status Card
         item {
+            val hasActiveIntegrations = activeConnections.isNotEmpty() || whatsAppConnected
+            val statusTitle = if (hasActiveIntegrations) "Connected" else "Disconnected"
+            val statusSubtitle = when {
+                whatsAppConnected && activeConnections.isNotEmpty() -> "WhatsApp Bridge & ${activeConnections.size} service(s) active"
+                whatsAppConnected -> "WhatsApp Bridge Active"
+                activeConnections.isNotEmpty() -> "${activeConnections.size} integration service(s) active"
+                else -> "No active network"
+            }
+            val statusColor = if (hasActiveIntegrations) Color(0xFF10B981) else Color(0xFFE53935)
+            val statusIcon = if (hasActiveIntegrations) Icons.Default.Wifi else Icons.Default.WifiOff
+
+            var isRefreshing by remember { mutableStateOf(false) }
+            val refreshRotation by animateFloatAsState(
+                targetValue = if (isRefreshing) 360f else 0f,
+                animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
+                finishedListener = { isRefreshing = false },
+                label = "refreshRotation"
+            )
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -178,26 +199,26 @@ fun ConnectionsScreen(
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(AppDivider),
+                                .background(statusColor.copy(alpha = 0.12f)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = if (whatsAppConnected) Icons.Default.Wifi else Icons.Default.WifiOff,
+                                imageVector = statusIcon,
                                 contentDescription = null,
-                                tint = if (whatsAppConnected) Color(0xFF10B981) else Color(0xFFE53935),
+                                tint = statusColor,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = if (whatsAppConnected) "Connected" else "Disconnected",
+                                text = statusTitle,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = AppWhite
                             )
                             Text(
-                                text = if (whatsAppConnected) "WhatsApp Bridge Active" else "No active network",
+                                text = statusSubtitle,
                                 fontSize = 12.sp,
                                 color = AppMuted
                             )
@@ -210,14 +231,19 @@ fun ConnectionsScreen(
                             .size(36.dp)
                             .clip(CircleShape)
                             .background(AppDivider)
-                            .clickable { viewModel.checkWhatsAppHealth() },
+                            .bouncyClickable(provideHaptic = true) {
+                                isRefreshing = true
+                                viewModel.checkWhatsAppHealth()
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Refresh",
                             tint = AppWhite,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier
+                                .size(18.dp)
+                                .graphicsLayer { rotationZ = refreshRotation }
                         )
                     }
                 }
@@ -234,7 +260,7 @@ fun ConnectionsScreen(
                             .weight(1f)
                             .clip(RoundedCornerShape(10.dp))
                             .border(1.dp, Color(0xFF10B981), RoundedCornerShape(10.dp))
-                            .clickable {
+                            .bouncyClickable(provideHaptic = true) {
                                 if (whatsAppConnected) {
                                     Toast.makeText(context, "Already connected", Toast.LENGTH_SHORT).show()
                                 } else {
@@ -270,8 +296,9 @@ fun ConnectionsScreen(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(10.dp))
+                            .background(if (isAutoResponderEnabled) AppPrimary.copy(alpha = 0.15f) else Color.Transparent)
                             .border(1.dp, AppPrimary, RoundedCornerShape(10.dp))
-                            .clickable {
+                            .bouncyClickable(provideHaptic = true) {
                                 isAutoResponderEnabled = !isAutoResponderEnabled
                                 Toast.makeText(
                                     context,
@@ -294,7 +321,7 @@ fun ConnectionsScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Auto-Responder",
+                                text = if (isAutoResponderEnabled) "Responder ON" else "Auto-Responder",
                                 color = AppPrimary,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
@@ -314,7 +341,7 @@ fun ConnectionsScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Default.ShowChart,
+                        imageVector = Icons.AutoMirrored.Filled.ShowChart,
                         contentDescription = null,
                         tint = AppPrimary,
                         modifier = Modifier.size(18.dp)
@@ -361,6 +388,7 @@ fun ConnectionsScreen(
             items(activeConnections, key = { it.id }) { connection ->
                 Row(
                     modifier = Modifier
+                        .animateItem()
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
                         .background(AppCard)
@@ -430,7 +458,7 @@ fun ConnectionsScreen(
                             .clip(RoundedCornerShape(8.dp))
                             .background(Color(0xFFE53935).copy(alpha = 0.1f))
                             .border(1.dp, Color(0xFFE53935).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                            .clickable { viewModel.disconnectIntegration(connection.appId) },
+                            .bouncyClickable(provideHaptic = true) { viewModel.disconnectIntegration(connection.appId) },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -471,6 +499,7 @@ fun ConnectionsScreen(
 
             Row(
                 modifier = Modifier
+                    .animateItem()
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
                     .background(AppCard)
@@ -523,7 +552,7 @@ fun ConnectionsScreen(
                         .clip(RoundedCornerShape(8.dp))
                         .background(brandColor.copy(alpha = 0.08f))
                         .border(1.dp, brandColor.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                        .clickable {
+                        .bouncyClickable(provideHaptic = true) {
                             when (item.appId) {
                                 "whatsapp" -> {
                                     showWhatsAppQRDialog = true

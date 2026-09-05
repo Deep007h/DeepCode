@@ -18,6 +18,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import ai.deepcode.android.ui.theme.AppScreenBg
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.res.painterResource
+import ai.deepcode.android.R
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
@@ -94,9 +97,29 @@ import android.widget.Toast
 class MainActivity : ComponentActivity() {
     private var hasRequestedPermissionsThisInstance = false
 
+    companion object {
+        val pendingSessionId = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+        val pendingTab = kotlinx.coroutines.flow.MutableStateFlow<Int?>(null)
+        val pendingIsChatGpt = kotlinx.coroutines.flow.MutableStateFlow<Boolean>(false)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleOAuthIntent(intent)
+        handleNotificationIntent(intent)
+    }
+
+    private fun handleNotificationIntent(intent: Intent?) {
+        val sessionId = intent?.getStringExtra("target_session_id")
+        val tab = intent?.getIntExtra("target_tab", -1) ?: -1
+        val isChatGpt = intent?.getBooleanExtra("is_chatgpt", false) ?: false
+        if (!sessionId.isNullOrBlank()) {
+            pendingSessionId.value = sessionId
+            pendingIsChatGpt.value = isChatGpt
+        }
+        if (tab >= 0) {
+            pendingTab.value = tab
+        }
     }
 
     private fun handleOAuthIntent(intent: Intent?) {
@@ -136,6 +159,7 @@ class MainActivity : ComponentActivity() {
             defaultHandler?.uncaughtException(thread, throwable)
         }
         handleOAuthIntent(intent)
+        handleNotificationIntent(intent)
         AppLogger.i("MainActivity", "App starting...")
 
         var repoState by mutableStateOf<DeepCodeRepository?>(null)
@@ -256,7 +280,7 @@ class MainActivity : ComponentActivity() {
             DeepCodeTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = Color.Transparent
+                    color = AppScreenBg
                 ) {
                     val activeRepo = repoState
                     if (activeRepo != null) {
@@ -382,6 +406,29 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
 
     val sessions by repository.getAllSessions().collectAsStateWithLifecycle(initialValue = emptyList())
     var activeSessionId by remember { mutableStateOf("") }
+
+    val pendingSession by MainActivity.pendingSessionId.collectAsStateWithLifecycle()
+    val pendingTabTarget by MainActivity.pendingTab.collectAsStateWithLifecycle()
+    val pendingIsGpt by MainActivity.pendingIsChatGpt.collectAsStateWithLifecycle()
+
+    LaunchedEffect(pendingSession, pendingTabTarget) {
+        val sid = pendingSession
+        val tab = pendingTabTarget
+        val isGpt = pendingIsGpt
+        if (!sid.isNullOrBlank()) {
+            if (isGpt) {
+                repository.securePrefs.saveSetting("session_provider_$sid", "ChatGPT")
+                repository.securePrefs.saveSetting("session_model_$sid", "chatgpt-4o")
+            }
+            activeSessionId = sid
+            MainActivity.pendingSessionId.value = null
+            MainActivity.pendingIsChatGpt.value = false
+        }
+        if (tab != null && tab >= 0) {
+            appState.selectTab(tab)
+            MainActivity.pendingTab.value = null
+        }
+    }
 
     var showPersonaPicker by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf<ChatSession?>(null) }
@@ -891,12 +938,13 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                     )
                 }
             },
-            containerColor = Color.Transparent
+            containerColor = AppScreenBg
         ) { padding ->
             val layoutDirection = LocalLayoutDirection.current
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .background(AppScreenBg)
                     .padding(
                         start = padding.calculateStartPadding(layoutDirection),
                         top = padding.calculateTopPadding(),
@@ -904,13 +952,49 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                         bottom = padding.calculateBottomPadding()
                     )
             ) {
-                when (selectedTab) {
+                androidx.compose.animation.AnimatedContent(
+                    targetState = selectedTab,
+                    transitionSpec = {
+                        val direction = if (targetState > initialState) 1 else -1
+                        (androidx.compose.animation.slideInHorizontally(
+                            animationSpec = androidx.compose.animation.core.tween(
+                                durationMillis = 240,
+                                easing = androidx.compose.animation.core.FastOutSlowInEasing
+                            ),
+                            initialOffsetX = { (it * 0.15f * direction).toInt() }
+                        ) + androidx.compose.animation.fadeIn(
+                            animationSpec = androidx.compose.animation.core.tween(200)
+                        )).togetherWith(
+                            androidx.compose.animation.slideOutHorizontally(
+                                animationSpec = androidx.compose.animation.core.tween(
+                                    durationMillis = 200,
+                                    easing = androidx.compose.animation.core.FastOutSlowInEasing
+                                ),
+                                targetOffsetX = { (-it * 0.15f * direction).toInt() }
+                            ) + androidx.compose.animation.fadeOut(
+                                animationSpec = androidx.compose.animation.core.tween(160)
+                            )
+                        )
+                    },
+                    label = "mainTabTransition",
+                    modifier = Modifier.fillMaxSize().background(AppScreenBg)
+                ) { tab ->
+                    when (tab) {
                         0 -> DashboardScreen(
                             activeConnections = activeConnections,
                             integrationsCount = integrations.size,
                             onTabSelect = { appState.selectTab(it) },
                             repository = repository,
-                            onShowTokenUsage = { appState.setShowTokenUsage(true) }
+                            onShowTokenUsage = { appState.setShowTokenUsage(true) },
+                            onSessionSelect = { sessionId ->
+                                val isChatGpt = repository.securePrefs.getSetting("session_provider_$sessionId", "").equals("ChatGPT", ignoreCase = true)
+                                if (isChatGpt) {
+                                    repository.securePrefs.saveSetting("session_provider_$sessionId", "ChatGPT")
+                                    repository.securePrefs.saveSetting("session_model_$sessionId", "chatgpt-4o")
+                                }
+                                activeSessionId = sessionId
+                                appState.selectTab(1)
+                            }
                         )
                         1 -> ChatScreen(
                             repository = repository,
@@ -960,6 +1044,7 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                             onNavigateToThemesAndWallpapers = { appState.setShowThemesAndWallpapers(true) }
                         )
                     }
+                }
 
                     val activeScreenKey by remember {
                         derivedStateOf {
@@ -1425,13 +1510,15 @@ fun ActiveSessionCard(
     onDelete: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val isGpt = session.title.contains("ChatGPT", ignoreCase = true)
+    val accentColor = if (isGpt) Color(0xFF10A37F) else AppPrimary
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(AppSurface.copy(alpha = 0.6f))
-            .border(1.dp, AppPrimary, RoundedCornerShape(14.dp))
+            .border(1.dp, accentColor, RoundedCornerShape(14.dp))
             .clickable { onClick() }
             .padding(10.dp)
     ) {
@@ -1448,15 +1535,24 @@ fun ActiveSessionCard(
                     modifier = Modifier
                         .size(38.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(AppPrimary.copy(alpha = 0.15f)),
+                        .background(accentColor.copy(alpha = 0.15f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Chat,
-                        contentDescription = null,
-                        tint = AppPrimary,
-                        modifier = Modifier.size(18.dp)
-                    )
+                    if (isGpt) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_chatgpt),
+                            contentDescription = "ChatGPT",
+                            tint = Color(0xFF10A37F),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Chat,
+                            contentDescription = null,
+                            tint = AppPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.width(10.dp))
@@ -1474,13 +1570,13 @@ fun ActiveSessionCard(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .background(Color(0xFF042F22), RoundedCornerShape(4.dp))
-                                .border(0.5.dp, Color(0xFF10B981).copy(alpha = 0.3f), RoundedCornerShape(4.dp))
+                                .background(if (isGpt) Color(0xFF073024) else Color(0xFF042F22), RoundedCornerShape(4.dp))
+                                .border(0.5.dp, (if (isGpt) Color(0xFF10A37F) else Color(0xFF10B981)).copy(alpha = 0.3f), RoundedCornerShape(4.dp))
                                 .padding(horizontal = 5.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = "LOCAL",
-                                color = Color(0xFF10B981),
+                                text = if (isGpt) "CHATGPT" else "LOCAL",
+                                color = if (isGpt) Color(0xFF10A37F) else Color(0xFF10B981),
                                 fontSize = 8.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace
@@ -1538,6 +1634,8 @@ fun ChatHistorySessionRow(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
+    val isGpt = session.title.contains("ChatGPT", ignoreCase = true)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1551,12 +1649,21 @@ fun ChatHistorySessionRow(
             modifier = Modifier.weight(1f),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.Chat,
-                contentDescription = null,
-                tint = AppPrimary,
-                modifier = Modifier.size(16.dp)
-            )
+            if (isGpt) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_chatgpt),
+                    contentDescription = "ChatGPT",
+                    tint = Color(0xFF10A37F),
+                    modifier = Modifier.size(16.dp)
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Chat,
+                    contentDescription = null,
+                    tint = AppPrimary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
             Spacer(modifier = Modifier.width(10.dp))
             Text(
                 text = session.title,
