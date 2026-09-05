@@ -175,6 +175,16 @@ Available in the **Connections** screen:
 
 ---
 
+## 🎙️ Neural Audio & Voice Synthesis
+
+DeepCode includes a multi-engine text-to-speech studio directly accessible via chat commands and autonomous tool execution:
+- **Microsoft Edge Neural TTS**: Generates natural speech across 50+ languages with express-as emotions, rates, pitches, and multi-voice casting. Dynamically resolves client tokens via `EncryptedPrefs` or environment configurations.
+- **Kokoro TTS Engine**: Ultra-fast lightweight neural voice synthesis via configurable server URL endpoints (`set_kokoro_url`).
+- **Native Android System TTS**: Zero-network offline fallback using your device's installed text-to-speech engine.
+- **In-Chat Audio Players**: Inline waveform playback cards with scrubbing, speed control, and instant MP3 export.
+
+---
+
 ## 🏗️ Architecture & Tech Stack
 
 ```
