@@ -290,10 +290,11 @@ class AutomationScheduler(private val context: Context) {
             }
         }
 
-        fun triggerImmediately(context: Context, automationId: String) {
+        fun triggerImmediately(context: Context, automationId: String, forceRun: Boolean = true) {
             val intent = Intent(context, AutomationAlarmReceiver::class.java).apply {
                 action = "ai.deepcode.android.action.TRIGGER_AUTOMATION"
                 putExtra("automation_id", automationId)
+                putExtra("force_run", forceRun)
                 setPackage(context.packageName)
             }
             context.sendBroadcast(intent)

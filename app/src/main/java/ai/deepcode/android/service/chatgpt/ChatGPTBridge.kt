@@ -3,6 +3,9 @@ package ai.deepcode.android.service.chatgpt
 import ai.deepcode.android.data.local.EncryptedPrefs
 import ai.deepcode.android.util.AppLogger
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
@@ -14,6 +17,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.BufferedReader
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStreamReader
 import java.util.UUID
@@ -66,6 +70,8 @@ class ChatGPTBridge private constructor(private val context: Context) {
         if (token.isNotEmpty()) return token
         val apiKey = prefs.getApiKey("chatgpt").trim()
         if (apiKey.isNotEmpty()) return apiKey
+        val openAiKey = prefs.getApiKey("openai").trim().ifEmpty { prefs.getSetting("openai_api_key", "").trim() }
+        if (openAiKey.isNotEmpty()) return openAiKey
         // Fallback to general setting if stored there
         val general = prefs.getSetting("chatgpt_token", "").trim()
         if (general.isNotEmpty()) return general
@@ -368,16 +374,214 @@ class ChatGPTBridge private constructor(private val context: Context) {
     }
 
     /**
+     * Uploads an image file to ChatGPT web backend for multimodal prompts.
+     */
+    suspend fun uploadFileForMultimodal(file: File, accessToken: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val reqJson = JsonObject().apply {
+                addProperty("file_name", file.name)
+                addProperty("file_size", file.length())
+                addProperty("use_case", "multimodal")
+            }
+            val reqBuilder = Request.Builder()
+                .url("https://chatgpt.com/backend-api/files")
+                .header("Authorization", "Bearer $accessToken")
+                .header("User-Agent", USER_AGENT)
+                .header("Content-Type", "application/json")
+                .header("oai-device-id", getDeviceId())
+                .post(reqJson.toString().toRequestBody(jsonMediaType))
+
+            getAccountId()?.let { reqBuilder.header("ChatGPT-Account-Id", it) }
+
+            val resp = client.newCall(reqBuilder.build()).execute()
+            val body = resp.body?.string() ?: ""
+            if (!resp.isSuccessful || body.isEmpty()) {
+                AppLogger.w(TAG, "File upload registration failed HTTP ${resp.code}: $body")
+                return@withContext null
+            }
+
+            val json = JsonParser.parseString(body).asJsonObject
+            val uploadUrl = json.get("upload_url")?.asString ?: return@withContext null
+            val fileId = json.get("file_id")?.asString ?: return@withContext null
+
+            // Upload the file bytes to Azure Blob
+            val putReq = Request.Builder()
+                .url(uploadUrl)
+                .header("x-ms-blob-type", "BlockBlob")
+                .put(file.readBytes().toRequestBody("application/octet-stream".toMediaType()))
+                .build()
+
+            val putResp = client.newCall(putReq).execute()
+            if (!putResp.isSuccessful) {
+                AppLogger.w(TAG, "File blob PUT failed HTTP ${putResp.code}")
+                return@withContext null
+            }
+
+            // Mark uploaded
+            val completeReq = Request.Builder()
+                .url("https://chatgpt.com/backend-api/files/$fileId/uploaded")
+                .header("Authorization", "Bearer $accessToken")
+                .header("User-Agent", USER_AGENT)
+                .header("Content-Type", "application/json")
+                .header("oai-device-id", getDeviceId())
+                .post("{}".toRequestBody(jsonMediaType))
+            getAccountId()?.let { completeReq.header("ChatGPT-Account-Id", it) }
+
+            val completeResp = client.newCall(completeReq.build()).execute()
+            if (completeResp.isSuccessful) {
+                AppLogger.i(TAG, "Successfully uploaded image file to ChatGPT: $fileId")
+                fileId
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "Failed uploading file to ChatGPT: ${e.message}", e)
+            null
+        }
+    }
+
+    /**
+     * Resolves a local image path or URL to base64 Data URL for OpenAI vision API.
+     */
+    fun resolveImageToBase64DataUrl(pathOrUrl: String): String? {
+        if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://") || pathOrUrl.startsWith("data:image/")) {
+            return pathOrUrl
+        }
+        val file = File(pathOrUrl.removePrefix("file://"))
+        if (!file.exists() || file.length() == 0L) return null
+        return try {
+            val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return null
+            val maxDim = 1536
+            val scaled = if (bitmap.width > maxDim || bitmap.height > maxDim) {
+                val ratio = bitmap.width.toFloat() / bitmap.height.toFloat()
+                val (newW, newH) = if (ratio > 1f) {
+                    maxDim to (maxDim / ratio).toInt()
+                } else {
+                    (maxDim * ratio).toInt() to maxDim
+                }
+                Bitmap.createScaledBitmap(bitmap, newW, newH, true)
+            } else {
+                bitmap
+            }
+            val stream = ByteArrayOutputStream()
+            scaled.compress(Bitmap.CompressFormat.JPEG, 85, stream)
+            val bytes = stream.toByteArray()
+            val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            "data:image/jpeg;base64,$b64"
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "Failed resolving image to base64: ${e.message}", e)
+            null
+        }
+    }
+
+    private suspend fun streamOpenAiCompletions(
+        apiKey: String,
+        prompt: String,
+        imageFile: File?,
+        onToken: ((String) -> Unit)?,
+        model: String = "gpt-4o"
+    ): SessionTurnResult = withContext(Dispatchers.IO) {
+        val rootJson = JsonObject().apply {
+            addProperty("model", model)
+            addProperty("stream", true)
+            val messagesArr = JsonArray()
+            val userMsg = JsonObject().apply {
+                addProperty("role", "user")
+                if (imageFile != null && imageFile.exists()) {
+                    val parts = JsonArray()
+                    parts.add(JsonObject().apply {
+                        addProperty("type", "text")
+                        addProperty("text", prompt)
+                    })
+                    val base64DataUrl = resolveImageToBase64DataUrl(imageFile.absolutePath)
+                    if (base64DataUrl != null) {
+                        parts.add(JsonObject().apply {
+                            addProperty("type", "image_url")
+                            add("image_url", JsonObject().apply {
+                                addProperty("url", base64DataUrl)
+                            })
+                        })
+                    }
+                    add("content", parts)
+                } else {
+                    addProperty("content", prompt)
+                }
+            }
+            messagesArr.add(userMsg)
+            add("messages", messagesArr)
+        }
+
+        val req = Request.Builder()
+            .url("https://api.openai.com/v1/chat/completions")
+            .header("Authorization", "Bearer $apiKey")
+            .header("Content-Type", "application/json")
+            .post(rootJson.toString().toRequestBody(jsonMediaType))
+            .build()
+
+        val resp = client.newCall(req).execute()
+        if (!resp.isSuccessful) {
+            val errBody = resp.body?.string() ?: ""
+            throw IllegalStateException("OpenAI API HTTP ${resp.code}: $errBody")
+        }
+
+        val inputStream = resp.body?.byteStream() ?: throw IllegalStateException("Empty response from OpenAI")
+        val reader = BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8))
+        val collected = StringBuilder()
+
+        try {
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                val l = line?.trim() ?: continue
+                if (!l.startsWith("data:")) continue
+                val data = l.substring(5).trim()
+                if (data == "[DONE]") break
+                try {
+                    val json = JsonParser.parseString(data).asJsonObject
+                    val choices = json.getAsJsonArray("choices")
+                    if (choices != null && choices.size() > 0) {
+                        val delta = choices[0].asJsonObject.getAsJsonObject("delta")
+                        val content = delta?.get("content")?.asString
+                        if (!content.isNullOrEmpty()) {
+                            collected.append(content)
+                            onToken?.invoke(content)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        } finally {
+            reader.close()
+        }
+
+        SessionTurnResult(
+            text = collected.toString().trim(),
+            assetPointers = emptyList(),
+            conversationId = "",
+            messageId = ""
+        )
+    }
+
+    /**
      * Sends a prompt to ChatGPT strictly using the single persistent conversation.
      * Captures text and image outputs and updates conversation/parent message IDs.
      */
     private suspend fun executeSingleSessionTurn(
         prompt: String,
-        model: String = "gpt-4o"
+        model: String = "gpt-4o",
+        imageFile: File? = null,
+        onToken: ((String) -> Unit)? = null
     ): SessionTurnResult = withContext(Dispatchers.IO) {
         val token = getAccessToken()
         if (token.isBlank()) {
             throw IllegalStateException("ChatGPT access token not configured. Please set your token in DeepCode Settings.")
+        }
+
+        if (token.startsWith("sk-")) {
+            return@withContext streamOpenAiCompletions(token, prompt, imageFile, onToken, model)
+        }
+
+        var fileId: String? = null
+        if (imageFile != null && imageFile.exists()) {
+            fileId = uploadFileForMultimodal(imageFile, token)
         }
 
         val sentinelToken = fetchSentinelToken(token)
@@ -402,10 +606,26 @@ class ChatGPTBridge private constructor(private val context: Context) {
             val userMsg = JsonObject().apply {
                 addProperty("id", messageId)
                 add("author", JsonObject().apply { addProperty("role", "user") })
-                add("content", JsonObject().apply {
-                    addProperty("content_type", "text")
-                    add("parts", JsonArray().apply { add(prompt) })
-                })
+                if (fileId != null) {
+                    val contentObj = JsonObject().apply {
+                        addProperty("content_type", "multimodal_text")
+                        val partsArr = JsonArray()
+                        val assetObj = JsonObject().apply {
+                            addProperty("content_type", "image_asset_pointer")
+                            addProperty("asset_pointer", "file-service://$fileId")
+                            addProperty("size_bytes", imageFile!!.length())
+                        }
+                        partsArr.add(assetObj)
+                        partsArr.add(prompt)
+                        add("parts", partsArr)
+                    }
+                    add("content", contentObj)
+                } else {
+                    add("content", JsonObject().apply {
+                        addProperty("content_type", "text")
+                        add("parts", JsonArray().apply { add(prompt) })
+                    })
+                }
                 add("metadata", JsonObject())
             }
             messagesArr.add(userMsg)
@@ -482,9 +702,15 @@ class ChatGPTBridge private constructor(private val context: Context) {
                                 val p = parts[0]
                                 val text = if (p.isJsonPrimitive) p.asString else ""
                                 if (text.isNotEmpty() && text != lastExtractedText) {
+                                    val delta = if (text.startsWith(lastExtractedText)) {
+                                        text.substring(lastExtractedText.length)
+                                    } else {
+                                        text
+                                    }
                                     lastExtractedText = text
                                     collectedText.clear()
                                     collectedText.append(text)
+                                    onToken?.invoke(delta)
                                 }
                             }
                         }
@@ -600,6 +826,68 @@ class ChatGPTBridge private constructor(private val context: Context) {
         AppLogger.i(TAG, "Executing ChatGPT task: ${prompt.take(60)}")
         val turnResult = executeSingleSessionTurn(prompt, model = "gpt-4o")
         turnResult.text
+    }
+
+    /**
+     * Streams a turn to ChatGPT (either session token or OpenAI API key) with optional image input.
+     */
+    suspend fun streamTurn(
+        prompt: String,
+        imagePath: String? = null,
+        onToken: (String) -> Unit,
+        onComplete: (String) -> Unit,
+        onError: (Throwable) -> Unit
+    ) = withContext(Dispatchers.IO) {
+        try {
+            val token = getAccessToken()
+            if (token.isBlank()) {
+                throw IllegalStateException("ChatGPT access token not configured. Please connect ChatGPT in Integrations or add an OpenAI API key in Settings.")
+            }
+
+            var file: File? = null
+            if (!imagePath.isNullOrBlank()) {
+                val cleanPath = imagePath.trim().removePrefix("[image:").removeSuffix("]").trim()
+                if (cleanPath.startsWith("http://") || cleanPath.startsWith("https://")) {
+                    val local = downloadAndSaveImageLocally(cleanPath, token)
+                    val f = File(local.removePrefix("file://"))
+                    if (f.exists() && f.isFile) file = f
+                } else {
+                    val f = File(cleanPath.removePrefix("file://"))
+                    if (f.exists() && f.isFile) file = f
+                }
+            }
+
+            val result = executeSingleSessionTurn(
+                prompt = prompt,
+                model = "gpt-4o",
+                imageFile = file,
+                onToken = onToken
+            )
+            var finalText = result.text
+            if (result.assetPointers.isNotEmpty()) {
+                for (asset in result.assetPointers) {
+                    val local = downloadAndSaveImageLocally(asset, token)
+                    if (local.isNotBlank() && !local.startsWith("http")) {
+                        finalText = if (finalText.isBlank()) "[image:$local]" else "$finalText\n\n[image:$local]"
+                    }
+                }
+            }
+            // Check for sediment / file- pointers in markdown
+            val regex = Regex("""!\[.*?\]\((sediment://[^\)]+|file-[^\)]+)\)""")
+            val matches = regex.findAll(finalText).toList()
+            for (m in matches) {
+                val source = m.groupValues[1]
+                val local = downloadAndSaveImageLocally(source, token)
+                if (local.isNotBlank() && !local.startsWith("http")) {
+                    finalText = finalText.replace(m.value, "[image:$local]")
+                }
+            }
+            onComplete(finalText)
+        } catch (t: Throwable) {
+            if (t is kotlin.coroutines.cancellation.CancellationException) throw t
+            AppLogger.e(TAG, "streamTurn failed: ${t.message}", t)
+            onError(t)
+        }
     }
 
     private data class SessionTurnResult(

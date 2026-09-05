@@ -54,6 +54,10 @@ class TelegramBridgeService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val TAG = "TelegramBridge"
         private const val API_BASE = "https://api.telegram.org/bot"
+        const val TELEGRAM_RATE_LIMIT_REPLY = "<b>✦ 𝗜’𝗺 𝗵𝗮𝘃𝗶𝗻𝗴 𝗮 𝗹𝗶𝘁𝘁𝗹𝗲 𝘁𝗿𝗼𝘂𝗯𝗹𝗲 𝗿𝗲𝗮𝗰𝗵𝗶𝗻𝗴 𝘁𝗵𝗲 𝗔𝗜</b>\n\n" +
+                "The service is currently busy and has reached its request limit.\n" +
+                "Please wait a moment before trying again.\n\n" +
+                "<b>𝟰𝟮𝟵 · 𝗥𝗮𝘁𝗲 𝗹𝗶𝗺𝗶𝘁 𝗲𝘅𝗰𝗲𝗲𝗱𝗲𝗱</b>"
 
         private const val PREF_BRIDGE_RUNNING = "bridge_running"
 
@@ -109,6 +113,37 @@ class TelegramBridgeService : Service() {
     private val gson = Gson()
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
     private val offsets = ConcurrentHashMap<String, Long>()
+    private val modelCallbackRegistry = ConcurrentHashMap<String, Pair<String, String>>()
+
+    private fun getShortModelKey(providerName: String, modelId: String): String {
+        val raw = "$providerName:$modelId"
+        val md5 = java.security.MessageDigest.getInstance("MD5").digest(raw.toByteArray(Charsets.UTF_8))
+        return md5.take(8).joinToString("") { "%02x".format(it) }
+    }
+
+    private fun resolveModelFromHash(hash: String): Pair<String, String>? {
+        modelCallbackRegistry["sm:$hash"]?.let { return it }
+        for (p in AIProviderFactory.providers) {
+            val models = ModelCatalog.getModelsForProvider(p.name, repository.securePrefs).ifEmpty { p.models }
+            for (m in models) {
+                if (getShortModelKey(p.name, m.id) == hash) {
+                    val pair = p.name to m.id
+                    modelCallbackRegistry["sm:$hash"] = pair
+                    return pair
+                }
+            }
+        }
+        return null
+    }
+
+    private fun isRateLimitError(text: String): Boolean {
+        return ai.deepcode.android.data.remote.ApiKeyRotator.isRotatableError(null, null, text)
+    }
+
+    private fun isRateLimitException(e: Throwable): Boolean {
+        val msg = (e.message ?: "") + " " + (e.cause?.message ?: "")
+        return ai.deepcode.android.data.remote.ApiKeyRotator.isRotatableError(e, null, msg)
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -177,6 +212,9 @@ class TelegramBridgeService : Service() {
     }
 
     private fun startPolling() {
+        // Load in-app cached models (GMI Cloud, etc.)
+        ModelCatalog.loadFromPrefs(repository.securePrefs)
+
         // Prewarm Zen AI models live from server
         serviceScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
@@ -342,7 +380,8 @@ class TelegramBridgeService : Service() {
             prefs.getApiKey(storageKey).isNotEmpty() ||
             prefs.getSetting("oauth_token_$storageKey", "").isNotEmpty() ||
             prefs.getSetting("cookie_$storageKey", "").isNotEmpty() ||
-            prefs.getSetting("api_key_$storageKey", "").isNotEmpty()
+            prefs.getSetting("api_key_$storageKey", "").isNotEmpty() ||
+            prefs.getSetting("selected_models_$storageKey", "").isNotEmpty()
     }
 
     private fun getAvailableModels(): List<AIModel> {
@@ -352,17 +391,29 @@ class TelegramBridgeService : Service() {
         AIProviderFactory.providers.forEach { provider ->
             val storageKey = providerStorageId(provider.name)
             if (hasProviderCredentials(storageKey, provider.isFree)) {
-                provider.models.forEach { model ->
-                    if (seenKeys.add("${provider.name}:${model.id}")) {
-                        result.add(model)
+                val selectedIdsStr = repository.securePrefs.getSetting("selected_models_$storageKey", "")
+                val selectedIdSet = if (selectedIdsStr.isNotBlank()) {
+                    selectedIdsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+                } else null
+
+                val candidateModels = mutableListOf<AIModel>()
+                val dynamicModels = ModelCatalog.getModelsForProvider(provider.name, repository.securePrefs)
+                candidateModels.addAll(dynamicModels)
+                provider.models.forEach { sm ->
+                    if (candidateModels.none { it.id == sm.id }) {
+                        candidateModels.add(sm)
                     }
                 }
-                val dynamicModels = ModelCatalog.models.value[provider.name]
-                if (dynamicModels != null) {
-                    dynamicModels.forEach { model ->
-                        if (seenKeys.add("${provider.name}:${model.id}")) {
-                            result.add(model)
-                        }
+
+                val filtered = if (selectedIdSet != null && selectedIdSet.isNotEmpty()) {
+                    candidateModels.filter { it.id in selectedIdSet }
+                } else {
+                    candidateModels
+                }
+
+                filtered.forEach { model ->
+                    if (seenKeys.add("${provider.name}:${model.id}")) {
+                        result.add(model)
                     }
                 }
             }
@@ -415,9 +466,19 @@ class TelegramBridgeService : Service() {
         val savedModelId = getSavedModelForChat(chatId)
         val savedProviderName = getSavedProviderForChat(chatId)
         val modelInfo = if (savedModelId != null) {
-            AIProviderFactory.providers.flatMap { it.models }.firstOrNull {
-                it.id == savedModelId && (savedProviderName == null || it.provider == savedProviderName)
-            }
+            val dynamic = if (savedProviderName != null) ModelCatalog.getModelsForProvider(savedProviderName, repository.securePrefs) else emptyList()
+            dynamic.firstOrNull { it.id == savedModelId }
+                ?: AIProviderFactory.providers.flatMap { it.models }.firstOrNull {
+                    it.id == savedModelId && (savedProviderName == null || it.provider == savedProviderName)
+                }
+                ?: AIModel(
+                    id = savedModelId,
+                    name = formatModelTitle(savedModelId),
+                    provider = savedProviderName ?: "Zen AI",
+                    isFree = false,
+                    contextWindow = "128k",
+                    badge = "Paid"
+                )
         } else null
 
         val processingText = detectProcessingMessage(text)
@@ -524,7 +585,7 @@ class TelegramBridgeService : Service() {
                     var lastEditedText = ""
 
                     withTimeout(180_000L) {
-                        agentEngine.run(sessionId, text, modelInfo?.provider, modelInfo?.id, noFallback = modelInfo != null).collect { statusOrText ->
+                        agentEngine.run(sessionId, text, savedProviderName ?: modelInfo?.provider, savedModelId ?: modelInfo?.id, noFallback = savedModelId != null).collect { statusOrText ->
                             if (!statusOrText.startsWith("Thinking...\n") && !statusOrText.startsWith("Running tool: ")) {
                                 finalResponse = statusOrText
 
@@ -550,7 +611,9 @@ class TelegramBridgeService : Service() {
                 }
             }
 
-            if (finalResponse.trim().isEmpty()) {
+            if (isRateLimitError(finalResponse)) {
+                finalResponse = TELEGRAM_RATE_LIMIT_REPLY
+            } else if (finalResponse.trim().isEmpty()) {
                 finalResponse = "Sorry, I couldn't generate a response."
             }
 
@@ -668,10 +731,15 @@ class TelegramBridgeService : Service() {
             }
             AppLogger.e(TAG, "Agent run timed out", e)
         } catch (e: Exception) {
-            if (processingMsgId != null) {
-                editMessage(token, chatId, processingMsgId, "⚠️ An error occurred: ${e.message}")
+            val errorMsg = if (isRateLimitException(e)) {
+                TELEGRAM_RATE_LIMIT_REPLY
             } else {
-                sendMessage(token, chatId, "⚠️ An error occurred: ${e.message}")
+                "⚠️ An error occurred: ${e.message}"
+            }
+            if (processingMsgId != null) {
+                editMessage(token, chatId, processingMsgId, errorMsg)
+            } else {
+                sendMessage(token, chatId, errorMsg)
             }
             AppLogger.e(TAG, "Agent run failed", e)
         }
@@ -684,9 +752,9 @@ class TelegramBridgeService : Service() {
                 repository.deleteSession(sessionId)
                 sendMessage(token, chatId, "🧹 Conversation history cleared! Starting fresh. 🚀")
             }
-        command.startsWith("/change") || command.startsWith("/model") -> {
-            sendProviderSelection(token, chatId)
-        }
+            command.startsWith("/models") || command.startsWith("/model") || command.startsWith("/change") -> {
+                sendProviderSelection(token, chatId)
+            }
             command.startsWith("/voice") -> {
                 showVoicesSelection(token, chatId)
             }
@@ -701,8 +769,8 @@ class TelegramBridgeService : Service() {
                     "────────── ✦ ──────────\n" +
                     "💬 Send me a message and I’ll respond using AI.\n\n" +
                     ">_ <b>Commands:</b>\n\n" +
-                    "↔️ /change - Switch AI model\n" +
-                    "🧠 /model - Same as /change\n" +
+                    "🤖 /models - Switch provider & models\n" +
+                    "↔️ /change - Same as /models\n" +
                     "🔊 /voice - Change voice character & tone\n" +
                     "🌐 /language - Set AI & TTS language\n" +
                     "👤 /persona - List available personas\n" +
@@ -717,8 +785,8 @@ class TelegramBridgeService : Service() {
             command.startsWith("/help") -> {
                 val defaultHelpMsg = "💡 <b>Available Commands:</b>\n" +
                     "────────── ✦ ──────────\n" +
-                    "↔️ /change - Switch AI model\n" +
-                    "🧠 /model - Same as /change\n" +
+                    "🤖 /models - Switch provider & models\n" +
+                    "↔️ /change - Same as /models\n" +
                     "🔊 /voice - Change voice character & tone\n" +
                     "🌐 /language - Set AI & TTS language\n" +
                     "👤 /persona - List available personas\n" +
@@ -734,7 +802,7 @@ class TelegramBridgeService : Service() {
                 sendMessage(token, chatId, msg, parseMode = "HTML")
             }
             else -> {
-                sendMessage(token, chatId, "Unknown command. Try /change, /voice, /language, /persona, /start, or /help")
+                sendMessage(token, chatId, "Unknown command. Try /models, /voice, /language, /persona, /start, or /help")
             }
         }
     }
@@ -804,9 +872,9 @@ class TelegramBridgeService : Service() {
             }
         val baseUrl = providerDefaultBaseUrl(providerName)
 
-        // Live Model Fetching — same dynamic live-fetching system as the in-app chat
-        var dynamicModels = ModelCatalog.models.value[providerName] ?: emptyList()
-        if (dynamicModels.isEmpty()) {
+        // Live Model Fetching — check cached models first, then fetch live if key is present
+        var dynamicModels = ModelCatalog.getModelsForProvider(providerName, repository.securePrefs)
+        if (dynamicModels.isEmpty() && (apiKey.isNotEmpty() || providerName.contains("Zen", ignoreCase = true))) {
             val fetched: List<AIModel> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 if (providerName == "Antigravity") {
                     val oauthToken = repository.securePrefs.getSetting("oauth_token_antigravity", "").split("||")[0]
@@ -816,14 +884,43 @@ class TelegramBridgeService : Service() {
                 }
             }
             if (fetched.isNotEmpty()) {
-                ModelCatalog.setModels(providerName, fetched)
+                ModelCatalog.setModels(providerName, fetched, repository.securePrefs)
                 dynamicModels = fetched
             }
         }
 
         val providerObj = AIProviderFactory.providers.firstOrNull { it.name == providerName }
         val staticModels = providerObj?.models ?: emptyList()
-        val allModels = (dynamicModels.ifEmpty { staticModels }).associateBy { it.id }.values.toList()
+        val allAvailableModels = (dynamicModels + staticModels).associateBy { it.id }.values.toList()
+
+        // Filter models by in-app user selection if configured!
+        val selectedIdsStr = repository.securePrefs.getSetting("selected_models_$storageId", "")
+        val allModels = if (selectedIdsStr.isNotBlank()) {
+            val selectedIdSet = selectedIdsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+            allAvailableModels.filter { it.id in selectedIdSet }
+        } else {
+            allAvailableModels
+        }
+
+        if (allModels.isEmpty()) {
+            val msg = if (apiKey.isEmpty() && !providerName.contains("Zen", ignoreCase = true)) {
+                "⚠️ *${providerName}* requires an API key.\n\nPlease enter your API key in the DeepCode app to view and use models for this provider."
+            } else {
+                "🤖 *${providerName} Models*\n\nNo models found or allowed. Please configure your models in the DeepCode app."
+            }
+            val backRow = JsonArray().apply {
+                val backBtn = JsonObject().apply {
+                    addProperty("text", "« Back to providers")
+                    addProperty("callback_data", "back_to_providers")
+                }
+                add(backBtn)
+            }
+            val replyMarkup = JsonObject().apply {
+                add("inline_keyboard", JsonArray().apply { add(backRow) })
+            }
+            editMessageWithKeyboard(token, chatId, messageId, msg, replyMarkup)
+            return
+        }
 
         val savedId = getSavedModelForChat(chatId)
         val savedProvider = getSavedProviderForChat(chatId)
@@ -836,6 +933,7 @@ class TelegramBridgeService : Service() {
 
         val header = buildString {
             append("🤖 *${providerName} Models* (${allModels.size} available")
+            if (selectedIdsStr.isNotBlank()) append(" · Selected in-app")
             if (totalPages > 1) append(" · Page ${currentPage + 1}/$totalPages")
             append(")\n\n")
             if (currentModel != null) {
@@ -855,7 +953,16 @@ class TelegramBridgeService : Service() {
             val baseName = model.name.replace("(Free)", "").replace("(free)", "").trim()
             val label = if (isSelected) "✓ $baseName" else if (isModelFree) "$baseName (Free)" else baseName
             btn.addProperty("text", label)
-            btn.addProperty("callback_data", "select_model:${providerName}:${model.id}")
+
+            val fullCallback = "select_model:${providerName}:${model.id}"
+            val callbackData = if (fullCallback.toByteArray(Charsets.UTF_8).size <= 64) {
+                fullCallback
+            } else {
+                val shortKey = "sm:" + getShortModelKey(providerName, model.id)
+                modelCallbackRegistry[shortKey] = providerName to model.id
+                shortKey
+            }
+            btn.addProperty("callback_data", callbackData)
             row.add(btn)
             rows.add(row)
         }
@@ -1124,22 +1231,22 @@ class TelegramBridgeService : Service() {
                 answerCallbackQuery(token, callbackId, "Page ${page + 1}")
                 AppLogger.d(TAG, "handleCallbackQuery finish (models_page).")
             }
+            callbackData.startsWith("sm:") -> {
+                val hash = callbackData.removePrefix("sm:")
+                val resolved = resolveModelFromHash(hash)
+                if (resolved != null) {
+                    handleSelectModel(token, chatId, messageId, callbackId, resolved.first, resolved.second)
+                } else {
+                    answerCallbackQuery(token, callbackId, "Selection expired. Please open /models again.")
+                }
+                AppLogger.d(TAG, "handleCallbackQuery finish (sm).")
+            }
             callbackData.startsWith("select_model:") -> {
                 val parts = callbackData.removePrefix("select_model:").split(":", limit = 2)
                 val providerName = if (parts.size == 2) parts[0] else null
                 val modelId = if (parts.size == 2) parts[1] else parts[0]
-                AppLogger.d(TAG, "Selected model ID: $modelId from provider: $providerName")
-                saveModelForChat(chatId, modelId, providerName)
-                val model = ModelCatalog.models.value[providerName]?.firstOrNull { it.id == modelId }
-                    ?: AIProviderFactory.providers.flatMap { it.models }.firstOrNull { it.id == modelId && (providerName == null || it.provider == providerName) }
-                val rawName = model?.name ?: formatModelTitle(modelId)
-                val name = rawName.replace("(Free)", "").replace("(free)", "").trim()
-                val providerLabel = if (providerName != null) " ($providerName)" else ""
-                AppLogger.d(TAG, "Editing bot selection message to model name: $name")
-                editMessage(token, chatId, messageId, "✅ Switched to *$name*$providerLabel!\n\nSend a message to chat with this model.", "Markdown")
-                AppLogger.d(TAG, "Sending answerCallbackQuery response...")
-                answerCallbackQuery(token, callbackId, "Model switched to $name")
-                AppLogger.d(TAG, "handleCallbackQuery finish.")
+                handleSelectModel(token, chatId, messageId, callbackId, providerName, modelId)
+                AppLogger.d(TAG, "handleCallbackQuery finish (select_model).")
             }
             callbackData.startsWith("select_voice:") -> {
                 val voice = callbackData.removePrefix("select_voice:")
@@ -1202,6 +1309,28 @@ class TelegramBridgeService : Service() {
                 AppLogger.d(TAG, "handleCallbackQuery finish.")
             }
         }
+    }
+
+    private suspend fun handleSelectModel(
+        token: String,
+        chatId: Long,
+        messageId: Long,
+        callbackId: String,
+        providerName: String?,
+        modelId: String
+    ) {
+        AppLogger.d(TAG, "Selected model ID: $modelId from provider: $providerName")
+        saveModelForChat(chatId, modelId, providerName)
+        val model = ModelCatalog.models.value[providerName]?.firstOrNull { it.id == modelId }
+            ?: AIProviderFactory.providers.flatMap { it.models }.firstOrNull { it.id == modelId && (providerName == null || it.provider == providerName) }
+        val rawName = model?.name ?: formatModelTitle(modelId)
+        val name = rawName.replace("(Free)", "").replace("(free)", "").trim()
+        val providerLabel = if (providerName != null) " ($providerName)" else ""
+        AppLogger.d(TAG, "Editing bot selection message to model name: $name")
+        editMessage(token, chatId, messageId, "✅ Switched to *$name*$providerLabel!\n\nSend a message to chat with this model.", "Markdown")
+        AppLogger.d(TAG, "Sending answerCallbackQuery response...")
+        answerCallbackQuery(token, callbackId, "Model switched to $name")
+        AppLogger.d(TAG, "handleSelectModel finish.")
     }
 
     private fun stripThoughts(text: String): String {
@@ -1406,15 +1535,17 @@ class TelegramBridgeService : Service() {
     private fun editMessage(token: String, chatId: Long, messageId: Long, text: String, parseMode: String = "Markdown") {
         AppLogger.d(TAG, "editMessage entry: messageId=$messageId, text.length=${text.length}, parseMode=$parseMode")
         val cleanText = stripThoughts(text)
-        val processed = if (parseMode == "Markdown") preprocessMarkdown(cleanText) else cleanText
+        val isHtml = parseMode.equals("HTML", ignoreCase = true) || (cleanText.contains("<b>") || cleanText.contains("</b>") || cleanText.contains("<code>"))
+        val targetParseMode = if (isHtml) "HTML" else parseMode
+        val processed = if (targetParseMode == "Markdown") preprocessMarkdown(cleanText) else cleanText
         try {
             val url = "${API_BASE}${token}/editMessageText"
             val payload = JsonObject().apply {
                 addProperty("chat_id", chatId)
                 addProperty("message_id", messageId)
                 addProperty("text", processed)
-                if (parseMode.isNotEmpty()) {
-                    addProperty("parse_mode", parseMode)
+                if (targetParseMode.isNotEmpty()) {
+                    addProperty("parse_mode", targetParseMode)
                 }
             }
             val request = Request.Builder()
@@ -1442,7 +1573,7 @@ class TelegramBridgeService : Service() {
                 }
             }
 
-            if (shouldRetry && parseMode.isNotEmpty()) {
+            if (shouldRetry && targetParseMode.isNotEmpty()) {
                 AppLogger.d(TAG, "Retrying editMessage without parse_mode for chat $chatId, message $messageId")
                 val retryPayload = JsonObject().apply {
                     addProperty("chat_id", chatId)

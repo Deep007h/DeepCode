@@ -14,6 +14,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -53,9 +55,11 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -1489,10 +1493,16 @@ private fun TableCard(
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val availableWidth = maxWidth
 
-            // 1. Calculate max character length per column across all rows
+            val uriHandler = LocalUriHandler.current
+
+            // 1. Calculate max character length per column across all rows (stripping markdown link URLs)
             val colMaxChars = remember(rows, maxCols) {
                 (0 until maxCols).map { c ->
-                    rows.maxOfOrNull { r -> r.getOrNull(c)?.length ?: 0 } ?: 0
+                    rows.maxOfOrNull { r ->
+                        val raw = r.getOrNull(c) ?: ""
+                        val stripped = MD_LINK_REGEX.replace(raw) { it.groupValues[1] }
+                        stripped.length
+                    } ?: 0
                 }
             }
 
@@ -1501,11 +1511,11 @@ private fun TableCard(
                 (0 until maxCols).map { c ->
                     val len = colMaxChars[c]
                     when {
-                        len > 60 -> 260.dp
-                        len > 35 -> 200.dp
-                        len > 18 -> 150.dp
-                        len > 8 -> 120.dp
-                        else -> 90.dp
+                        len > 50 -> 240.dp
+                        len > 30 -> 180.dp
+                        len > 18 -> 140.dp
+                        len > 8 -> 110.dp
+                        else -> 80.dp
                     }
                 }
             }
@@ -1568,9 +1578,18 @@ private fun TableCard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             paddedRow.forEachIndexed { colIndex, cell ->
+                                val cellUrl = remember(cell) {
+                                    val m = MD_LINK_REGEX.find(cell.trim()) ?: Regex("""\b(https?://[^\s)]+)""").find(cell.trim())
+                                    if (m != null && m.groupValues.size > 2 && m.groupValues[2].isNotBlank()) m.groupValues[2]
+                                    else if (m != null && m.groupValues.size > 1 && m.groupValues[1].startsWith("http")) m.groupValues[1]
+                                    else null
+                                }
                                 Box(
                                     modifier = Modifier
                                         .width(colWidths[colIndex])
+                                        .then(if (cellUrl != null && !isHeader) Modifier.clickable {
+                                            try { uriHandler.openUri(cellUrl) } catch (_: Exception) {}
+                                        } else Modifier)
                                         .padding(horizontal = 14.dp, vertical = 10.dp),
                                     contentAlignment = Alignment.CenterStart
                                 ) {
@@ -2266,55 +2285,224 @@ fun MediaProcessingOverlay(
 @Composable
 fun ImageGenerationSkeleton(
     modifier: Modifier = Modifier,
-    statusText: String = "Generating image..."
+    statusText: String = "Creating image"
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.25f,
-        targetValue = 0.85f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "alpha"
-    )
+    BoxWithConstraints(modifier = modifier) {
+        val isCompact = maxWidth < 130.dp || maxHeight < 130.dp
 
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(260.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF161822))
-            .border(1.dp, Color(0xFF2B2E3D), RoundedCornerShape(16.dp)),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(16.dp)
-        ) {
+        if (isCompact) {
+            val infiniteTransition = rememberInfiniteTransition(label = "compact_shimmer")
+            val alpha by infiniteTransition.animateFloat(
+                initialValue = 0.35f,
+                targetValue = 0.75f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(900, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "alpha"
+            )
             Box(
                 modifier = Modifier
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF8B5CF6).copy(alpha = alpha)),
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF232428).copy(alpha = alpha)),
                 contentAlignment = Alignment.Center
             ) {
-                Text("🎨", fontSize = 26.sp)
+                Icon(
+                    imageVector = Icons.Default.Image,
+                    contentDescription = null,
+                    tint = Color(0xFF6B6E76),
+                    modifier = Modifier.size(24.dp)
+                )
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = statusText,
-                color = Color.White.copy(alpha = 0.9f),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
+        } else {
+            val displayText = if (statusText.isBlank() || statusText.startsWith("Generating image", ignoreCase = true) || statusText.startsWith("Creating image", ignoreCase = true)) {
+                "Creating image"
+            } else {
+                statusText
+            }
+
+            val infiniteTransition = rememberInfiniteTransition(label = "image_loading")
+
+            // Ultra-smooth easing curve for the horizontal progress indicator
+            val progress by infiniteTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(1400, easing = CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f)),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "progress"
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "This might take a few seconds...",
-                color = Color(0xFF9CA3AF),
-                fontSize = 12.sp
+
+            // Very subtle ambient breathing for the artwork stack
+            val ambientScale by infiniteTransition.animateFloat(
+                initialValue = 0.985f,
+                targetValue = 1.015f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(2200, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "ambientScale"
             )
+
+            val ambientGlow by infiniteTransition.animateFloat(
+                initialValue = 0.75f,
+                targetValue = 1.0f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(1800, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "ambientGlow"
+            )
+
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 310.dp)
+                    .fillMaxWidth(0.85f)
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(Color(0xFF232428))
+                    .border(1.dp, Color(0xFF33353C), RoundedCornerShape(26.dp))
+                    .padding(horizontal = 22.dp, vertical = 24.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.Start
+                ) {
+                    // Header text
+                    Text(
+                        text = displayText,
+                        color = Color(0xFFECEEF2),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = (-0.2).sp
+                    )
+
+                    Spacer(modifier = Modifier.height(28.dp))
+
+                    // Center graphic: Fanned photo card stack
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(130.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .graphicsLayer {
+                                    scaleX = ambientScale
+                                    scaleY = ambientScale
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            // Farthest left card
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = (-16).dp)
+                                    .size(136.dp, 108.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Color(0xFF26282E).copy(alpha = 0.28f))
+                            )
+                            // Farthest right card
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = 16.dp)
+                                    .size(136.dp, 108.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Color(0xFF26282E).copy(alpha = 0.28f))
+                            )
+                            // Middle left card
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = (-8).dp)
+                                    .size(140.dp, 113.dp)
+                                    .clip(RoundedCornerShape(17.dp))
+                                    .background(Color(0xFF2A2C33).copy(alpha = 0.55f))
+                            )
+                            // Middle right card
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = 8.dp)
+                                    .size(140.dp, 113.dp)
+                                    .clip(RoundedCornerShape(17.dp))
+                                    .background(Color(0xFF2A2C33).copy(alpha = 0.55f))
+                            )
+                            // Front center photo card
+                            Box(
+                                modifier = Modifier
+                                    .size(144.dp, 118.dp)
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .background(Color(0xFF2E3037))
+                            ) {
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    val w = size.width
+                                    val h = size.height
+
+                                    // Sun circle in upper-left
+                                    val sunRadius = w * 0.082f
+                                    val sunCenter = Offset(w * 0.31f, h * 0.32f)
+                                    drawCircle(
+                                        color = Color(0xFF63666E).copy(alpha = ambientGlow),
+                                        radius = sunRadius,
+                                        center = sunCenter
+                                    )
+
+                                    // Left mountain (smaller / background peak)
+                                    val leftPath = Path().apply {
+                                        moveTo(-w * 0.05f, h)
+                                        lineTo(w * 0.28f, h * 0.56f)
+                                        quadraticTo(w * 0.32f, h * 0.52f, w * 0.36f, h * 0.56f)
+                                        lineTo(w * 0.76f, h)
+                                        close()
+                                    }
+                                    drawPath(leftPath, color = Color(0xFF3F4249))
+
+                                    // Right mountain (taller / foreground peak)
+                                    val rightPath = Path().apply {
+                                        moveTo(w * 0.22f, h)
+                                        lineTo(w * 0.60f, h * 0.44f)
+                                        quadraticTo(w * 0.64f, h * 0.40f, w * 0.68f, h * 0.44f)
+                                        lineTo(w * 1.05f, h)
+                                        close()
+                                    }
+                                    drawPath(rightPath, color = Color(0xFF4C4F57))
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(28.dp))
+
+                    // Horizontal loading bar underneath
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val barWidth = 160.dp
+                        val barHeight = 4.5.dp
+                        val thumbWidth = 52.dp
+
+                        Box(
+                            modifier = Modifier
+                                .width(barWidth)
+                                .height(barHeight)
+                                .clip(CircleShape)
+                                .background(Color(0xFF383A41))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .width(thumbWidth)
+                                    .offset(x = (barWidth - thumbWidth) * progress)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFD1D5DB).copy(alpha = 0.88f))
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+            }
         }
     }
 }
@@ -2450,82 +2638,88 @@ fun FullScreenImagePreviewDialog(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Top Controls: Floating Pill Toolbar (center), Close button (left), Download button (right)
-                Box(
+                // Top Controls: Close button (left) and Download button (right), with Floating Pill Toolbar placed little lower
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.TopCenter)
                         .statusBarsPadding()
-                        .padding(top = 16.dp, start = 12.dp, end = 12.dp),
-                    contentAlignment = Alignment.Center
+                        .padding(top = 16.dp, start = 14.dp, end = 14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier
-                            .align(Alignment.CenterStart)
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(Color(0x99000000))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close Preview",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // Floating Pill Toolbar matching reference image
-                    FullScreenImageActionPill(
-                        onComment = { activeActionDialog = "comment" },
-                        onRemoveBg = {
-                            onSendSuggestion?.invoke("Remove background from this image")
-                            Toast.makeText(context, "Requesting background removal...", Toast.LENGTH_SHORT).show()
-                            onDismiss()
-                        },
-                        onErase = { activeActionDialog = "erase" },
-                        onResize = { activeActionDialog = "resize" },
-                        modifier = Modifier.align(Alignment.Center)
-                    )
-
                     var isDownloading by remember { mutableStateOf(false) }
 
-                    IconButton(
-                        onClick = {
-                            if (!isDownloading) {
-                                isDownloading = true
-                                Toast.makeText(context, "Downloading full resolution image...", Toast.LENGTH_SHORT).show()
-                                saveImageToDeviceGallery(context, imageUrl) { success ->
-                                    isDownloading = false
-                                    if (success) {
-                                        Toast.makeText(context, "Saved full resolution image to Pictures/DeepCode", Toast.LENGTH_LONG).show()
-                                    } else {
-                                        Toast.makeText(context, "Failed to save image", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }
-                        },
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(Color(0x99000000))
+                    // Row with Close button (left) and Download button (right)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (isDownloading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                color = Color.White,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color(0x99000000))
+                        ) {
                             Icon(
-                                imageVector = Icons.Default.Download,
-                                contentDescription = "Download Image",
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close Preview",
                                 tint = Color.White,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
+
+                        IconButton(
+                            onClick = {
+                                if (!isDownloading) {
+                                    isDownloading = true
+                                    Toast.makeText(context, "Downloading full resolution image...", Toast.LENGTH_SHORT).show()
+                                    saveImageToDeviceGallery(context, imageUrl) { success ->
+                                        isDownloading = false
+                                        if (success) {
+                                            Toast.makeText(context, "Saved full resolution image to Pictures/DeepCode", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(context, "Failed to save image", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color(0x99000000))
+                        ) {
+                            if (isDownloading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = "Download Image",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                     }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Floating Pill Toolbar placed lower than both buttons
+                    FullScreenImageActionPill(
+                        onComment = { activeActionDialog = "comment" },
+                        onRemoveBg = {
+                            onSendSuggestion?.invoke("Remove background from this image [image:$imageUrl]")
+                            Toast.makeText(context, "Requesting background removal with ChatGPT...", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        },
+                        onErase = { activeActionDialog = "erase" },
+                        onResize = { activeActionDialog = "resize" }
+                    )
                 }
 
                 // Sub-dialogs
@@ -2563,7 +2757,7 @@ fun FullScreenImagePreviewDialog(
                             TextButton(
                                 onClick = {
                                     if (commentText.isNotBlank()) {
-                                        onSendSuggestion?.invoke("For this image: ${commentText.trim()}")
+                                        onSendSuggestion?.invoke("For this image: ${commentText.trim()} [image:$imageUrl]")
                                         activeActionDialog = null
                                         onDismiss()
                                     }
@@ -2614,7 +2808,7 @@ fun FullScreenImagePreviewDialog(
                             TextButton(
                                 onClick = {
                                     if (eraseText.isNotBlank()) {
-                                        onSendSuggestion?.invoke("Erase the ${eraseText.trim()} from this image")
+                                        onSendSuggestion?.invoke("Erase the ${eraseText.trim()} from this image [image:$imageUrl]")
                                         activeActionDialog = null
                                         onDismiss()
                                     }
@@ -2656,7 +2850,7 @@ fun FullScreenImagePreviewDialog(
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(Color(0xFF2C2C2E))
                                             .clickable {
-                                                onSendSuggestion?.invoke("Resize and reframe this image into $ratioVal")
+                                                onSendSuggestion?.invoke("Resize and reframe this image into $ratioVal [image:$imageUrl]")
                                                 activeActionDialog = null
                                                 onDismiss()
                                             }

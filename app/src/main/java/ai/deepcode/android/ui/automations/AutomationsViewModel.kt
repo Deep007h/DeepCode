@@ -18,7 +18,7 @@ class AutomationsViewModel(private val context: Context) : ViewModel() {
     private val securePrefs = EncryptedPrefs.getInstance(context)
 
     val automations: StateFlow<List<AutomationEntity>> = repository.getAllAutomationsFlow()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     private fun defaultTelegramChatId(): String? {
         val id = securePrefs.getSetting("telegram_default_chat_id", "")
@@ -92,9 +92,18 @@ class AutomationsViewModel(private val context: Context) : ViewModel() {
             val db = ai.deepcode.android.data.local.AppDatabase.getDatabase(context)
             db.sessionDao().insertSession(session)
 
+            val isGpt = category.equals("CHATGPT", ignoreCase = true)
+            if (isGpt) {
+                val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context)
+                prefs.saveSetting("session_provider_$sessionId", "ChatGPT")
+                prefs.saveSetting("session_model_$sessionId", "chatgpt-4o")
+            }
             val config = JsonObject().apply {
                 addProperty("action_prompt", actionPrompt)
                 addProperty("chat_session_id", sessionId)
+                if (isGpt) {
+                    addProperty("target", "chatgpt")
+                }
                 defaultTelegramChatId()?.let { addProperty("telegram_chat_id", it) }
             }
             val nextRun = AutomationScheduler.computeNextRunAt(cron)
@@ -107,7 +116,7 @@ class AutomationsViewModel(private val context: Context) : ViewModel() {
                 cronExpression = cron,
                 lastRunAt = 0L,
                 nextRunAt = nextRun,
-                templateId = "custom",
+                templateId = if (isGpt) "chatgpt_task" else "custom",
                 configJson = Gson().toJson(config),
                 chatSessionId = sessionId
             )
@@ -143,6 +152,12 @@ class AutomationsViewModel(private val context: Context) : ViewModel() {
                 sessionDao.renameSession(sessionId, "🤖 $name")
             }
 
+            val isGpt = category.equals("CHATGPT", ignoreCase = true)
+            if (isGpt && !sessionId.isNullOrBlank()) {
+                val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context)
+                prefs.saveSetting("session_provider_$sessionId", "ChatGPT")
+                prefs.saveSetting("session_model_$sessionId", "chatgpt-4o")
+            }
             val configObj = try {
                 com.google.gson.JsonParser.parseString(existing.configJson).asJsonObject
             } catch (_: Exception) {
@@ -150,6 +165,11 @@ class AutomationsViewModel(private val context: Context) : ViewModel() {
             }.apply {
                 addProperty("action_prompt", actionPrompt)
                 addProperty("chat_session_id", sessionId)
+                if (isGpt) {
+                    addProperty("target", "chatgpt")
+                } else if (get("target")?.asString == "chatgpt") {
+                    remove("target")
+                }
                 if (!has("telegram_chat_id")) {
                     defaultTelegramChatId()?.let { addProperty("telegram_chat_id", it) }
                 }

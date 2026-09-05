@@ -13,7 +13,8 @@ import kotlinx.coroutines.launch
 class AutomationAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val automationId = intent.getStringExtra("automation_id") ?: return
-        AppLogger.i("AutomationAlarmReceiver", "Alarm fired for automation: $automationId")
+        val forceRun = intent.getBooleanExtra("force_run", false)
+        AppLogger.i("AutomationAlarmReceiver", "Alarm fired for automation: $automationId (forceRun=$forceRun)")
 
         val pendingResult = goAsync()
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -28,7 +29,7 @@ class AutomationAlarmReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
             try {
                 AutomationForegroundService.start(context, "Automation Task")
-                AutomationRunner.executeAutomation(context.applicationContext, automationId)
+                AutomationRunner.executeAutomation(context.applicationContext, automationId, forceRun)
             } catch (e: Exception) {
                 AppLogger.e("AutomationAlarmReceiver", "Failed to execute automation $automationId", e)
             } finally {

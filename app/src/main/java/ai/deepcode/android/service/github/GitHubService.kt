@@ -30,7 +30,9 @@ data class GitHubRepo(
     val url: String,
     val defaultBranch: String,
     val private: Boolean,
-    val fork: Boolean
+    val fork: Boolean,
+    val language: String = "",
+    val stars: Int = 0
 )
 
 data class GitHubFile(
@@ -206,10 +208,49 @@ class GitHubService(private val token: String) {
                     url = obj.get("html_url")?.takeIf { !it.isJsonNull }?.asString ?: "",
                     defaultBranch = obj.get("default_branch")?.takeIf { !it.isJsonNull }?.asString ?: "main",
                     private = obj.get("private")?.takeIf { !it.isJsonNull }?.asBoolean ?: false,
-                    fork = obj.get("fork")?.takeIf { !it.isJsonNull }?.asBoolean ?: false
+                    fork = obj.get("fork")?.takeIf { !it.isJsonNull }?.asBoolean ?: false,
+                    language = obj.get("language")?.takeIf { !it.isJsonNull }?.asString ?: "",
+                    stars = obj.get("stargazers_count")?.takeIf { !it.isJsonNull }?.asInt ?: 0
                 )
             }
         }
+    }
+
+    fun formatReposAsTable(repos: List<GitHubRepo>, title: String = "Your GitHub Repositories"): String {
+        if (repos.isEmpty()) return "No repositories found."
+        val publicCount = repos.count { !it.private }
+        val privateCount = repos.count { it.private }
+        val forkCount = repos.count { it.fork }
+
+        return buildString {
+            appendLine("### 📦 $title (${repos.size})")
+            appendLine()
+            append("> 📊 **Summary:** **${repos.size}** total • **$publicCount** 🌍 Public • **$privateCount** 🔒 Private")
+            if (forkCount > 0) append(" • **$forkCount** 🍴 Forked")
+            appendLine()
+            appendLine()
+            appendLine("| Repository | Access | Branch | Language | Description |")
+            appendLine("| :--- | :--- | :--- | :--- | :--- |")
+            repos.forEach { r ->
+                val access = when {
+                    r.private && r.fork -> "🔒 Private *(Fork)*"
+                    r.private -> "🔒 Private"
+                    r.fork -> "🌍 Public *(Fork)*"
+                    else -> "🌍 Public"
+                }
+                val repoLink = if (r.url.isNotBlank()) "[${r.fullName}](${r.url})" else "**${r.fullName}**"
+                val branch = "`${r.defaultBranch}`"
+                val lang = r.language.ifBlank { "—" }
+                val cleanDesc = r.description
+                    .replace("|", " - ")
+                    .replace("\r", "")
+                    .replace("\n", " ")
+                    .trim()
+                    .ifBlank { "—" }
+
+                appendLine("| $repoLink | $access | $branch | $lang | $cleanDesc |")
+            }
+        }.trimEnd()
     }
 
     fun getRepo(owner: String, repo: String): Result<String> {
@@ -452,15 +493,20 @@ class GitHubService(private val token: String) {
             val arr = gson.fromJson(body, JsonArray::class.java)
             if (arr.size() == 0) return@map "No commits found in $owner/$repo."
             buildString {
-                appendLine("Commit history for $owner/$repo (showing ${arr.size()}):")
+                appendLine("### 📜 Commit History for `$owner/$repo` (${arr.size()})")
+                appendLine()
+                appendLine("| Commit | Message | Author | Date |")
+                appendLine("| :--- | :--- | :--- | :--- |")
                 arr.forEach { el ->
                     val obj = el.asJsonObject
                     val commitSha = jsonStr(obj.get("sha")).take(7)
                     val commitObj = obj.getAsJsonObject("commit")
-                    val message = jsonStr(commitObj?.get("message")).lines().firstOrNull() ?: ""
-                    val authorName = jsonStr(commitObj?.getAsJsonObject("author")?.get("name"))
-                    val date = jsonStr(commitObj?.getAsJsonObject("author")?.get("date")).take(10)
-                    appendLine("• `$commitSha` - $message ($authorName, $date)")
+                    val message = jsonStr(commitObj?.get("message")).lines().firstOrNull()?.replace("|", " - ")?.trim().orEmpty().ifBlank { "—" }
+                    val authorName = jsonStr(commitObj?.getAsJsonObject("author")?.get("name")).replace("|", " - ").trim().ifBlank { "Unknown" }
+                    val date = jsonStr(commitObj?.getAsJsonObject("author")?.get("date")).take(10).ifBlank { "—" }
+                    val htmlUrl = jsonStr(obj.get("html_url"))
+                    val commitLink = if (htmlUrl.isNotBlank()) "[$commitSha]($htmlUrl)" else "`$commitSha`"
+                    appendLine("| $commitLink | $message | $authorName | $date |")
                 }
             }.trimEnd()
         }
@@ -752,17 +798,25 @@ class GitHubService(private val token: String) {
             val arr = gson.fromJson(body, JsonArray::class.java)
             if (arr.size() == 0) return@map "No releases found for $owner/$repo."
             buildString {
-                appendLine("🏷️ Releases for $owner/$repo:")
+                appendLine("### 🏷️ Releases for `$owner/$repo` (${arr.size()})")
+                appendLine()
+                appendLine("| Version | Name | Status | Published | Link |")
+                appendLine("| :--- | :--- | :--- | :--- | :--- |")
                 arr.forEach { el ->
                     val obj = el.asJsonObject
-                    val tag = jsonStr(obj.get("tag_name"))
-                    val name = jsonStr(obj.get("name")).ifEmpty { tag }
+                    val tag = jsonStr(obj.get("tag_name")).ifBlank { "v" }
+                    val name = jsonStr(obj.get("name")).ifEmpty { tag }.replace("|", " - ").trim()
                     val prerelease = obj.get("prerelease")?.asBoolean ?: false
                     val draft = obj.get("draft")?.asBoolean ?: false
-                    val publishedAt = jsonStr(obj.get("published_at")).take(10)
+                    val status = when {
+                        draft -> "📝 Draft"
+                        prerelease -> "🧪 Pre-release"
+                        else -> "🚀 Stable"
+                    }
+                    val publishedAt = jsonStr(obj.get("published_at")).take(10).ifBlank { "—" }
                     val url = jsonStr(obj.get("html_url"))
-                    appendLine("• **$name** (`$tag`)${if (prerelease) " [Pre-release]" else ""}${if (draft) " [Draft]" else ""} — $publishedAt")
-                    appendLine("  $url")
+                    val link = if (url.isNotBlank()) "[View]($url)" else "—"
+                    appendLine("| `$tag` | $name | $status | $publishedAt | $link |")
                 }
             }.trimEnd()
         }
@@ -877,15 +931,29 @@ class GitHubService(private val token: String) {
             val json = gson.fromJson(body, JsonObject::class.java)
             val runs = json.getAsJsonArray("workflow_runs") ?: JsonArray()
             if (runs.size() == 0) return@map "No workflow runs found."
-            runs.map { run ->
-                val obj = run.asJsonObject
-                val id = obj.get("id")?.asLong ?: 0
-                val status = obj.get("status")?.asString ?: "unknown"
-                val conclusion = obj.get("conclusion")?.asString ?: "in_progress"
-                val name = obj.get("name")?.asString ?: "workflow"
-                val createdAt = obj.get("created_at")?.asString ?: ""
-                "Run #$id: $name — $status ($conclusion) at $createdAt"
-            }.joinToString("\n")
+            buildString {
+                appendLine("### ⚡ Workflows for `$owner/$repo` (${runs.size()})")
+                appendLine()
+                appendLine("| Run | Workflow | Status | Conclusion | Started | Link |")
+                appendLine("| :--- | :--- | :--- | :--- | :--- | :--- |")
+                runs.forEach { run ->
+                    val obj = run.asJsonObject
+                    val id = obj.get("id")?.asLong ?: 0
+                    val status = obj.get("status")?.asString ?: "unknown"
+                    val conclusion = obj.get("conclusion")?.asString ?: "in_progress"
+                    val concIcon = when (conclusion) {
+                        "success" -> "✅ success"
+                        "failure" -> "❌ failure"
+                        "cancelled" -> "⏹️ cancelled"
+                        else -> "⏳ $conclusion"
+                    }
+                    val name = (obj.get("name")?.asString ?: "workflow").replace("|", " - ").trim()
+                    val createdAt = jsonStr(obj.get("created_at")).take(10).ifBlank { "—" }
+                    val htmlUrl = jsonStr(obj.get("html_url"))
+                    val link = if (htmlUrl.isNotBlank()) "[View #$id]($htmlUrl)" else "#$id"
+                    appendLine("| #$id | $name | $status | $concIcon | $createdAt | $link |")
+                }
+            }.trimEnd()
         }
     }
 
@@ -949,15 +1017,20 @@ class GitHubService(private val token: String) {
             val arr = gson.fromJson(body, JsonArray::class.java)
             if (arr.size() == 0) return@map "No gists found."
             buildString {
-                appendLine("📄 Your GitHub Gists (${arr.size()}):")
+                appendLine("### 📄 Your GitHub Gists (${arr.size()})")
+                appendLine()
+                appendLine("| Gist | Visibility | Files | Description | Link |")
+                appendLine("| :--- | :--- | :--- | :--- | :--- |")
                 arr.forEach { el ->
                     val obj = el.asJsonObject
-                    val id = jsonStr(obj.get("id"))
-                    val desc = jsonStr(obj.get("description")).ifEmpty { "No description" }
+                    val id = jsonStr(obj.get("id")).take(8)
+                    val desc = jsonStr(obj.get("description")).ifEmpty { "No description" }.replace("|", " - ").trim()
                     val isPublic = obj.get("public")?.asBoolean ?: false
+                    val vis = if (isPublic) "🌍 Public" else "🔒 Secret"
                     val url = jsonStr(obj.get("html_url"))
-                    val files = obj.getAsJsonObject("files")?.keySet()?.joinToString(", ") ?: ""
-                    appendLine("• `$id`: $desc [${if (isPublic) "Public" else "Secret"}] ($files)\n  $url")
+                    val files = (obj.getAsJsonObject("files")?.keySet()?.joinToString(", ") ?: "—").replace("|", " - ")
+                    val link = if (url.isNotBlank()) "[View Gist]($url)" else "—"
+                    appendLine("| `$id` | $vis | $files | $desc | $link |")
                 }
             }.trimEnd()
         }
@@ -1017,7 +1090,9 @@ class GitHubService(private val token: String) {
                     url = obj.get("html_url")?.asString ?: "",
                     defaultBranch = obj.get("default_branch")?.asString ?: "main",
                     private = obj.get("private")?.asBoolean ?: false,
-                    fork = obj.get("fork")?.asBoolean ?: false
+                    fork = obj.get("fork")?.asBoolean ?: false,
+                    language = obj.get("language")?.takeIf { !it.isJsonNull }?.asString ?: "",
+                    stars = obj.get("stargazers_count")?.takeIf { !it.isJsonNull }?.asInt ?: 0
                 )
             }
         }
@@ -1025,14 +1100,7 @@ class GitHubService(private val token: String) {
 
     fun searchRepositoriesFormatted(query: String, perPage: Int = 10): Result<String> {
         return searchRepositories(query, perPage).map { repos ->
-            if (repos.isEmpty()) return@map "No repositories found matching \"$query\"."
-            buildString {
-                appendLine("🔍 Repositories matching \"$query\":")
-                repos.forEach { r ->
-                    appendLine("• **${r.fullName}** (${r.defaultBranch}) — ${r.description}")
-                    appendLine("  ${r.url}")
-                }
-            }.trimEnd()
+            formatReposAsTable(repos, "Repositories matching \"$query\"")
         }
     }
 
@@ -1045,16 +1113,21 @@ class GitHubService(private val token: String) {
             val items = json.getAsJsonArray("items") ?: JsonArray()
             if (items.size() == 0) return@map "No issues or pull requests found for \"$query\"."
             buildString {
-                appendLine("Found $total issues/PRs (showing ${items.size()}):")
+                appendLine("### 🔍 Issues & PRs matching \"$query\" (showing ${items.size()} of $total)")
+                appendLine()
+                appendLine("| Type | # | Status | Title | Link |")
+                appendLine("| :--- | :--- | :--- | :--- | :--- |")
                 items.forEach { item ->
                     val obj = item.asJsonObject
                     val number = jsonInt(obj.get("number"))
-                    val title = jsonStr(obj.get("title"))
+                    val title = jsonStr(obj.get("title")).replace("|", " - ").trim()
                     val state = jsonStr(obj.get("state"))
                     val htmlUrl = jsonStr(obj.get("html_url"))
                     val isPr = obj.has("pull_request")
-                    val type = if (isPr) "PR" else "Issue"
-                    appendLine("• $type #$number [$state]: $title\n  $htmlUrl")
+                    val type = if (isPr) "🔀 PR" else "❗ Issue"
+                    val status = if (state.equals("open", ignoreCase = true)) "🟢 Open" else "🔴 Closed"
+                    val link = if (htmlUrl.isNotBlank()) "[View #$number]($htmlUrl)" else "#$number"
+                    appendLine("| $type | #$number | $status | $title | $link |")
                 }
             }.trimEnd()
         }

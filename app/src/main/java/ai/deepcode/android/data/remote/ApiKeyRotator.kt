@@ -17,26 +17,132 @@ object ApiKeyRotator {
 
     // Key: "{storageId}:{slotIndex}" → Value: cooldown expiry timestamp (ms)
     private val exhaustedKeys = ConcurrentHashMap<String, Long>()
+    // Key: raw trimmed apiKey string → Value: cooldown expiry timestamp (ms)
+    private val exhaustedKeyValues = ConcurrentHashMap<String, Long>()
 
     private fun slotKey(storageId: String, slotIndex: Int) = "$storageId:$slotIndex"
 
     /**
-     * Mark a specific key slot as exhausted with a cooldown period (default 15s).
+     * Mark a specific key slot and/or key string as exhausted with a cooldown period (default 60s).
      */
-    fun markKeyExhausted(storageId: String, slotIndex: Int, cooldownMs: Long = 15_000) {
-        exhaustedKeys[slotKey(storageId, slotIndex)] = System.currentTimeMillis() + cooldownMs
+    fun markKeyExhausted(storageId: String, slotIndex: Int, keyString: String? = null, cooldownMs: Long = 60_000L) {
+        val expiry = System.currentTimeMillis() + cooldownMs
+        if (slotIndex > 0) {
+            exhaustedKeys[slotKey(storageId, slotIndex)] = expiry
+        }
+        val cleanKey = keyString?.trim().orEmpty()
+        if (cleanKey.isNotEmpty() && cleanKey != "zen-free" && cleanKey != "ollama") {
+            exhaustedKeyValues[cleanKey] = expiry
+        }
+        ai.deepcode.android.util.AppLogger.w("ApiKeyRotator", "Marked $storageId slot $slotIndex as exhausted for ${cooldownMs / 1000}s")
     }
 
     /**
-     * Check whether a specific key slot is currently in cooldown.
+     * Check whether a specific key slot or key string is currently in cooldown.
      */
-    fun isKeyExhausted(storageId: String, slotIndex: Int): Boolean {
-        val expiry = exhaustedKeys[slotKey(storageId, slotIndex)] ?: return false
-        if (System.currentTimeMillis() > expiry) {
-            exhaustedKeys.remove(slotKey(storageId, slotIndex))
-            return false
+    fun isKeyExhausted(storageId: String, slotIndex: Int, keyString: String? = null): Boolean {
+        val now = System.currentTimeMillis()
+        val cleanKey = keyString?.trim().orEmpty()
+        if (cleanKey.isNotEmpty()) {
+            val keyExpiry = exhaustedKeyValues[cleanKey]
+            if (keyExpiry != null) {
+                if (now > keyExpiry) {
+                    exhaustedKeyValues.remove(cleanKey)
+                } else {
+                    return true
+                }
+            }
         }
-        return true
+        if (slotIndex > 0) {
+            val expiry = exhaustedKeys[slotKey(storageId, slotIndex)] ?: return false
+            if (now > expiry) {
+                exhaustedKeys.remove(slotKey(storageId, slotIndex))
+                return false
+            }
+            return true
+        }
+        return false
+    }
+
+    /**
+     * Finds the 1-based slot index (1..6) matching [apiKey] for [storageId].
+     * Returns 0 if not found in configured slots.
+     */
+    fun findSlotForKey(prefs: EncryptedPrefs, storageId: String, apiKey: String): Int {
+        val cleanKey = apiKey.trim()
+        if (cleanKey.isEmpty()) return 0
+        for (slot in 1..EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER) {
+            val slotKey = prefs.getApiKeySlot(storageId, slot).trim()
+            if (slotKey.isNotEmpty() && (slotKey == cleanKey || cleanKey.startsWith(slotKey))) {
+                return slot
+            }
+        }
+        return 0
+    }
+
+    /**
+     * Thorough check for whether an error is caused by rate limiting, quota exhaustion,
+     * invalid key/token, balance exhaustion, or server overload that can be solved by rotating keys.
+     */
+    fun isRotatableError(error: Throwable? = null, httpCode: Int? = null, responseBody: String? = null): Boolean {
+        if (error is RateLimitException) return true
+
+        if (httpCode != null && httpCode in listOf(401, 402, 403, 429)) {
+            return true
+        }
+
+        val textToInspect = buildString {
+            if (httpCode != null) append("HTTP $httpCode ")
+            if (error != null) {
+                append(error.javaClass.simpleName).append(": ")
+                append(error.message.orEmpty()).append(" ")
+                append(error.cause?.message.orEmpty()).append(" ")
+            }
+            if (!responseBody.isNullOrEmpty()) {
+                append(responseBody)
+            }
+        }.lowercase()
+
+        return textToInspect.contains("429") ||
+                textToInspect.contains("401") ||
+                textToInspect.contains("402") ||
+                textToInspect.contains("403") ||
+                textToInspect.contains("rate limit") ||
+                textToInspect.contains("rate_limit") ||
+                textToInspect.contains("ratelimit") ||
+                textToInspect.contains("too many requests") ||
+                textToInspect.contains("too_many_requests") ||
+                textToInspect.contains("quota") ||
+                textToInspect.contains("freeusagelimiterror") ||
+                textToInspect.contains("free usage") ||
+                textToInspect.contains("free tier") ||
+                textToInspect.contains("free_tier") ||
+                textToInspect.contains("freetier") ||
+                textToInspect.contains("limit reached") ||
+                textToInspect.contains("limit exceeded") ||
+                textToInspect.contains("limit_exceeded") ||
+                textToInspect.contains("usage limit") ||
+                textToInspect.contains("usage_limit") ||
+                textToInspect.contains("daily limit") ||
+                textToInspect.contains("reached its request limit") ||
+                textToInspect.contains("request limit reached") ||
+                textToInspect.contains("exceeded your") ||
+                textToInspect.contains("resource_exhausted") ||
+                textToInspect.contains("resource exhausted") ||
+                textToInspect.contains("insufficient") ||
+                textToInspect.contains("balance") ||
+                textToInspect.contains("credit") ||
+                textToInspect.contains("unauthorized") ||
+                textToInspect.contains("invalid_api_key") ||
+                textToInspect.contains("invalid api key") ||
+                textToInspect.contains("incorrect api key") ||
+                textToInspect.contains("invalid_token") ||
+                textToInspect.contains("invalid token") ||
+                textToInspect.contains("token expired") ||
+                textToInspect.contains("key expired") ||
+                textToInspect.contains("overloaded") ||
+                textToInspect.contains("capacity") ||
+                textToInspect.contains("busy")
     }
 
     /**
@@ -50,7 +156,7 @@ object ApiKeyRotator {
             val key = prefs.getApiKeySlot(storageId, slot)
             if (key.isNotEmpty()) {
                 if (firstConfiguredKey == null) firstConfiguredKey = key to slot
-                if (!isKeyExhausted(storageId, slot)) return key to slot
+                if (!isKeyExhausted(storageId, slot, key)) return key to slot
             }
         }
         // Fallback: If all are in cooldown, return the first configured key to keep trying
@@ -72,7 +178,7 @@ object ApiKeyRotator {
             val key = prefs.getApiKeySlot(storageId, slot)
             if (key.isNotEmpty()) {
                 if (nextConfiguredKey == null) nextConfiguredKey = key to slot
-                if (!isKeyExhausted(storageId, slot)) return key to slot
+                if (!isKeyExhausted(storageId, slot, key)) return key to slot
             }
         }
 
@@ -104,5 +210,6 @@ object ApiKeyRotator {
      */
     fun clearAllCooldowns() {
         exhaustedKeys.clear()
+        exhaustedKeyValues.clear()
     }
 }

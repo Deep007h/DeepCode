@@ -52,7 +52,7 @@ class AgentScheduler(private val context: Context) {
             val agents = repository.getAllAgents()
             var count = 0
             for (agent in agents) {
-                if (agent.isEnabled && agent.agentId == "morning_briefing") {
+                if (agent.isEnabled && (agent.agentId == "morning_briefing" || agent.agentId == "daily_news_brief")) {
                     scheduler.schedule(agent)
                     count++
                 }
@@ -131,7 +131,19 @@ class AgentRunner(context: Context, params: WorkerParameters) : CoroutineWorker(
         ).format(java.util.Date())
 
         return when (agent.agentId) {
-            "morning_briefing" -> "It's $dateStr. Run your scheduled morning briefing task: review the user's upcoming day, check calendar, emails, and deliver a concise morning summary."
+            "morning_briefing", "daily_news_brief" -> """
+                It's $dateStr. Deliver your scheduled Daily Morning News Brief of the day!
+                
+                Please cover these 4 key topics with fresh updates, engaging headlines, and relevant emojis:
+                1. 🪙 Crypto: Bitcoin, Ethereum, Solana, and major altcoin price movements, market swings, and trending crypto stories.
+                2. 🇮🇳 Indian News (All Genres): Top national headlines spanning politics, business & economy, tech/startups, sports (cricket & athletes), entertainment (Bollywood/cinema), and quirky viral stories.
+                3. 🤖 AI News: Cutting-edge model releases, AI breakthroughs, industry moves, developer tools, and big tech drama.
+                4. ⚔️ War & Conflict News: Global geopolitical conflicts, defense developments, diplomacy, and verified updates (maintain factual accuracy and respect).
+
+                Style & Tone:
+                - Energetic, engaging, and well-structured using clear markdown sections, bullet points, and lively emojis!
+                - Feel free to use funny commentary, witty roasts, or humorous takes for appropriate news (like crazy crypto volatility, quirky Indian news, or AI hype/drama), while keeping war and conflict news objective and respectful.
+            """.trimIndent()
             else -> "It's $dateStr. Execute your scheduled task as defined in your system prompt."
         }
     }

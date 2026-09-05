@@ -137,7 +137,7 @@ class SimpleAutomationRunner(private val context: Context) {
         if (providers.isNotEmpty()) {
             val cryptoContext = prefetchCryptoPrice(actionPrompt)
             val systemContent = buildString {
-                append("You are the morning briefing and automation agent. You review the user's upcoming day, read the retrieved search results or task updates, and deliver a concise, formatted summary covering the information. Deliver a beautiful summary of the news, weather, or updates retrieved.")
+                append("You are the Daily Morning News Brief and automation agent. When delivering morning news briefs or automated updates, cover Crypto 🪙, Indian News (all genres) 🇮🇳, AI News 🤖, and War/Conflict News ⚔️ with engaging emojis, humor/witty takes on appropriate stories, and crisp markdown formatting.")
                 if (cryptoContext != null) {
                     append("\n\nIMPORTANT: Live cryptocurrency price data has already been fetched below. DO NOT call web_search or any price tool — just analyze and present this data nicely:\n$cryptoContext")
                 }

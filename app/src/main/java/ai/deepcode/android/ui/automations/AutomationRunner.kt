@@ -43,8 +43,8 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
     }
 
     companion object {
-        suspend fun executeAutomation(context: Context, automationId: String): Boolean {
-            AppLogger.i("AutomationRunner", "executeAutomation started for: $automationId")
+        suspend fun executeAutomation(context: Context, automationId: String, forceRun: Boolean = false): Boolean {
+            AppLogger.i("AutomationRunner", "executeAutomation started for: $automationId (forceRun=$forceRun)")
             val automationRepository = AutomationRepository(context)
             val database = AppDatabase.getDatabase(context)
             val sessionDao = database.sessionDao()
@@ -55,8 +55,8 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
                     return false
                 }
 
-                if (!rule.isEnabled) {
-                    AppLogger.i("AutomationRunner", "Rule '${rule.name}' is disabled, skipping execution")
+                if (!rule.isEnabled && !forceRun) {
+                    AppLogger.i("AutomationRunner", "Rule '${rule.name}' is disabled and not forced, skipping execution")
                     return true
                 }
 
@@ -128,14 +128,26 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
                     .replace("{{timezone}}", timezone)
                     .replace("{{name}}", rule.name)
 
+                val isNewsBrief = rule.name.contains("news brief", ignoreCase = true) ||
+                    rule.name.contains("morning brief", ignoreCase = true) ||
+                    rule.name.contains("morning news", ignoreCase = true) ||
+                    rawPrompt.contains("news brief", ignoreCase = true) ||
+                    rawPrompt.contains("morning news", ignoreCase = true)
+
+                val effectiveActionPrompt = if (isNewsBrief && !rawPrompt.contains("Crypto", ignoreCase = true)) {
+                    "Deliver a daily morning news brief for $formattedDateTime covering Crypto, Indian News (all genres), AI News, and War or Conflict news with emojis and witty commentary."
+                } else {
+                    interpolatedPrompt
+                }
+
                 val contextualPrompt = buildString {
                     appendLine("⏰ [Scheduled Task: ${rule.name}]")
                     appendLine("Time: $formattedDateTime ($timezone) | Battery: $batteryStatus | Network: $networkStatus")
                     appendLine()
-                    append(interpolatedPrompt)
+                    append(effectiveActionPrompt)
                 }
 
-                AppLogger.i("AutomationRunner", "Running agent in session $targetSessionId with prompt: $interpolatedPrompt")
+                AppLogger.i("AutomationRunner", "Running agent in session $targetSessionId with prompt: $effectiveActionPrompt")
 
                 // 3. Execute through ChatGPT integration (for CHATGPT automations) or AgentEngine (for standard automations)
                 val isChatGPT = rule.category == "CHATGPT" || configObj.get("target")?.asString == "chatgpt"

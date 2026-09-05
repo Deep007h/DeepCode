@@ -70,7 +70,11 @@ class DeepCodeApp : Application() {
 
         appScope.launch { SyncScheduler.schedule(this@DeepCodeApp) }
         appScope.launch { AutomationScheduler.rescheduleAll(this@DeepCodeApp) }
-        appScope.launch { seedBuiltinAgents() }
+        appScope.launch {
+            seedBuiltinAgents()
+            ai.deepcode.android.ui.agents.AgentScheduler.rescheduleAll(this@DeepCodeApp)
+            upgradeLegacyMorningAutomations()
+        }
 
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
@@ -79,6 +83,35 @@ class DeepCodeApp : Application() {
                 AppLogger.exportCrashLog(throwable)
             } catch (_: Exception) {}
             defaultHandler?.uncaughtException(thread, throwable)
+        }
+    }
+
+    private suspend fun upgradeLegacyMorningAutomations() {
+        try {
+            val autoRepo = ai.deepcode.android.ui.automations.AutomationRepository(this@DeepCodeApp)
+            val automations = autoRepo.getAllAutomations()
+            for (auto in automations) {
+                if (auto.name.contains("Morning Briefing", ignoreCase = true) || auto.description.contains("Weather, schedule, and device battery daily", ignoreCase = true)) {
+                    val prompt = "Deliver a daily morning news brief for {{datetime}} covering Crypto, Indian News (all genres), AI News, and War or Conflict news with emojis and witty commentary."
+                    val configObj = try {
+                        com.google.gson.Gson().fromJson(auto.configJson, com.google.gson.JsonObject::class.java)
+                    } catch (_: Exception) { com.google.gson.JsonObject() }
+                    configObj.addProperty("action_prompt", prompt)
+
+                    val updated = auto.copy(
+                        name = "Daily Morning News Brief",
+                        description = "Crypto, India (all genres), AI, & War/Conflict news",
+                        configJson = com.google.gson.Gson().toJson(configObj)
+                    )
+                    autoRepo.insertAutomation(updated)
+                    if (updated.isEnabled) {
+                        ai.deepcode.android.ui.automations.AutomationScheduler(this@DeepCodeApp).schedule(updated, forceRecalculate = true)
+                    }
+                    AppLogger.i("DeepCodeApp", "Upgraded legacy automation ${auto.id} to Daily Morning News Brief")
+                }
+            }
+        } catch (e: Exception) {
+            AppLogger.w("DeepCodeApp", "Could not upgrade legacy morning automations: ${e.message}")
         }
     }
 

@@ -33,7 +33,7 @@ class AgentsViewModel(private val context: Context) : ViewModel() {
         seeded = true
         viewModelScope.launch {
             val existing = repository.getAllAgents()
-            if (existing.isNotEmpty()) return@launch
+            val existingMap = existing.associateBy { it.agentId }
 
             val agents = withContext(Dispatchers.IO) {
                 val jsonText = context.assets.open("agents/builtin_agents.json").bufferedReader().use { it.readText() }
@@ -43,6 +43,9 @@ class AgentsViewModel(private val context: Context) : ViewModel() {
 
                 for (i in 0 until jsonArray.length()) {
                     val obj = jsonArray.getJSONObject(i)
+                    val agentId = obj.getString("agent_id")
+                    val existingAgent = existingMap[agentId]
+
                     val toolsArray = obj.optJSONArray("tools")
                     val tools = if (toolsArray != null) {
                         (0 until toolsArray.length()).map { toolsArray.getString(it) }.joinToString(",")
@@ -54,7 +57,7 @@ class AgentsViewModel(private val context: Context) : ViewModel() {
                     } else ""
 
                     result.add(AgentEntity(
-                        agentId = obj.getString("agent_id"),
+                        agentId = agentId,
                         displayName = obj.getString("display_name"),
                         description = obj.getString("description"),
                         agentTier = obj.optString("agent_tier", "worker"),
@@ -73,11 +76,11 @@ class AgentsViewModel(private val context: Context) : ViewModel() {
                         tools = tools,
                         subagents = subagents,
                         isBuiltin = obj.optBoolean("is_builtin", true),
-                        isEnabled = true,
-                        createdAt = now,
+                        isEnabled = existingAgent?.isEnabled ?: true,
+                        createdAt = existingAgent?.createdAt ?: now,
                         updatedAt = now,
-                        lastRunAt = 0L,
-                        runCount = 0
+                        lastRunAt = existingAgent?.lastRunAt ?: 0L,
+                        runCount = existingAgent?.runCount ?: 0
                     ))
                 }
                 result
@@ -93,7 +96,7 @@ class AgentsViewModel(private val context: Context) : ViewModel() {
             if (agent != null) {
                 val scheduler = AgentScheduler(context)
                 if (isEnabled) {
-                    if (agent.agentId == "morning_briefing") {
+                    if (agent.agentId == "morning_briefing" || agent.agentId == "daily_news_brief") {
                         scheduler.schedule(agent)
                     }
                 } else {

@@ -33,7 +33,11 @@ object DecommissionedModels {
 
         // Legacy / non-existent Zen IDs
         "big-pickle" to ZenModels.DEFAULT_FREE,
-        "north-mini-code" to ZenModels.DEFAULT_FREE
+        "north-mini-code" to ZenModels.DEFAULT_FREE,
+
+        // Non-existent Gemini models
+        "gemini-3.8-flash" to "gemini-2.5-flash",
+        "google/gemini-3.8-flash" to "gemini-2.5-flash"
     )
 
     private val DECOMMISSIONED_SET: Set<String> = REPLACEMENTS.keys.map { it.lowercase() }.toSet()

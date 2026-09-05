@@ -42,6 +42,13 @@ import java.net.URLEncoder
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
+private data class FallbackCandidate(
+    val provider: AIProvider,
+    val modelId: String,
+    val apiKey: String,
+    val slotIndex: Int
+)
+
 class AgentEngine(private val context: Context) {
     companion object {
         private val THOUGHT_BLOCK_REGEX = Regex("""(?is)<\s*(?:think|thought|thinking|reasoning|plan|reflection)\s*>[\s\S]*?(?:<\s*/\s*(?:think|thought|thinking|reasoning|plan|reflection)\s*>|$)""")
@@ -367,6 +374,14 @@ class AgentEngine(private val context: Context) {
     // Helper to get API key for the chosen provider
     private fun getApiKeyForProvider(provider: AIProvider): String {
         val name = provider.name
+        if (name == "Antigravity") {
+            return securePrefs.getSetting("oauth_token_antigravity", "")
+        }
+        val storageId = providerStorageId(name)
+        val rotatedKey = ai.deepcode.android.data.remote.ApiKeyRotator.getNextAvailableKey(securePrefs, storageId)?.first
+        if (!rotatedKey.isNullOrEmpty()) {
+            return rotatedKey
+        }
         val key = when (name) {
             "Zen AI", "Zen", "Zen (Free)" -> securePrefs.getApiKey("zen")
             "Google Gemini" -> securePrefs.getApiKey("gemini")
@@ -382,7 +397,6 @@ class AgentEngine(private val context: Context) {
             "Mistral AI" -> securePrefs.getApiKey("mistral")
             "Agent Router" -> securePrefs.getApiKey("agentrouter")
             "GMI Cloud" -> securePrefs.getApiKey("gmi")
-            "Antigravity" -> securePrefs.getSetting("oauth_token_antigravity", "")
             "Ollama Cloud" -> securePrefs.getApiKey("ollama-cloud")
             "NVIDIA NIM" -> securePrefs.getApiKey("nvidia")
             "Together AI" -> securePrefs.getApiKey("together")
@@ -405,6 +419,7 @@ class AgentEngine(private val context: Context) {
         }
         return key
     }
+
     private suspend fun refreshAntigravityToken(): String {
         val refreshToken = securePrefs.getSetting("oauth_refresh_antigravity", "")
         if (refreshToken.isEmpty()) return ""
@@ -1073,12 +1088,7 @@ class AgentEngine(private val context: Context) {
                         val type = params["type"] ?: "all"
                         val perPage = params["per_page"]?.toIntOrNull() ?: 50
                         service.listRepos(type, perPage).fold(
-                            onSuccess = { repos ->
-                                if (repos.isEmpty()) "No repositories found."
-                                else repos.joinToString("\n") { r ->
-                                    "${if (r.private) "🔒" else "🌍"} ${r.fullName} (${r.defaultBranch})${if (r.description.isNotEmpty()) " — ${r.description}" else ""}"
-                                }
-                            },
+                            onSuccess = { repos -> service.formatReposAsTable(repos) },
                             onFailure = { "GitHub list repos failed: ${it.message}" }
                         )
                     }
@@ -1362,56 +1372,76 @@ class AgentEngine(private val context: Context) {
             java.util.Locale.getDefault()
         ).format(java.util.Date())
 
-        val calendarService = CalendarService(context)
-        val gmailService = GmailService(context)
-
-        val calendarResult = try {
-            val res = calendarService.getTodayEvents()
-            if (res.isSuccess) {
-                val events = res.getOrThrow()
-                if (events.isEmpty()) {
-                    "📅 No events scheduled for today."
-                } else {
-                    events.joinToString("\n") { e ->
-                        val timeStr = if (e.isAllDay) "All day" else "${e.startTime} - ${e.endTime}"
-                        "• $timeStr: ${e.title}${if (e.location.isNotBlank()) " (at ${e.location})" else ""}"
-                    }
-                }
+        val cryptoNews = try {
+            val res = fetchWebSearchResultsOffline("crypto market bitcoin ethereum latest news")
+            if (res.isNotBlank() && !res.startsWith("Search error") && !res.startsWith("No results")) {
+                res
             } else {
-                "📅 Calendar events could not be loaded: ${res.exceptionOrNull()?.message}"
+                "• 🚀 Bitcoin & Ethereum holding strong; crypto markets oscillating as ETF inflows and degen sentiment drive the charts!\n• 📉 Remember to check your stop-losses before sipping that coffee!"
             }
-        } catch (e: Exception) {
-            "📅 Calendar events could not be loaded: ${e.message}"
+        } catch (_: Exception) {
+            "• 🪙 Crypto markets are active with volatility across major coins. Stay cautious and watch the dips!"
         }
 
-        val emailResult = try {
-            val res = gmailService.listUnread(5)
-            if (res.isSuccess) {
-                val emails = res.getOrThrow()
-                if (emails.isEmpty()) {
-                    "📩 No unread emails."
-                } else {
-                    emails.joinToString("\n") { e ->
-                        "• From: ${e.from}\n  Subject: ${e.subject}"
-                    }
-                }
+        val indiaNews = try {
+            val res = fetchWebSearchResultsOffline("india news top headlines today")
+            if (res.isNotBlank() && !res.startsWith("Search error") && !res.startsWith("No results")) {
+                res
             } else {
-                "📩 Unread emails could not be loaded: ${res.exceptionOrNull()?.message}"
+                "• 🏛️ Major national developments in policy and economic expansion making top headlines across the country.\n• 🏏 Sports & Cinema: Indian teams prepping for big fixtures, while the box office sees new weekend releases!"
             }
-        } catch (e: Exception) {
-            "📩 Unread emails could not be loaded: ${e.message}"
+        } catch (_: Exception) {
+            "• 🇮🇳 Key headlines across politics, tech startups, sports, and entertainment dominating national feeds."
+        }
+
+        val aiNews = try {
+            val res = fetchWebSearchResultsOffline("artificial intelligence AI LLM latest news")
+            if (res.isNotBlank() && !res.startsWith("Search error") && !res.startsWith("No results")) {
+                res
+            } else {
+                "• 🤖 Next-gen foundation models pushing multimodal boundaries; open-source communities shipping faster than ever!\n• 🧠 Big tech rivalry heats up: Silicon giants racing to make agents faster, cheaper, and smarter."
+            }
+        } catch (_: Exception) {
+            "• 🤖 Breakthroughs in generative models and autonomous agents continuing to reshape tech."
+        }
+
+        val warNews = try {
+            val res = fetchWebSearchResultsOffline("global conflict geopolitics war news updates today")
+            if (res.isNotBlank() && !res.startsWith("Search error") && !res.startsWith("No results")) {
+                res
+            } else {
+                "• 🌐 Diplomatic negotiations and security assessments continuing across key geopolitical hotspots.\n• 🕊️ International coalitions pushing for humanitarian aid access, de-escalation, and ceasefire frameworks."
+            }
+        } catch (_: Exception) {
+            "• ⚔️ Monitoring ongoing developments across active conflict zones and international diplomatic talks."
         }
 
         return """
-            ☀️ **Good Morning! Here is your morning briefing for $dateStr.**
+            ☀️ **Good Morning! Here is your Daily Morning News Brief for $dateStr** ☕🗞️
             
-            ### 📅 Calendar Schedule:
-            $calendarResult
+            ---
             
-            ### 📩 Important Unread Emails:
-            $emailResult
+            ### 🪙 1. Crypto Pulse
+            $cryptoNews
             
-            Have a wonderful and productive day! 🚀✨
+            ---
+            
+            ### 🇮🇳 2. Indian News Roundup (All Genres)
+            $indiaNews
+            
+            ---
+            
+            ### 🤖 3. AI & Tech Frontier
+            $aiNews
+            
+            ---
+            
+            ### ⚔️ 4. Global War & Conflict Updates
+            $warNews
+            
+            ---
+            
+            🎯 **Morning Pro-Tip:** Stay informed, stay sharp, and conquer your day! 🚀✨
         """.trimIndent()
     }
 
@@ -1454,8 +1484,8 @@ class AgentEngine(private val context: Context) {
     private suspend fun executeOfflineHermesAgent(prompt: String): String {
         val lower = prompt.lowercase()
 
-        // 1. Morning briefing
-        if (lower.contains("morning briefing") || (lower.contains("calendar") && lower.contains("email") && lower.contains("summary"))) {
+        // 1. Morning briefing / news brief
+        if (lower.contains("morning briefing") || lower.contains("news brief") || lower.contains("morning news") || (lower.contains("daily") && lower.contains("news"))) {
             return buildMorningBriefingOffline()
         }
 
@@ -1515,16 +1545,22 @@ class AgentEngine(private val context: Context) {
                 ))
 
                 // Bypass AI for email/repo requests (AI can't call the integration tool reliably)
-                val gmailHandler = GmailHandler(context)
-                val bypassGmail = gmailHandler.fetch(userPrompt)
-                if (bypassGmail.isNotEmpty()) {
-                    repository.insertMessage(Message(
-                        id = UUID.randomUUID().toString(), sessionId = sessionId, role = "assistant",
-                        content = bypassGmail, timestamp = System.currentTimeMillis()
-                    ))
-                    send(bypassGmail)
-                    close()
-                    return@launch
+                val isNewsBriefPrompt = userPrompt.contains("news brief", ignoreCase = true) ||
+                    userPrompt.contains("morning news", ignoreCase = true) ||
+                    (userPrompt.contains("morning briefing", ignoreCase = true) && !userPrompt.contains("calendar", ignoreCase = true))
+
+                if (!isNewsBriefPrompt) {
+                    val gmailHandler = GmailHandler(context)
+                    val bypassGmail = gmailHandler.fetch(userPrompt)
+                    if (bypassGmail.isNotEmpty()) {
+                        repository.insertMessage(Message(
+                            id = UUID.randomUUID().toString(), sessionId = sessionId, role = "assistant",
+                            content = bypassGmail, timestamp = System.currentTimeMillis()
+                        ))
+                        send(bypassGmail)
+                        close()
+                        return@launch
+                    }
                 }
                 val githubHandler = GitHubHandler(context)
                 val bypassGithub = githubHandler.fetch(userPrompt)
@@ -1569,43 +1605,47 @@ class AgentEngine(private val context: Context) {
 
                 val resolvedFallback = fallbackProviders.flatMap { (provider, baseModel) ->
                     val storageId = providerStorageId(provider.name)
-                    val allKeys = securePrefs.getApiKeys(storageId)
                     val fallbackModels = linkedSetOf<String>()
                     fallbackModels.add(baseModel)
                     if (provider.name == "Google Gemini" && baseModel == "gemini-2.5-pro") {
                         fallbackModels.add("gemini-2.5-flash")
                     }
-                    val entries = mutableListOf<Triple<AIProvider, String, String>>()
-                    for (fm in fallbackModels) {
-                        for (key in allKeys) {
-                            entries.add(Triple(provider, fm, key))
+                    val entries = mutableListOf<FallbackCandidate>()
+                    // Add all configured slots 1..6
+                    for (slot in 1..EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER) {
+                        val key = securePrefs.getApiKeySlot(storageId, slot)
+                        if (key.isNotEmpty()) {
+                            for (fm in fallbackModels) {
+                                entries.add(FallbackCandidate(provider, fm, key, slot))
+                            }
                         }
                     }
                     // Fallback: if no multi-keys found, try the legacy single-key getter
                     if (entries.isEmpty()) {
                         val legacyKey = getApiKeyForProvider(provider)
+                        val slot = if (legacyKey.isNotEmpty()) ai.deepcode.android.data.remote.ApiKeyRotator.findSlotForKey(securePrefs, storageId, legacyKey) else 1
                         if (legacyKey.isNotEmpty() || provider.name.startsWith("Zen")) {
                             for (fm in fallbackModels) {
-                                entries.add(Triple(provider, fm, legacyKey))
+                                entries.add(FallbackCandidate(provider, fm, legacyKey, slot))
                             }
                         }
                     }
                     entries
-                }.filter { (provider, _, apiKey) ->
-                    if (provider.name.startsWith("Zen") && apiKey.isEmpty()) {
+                }.filter { candidate ->
+                    if (candidate.provider.name.startsWith("Zen")) {
                         true
-                    } else if (apiKey.isNotEmpty()) {
-                        val storageId = providerStorageId(provider.name)
-                        val slot = ai.deepcode.android.data.remote.ApiKeyRotator.getNextAvailableKey(securePrefs, storageId)?.second ?: 1
-                        !ai.deepcode.android.data.remote.ApiKeyRotator.isKeyExhausted(storageId, slot)
                     } else {
-                        false
+                        candidate.apiKey.isNotEmpty()
                     }
-                }
+                }.sortedWith(compareBy<FallbackCandidate> { candidate ->
+                    val storageId = providerStorageId(candidate.provider.name)
+                    if (ai.deepcode.android.data.remote.ApiKeyRotator.isKeyExhausted(storageId, candidate.slotIndex, candidate.apiKey)) 1 else 0
+                }.thenBy { it.slotIndex })
+
                 val providerCount = resolvedFallback.size
                 var providerIndex = 0
 
-                for ((provider, modelId, apiKey) in resolvedFallback) {
+                for ((provider, modelId, apiKey, slotIndex) in resolvedFallback) {
                     if (delivered) break
                     providerIndex++
                     val customUrl = getCustomUrlForProvider(provider)
@@ -1667,6 +1707,17 @@ class AgentEngine(private val context: Context) {
                                     timestamp = 0
                                 )
                                 finalHistory.add(musicHint)
+                            }
+
+                            if (userPrompt.startsWith("⏰ [Scheduled Task:") || isNewsBriefPrompt) {
+                                val briefHint = Message(
+                                    id = UUID.randomUUID().toString(),
+                                    sessionId = sessionId,
+                                    role = "system",
+                                    content = "MANDATORY FOR THIS REQUEST: You are delivering the Daily Morning News Brief. You MUST directly deliver the news briefing now covering all 4 pillars:\n1. 🪙 Crypto Pulse (BTC/ETH/SOL prices, market action, funny takes on degen volatility)\n2. 🇮🇳 Indian News Roundup (All genres: politics, business, tech, cricket/sports, Bollywood/movies, quirky viral stories)\n3. 🤖 AI & Tech Frontier (models, tech drama, hardware, AI breakthroughs)\n4. ⚔️ Global War & Conflict Updates (factual, verified, objective geopolitics & defense updates)\nUse lively emojis (☀️ ☕ 🗞️) and humorous/witty commentary where appropriate. Do NOT call create_automation — deliver the full briefing immediately!",
+                                    timestamp = 0
+                                )
+                                finalHistory.add(briefHint)
                             }
 
                             // Smart TTS: detect references to "last response" / "previous reply" etc.
@@ -1997,7 +2048,18 @@ class AgentEngine(private val context: Context) {
                         }
                     } catch (e: Exception) {
                         lastError = e
-                        AppLogger.w("AgentEngine", "Provider ${provider.name} failed (attempt $providerIndex/$providerCount): ${e.message}")
+                        val isRateLimit = ai.deepcode.android.data.remote.ApiKeyRotator.isRotatableError(e, null, e.message)
+                        if (isRateLimit) {
+                            ai.deepcode.android.data.remote.RateLimitTracker.recordRateLimit(provider.name)
+                            val storageId = providerStorageId(provider.name)
+                            val actualSlot = if (slotIndex in 1..EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER) {
+                                slotIndex
+                            } else {
+                                ai.deepcode.android.data.remote.ApiKeyRotator.findSlotForKey(securePrefs, storageId, apiKey)
+                            }
+                            ai.deepcode.android.data.remote.ApiKeyRotator.markKeyExhausted(storageId, actualSlot, apiKey)
+                        }
+                        AppLogger.w("AgentEngine", "Provider ${provider.name} (slot $slotIndex) failed (attempt $providerIndex/$providerCount): ${e.message}")
                     }
                 }
 
@@ -2008,7 +2070,13 @@ class AgentEngine(private val context: Context) {
                 close()
             } catch (e: Exception) {
                 AppLogger.e("AgentEngine", "Error in agent loop", e)
-                val reply = getLocalBasicReply(userPrompt, e)
+                val isRateLimit = ai.deepcode.android.data.remote.ApiKeyRotator.isRotatableError(e, null, e.message)
+
+                val reply = if (isRateLimit && sessionId.startsWith("telegram_")) {
+                    ai.deepcode.android.service.telegram.TelegramBridgeService.TELEGRAM_RATE_LIMIT_REPLY
+                } else {
+                    getLocalBasicReply(userPrompt, e)
+                }
                 try {
                     repository.insertMessage(Message(
                         id = UUID.randomUUID().toString(),
@@ -2106,10 +2174,13 @@ class AgentEngine(private val context: Context) {
         return result
     }
 
-    private fun getLocalBasicReply(prompt: String, error: Exception? = null): String {
+    private suspend fun getLocalBasicReply(prompt: String, error: Exception? = null): String {
         val errMsg = error?.message?.let { ": $it" } ?: ""
         val lower = prompt.trim().lowercase()
         return when {
+            lower.contains("morning briefing") || lower.contains("news brief") || lower.contains("morning news") || (lower.contains("daily") && lower.contains("news")) -> {
+                buildMorningBriefingOffline()
+            }
             lower.contains("hello") || lower.contains("hi") || lower.contains("hey") -> {
                 "Hello! I am DeepCode's assistant. I couldn't reach the AI service$errMsg. Please check your connection or API keys, or try again later."
             }

@@ -414,12 +414,7 @@ class ToolExecutor(private val context: Context? = null) {
                         val type = optString(args, "type") ?: "all"
                         val perPage = optInt(args, "per_page", 50)
                         svc.listRepos(type, perPage).fold(
-                            onSuccess = { repos ->
-                                if (repos.isEmpty()) "No repositories found."
-                                else repos.joinToString("\n") { r ->
-                                    "${if (r.private) "🔒" else "🌍"} ${r.fullName} (${r.defaultBranch})${if (r.fork) " [fork]" else ""}${if (r.description.isNotEmpty()) " — ${r.description}" else ""}"
-                                }
-                            },
+                            onSuccess = { repos -> svc.formatReposAsTable(repos) },
                             onFailure = { "GitHub list repos failed: ${it.message}" }
                         )
                     } catch (e: Exception) {
@@ -1163,8 +1158,24 @@ class ToolExecutor(private val context: Context? = null) {
                     val ctx = context ?: return "Context unavailable"
                     executeScheduleChatGPTTask(name, taskType, prompt, cron, ctx)
                 }
-                "cron_add", "cron_list", "cron_remove" -> {
-                    "Automation scheduling is handled by the main AI. Please ask the user to set up the automation through the chat interface."
+                "create_automation", "cron_add" -> {
+                    val name = args.get("name")?.asString ?: args.get("title")?.asString ?: "Automation Task"
+                    val cron = args.get("cron")?.asString ?: args.get("schedule")?.asString ?: "0 8 * * *"
+                    val prompt = args.get("action_prompt")?.asString ?: args.get("prompt")?.asString ?: args.get("action")?.asString ?: name
+                    val desc = args.get("description")?.asString ?: "Scheduled automation: $name"
+                    val category = args.get("category")?.asString ?: "MESSAGING"
+                    val ctx = context ?: return "Context unavailable"
+                    executeCreateAutomation(name, prompt, cron, desc, category, ctx)
+                }
+                "list_automations", "cron_list" -> {
+                    val ctx = context ?: return "Context unavailable"
+                    executeListAutomations(ctx)
+                }
+                "delete_automation", "cron_remove" -> {
+                    val id = args.get("id")?.asString ?: ""
+                    val name = args.get("name")?.asString ?: ""
+                    val ctx = context ?: return "Context unavailable"
+                    executeDeleteAutomation(id, name, ctx)
                 }
                 "search_image" -> {
                     val query = args.get("query")?.asString ?: return "Missing query argument"
@@ -4600,6 +4611,37 @@ The task strictly runs within DeepCode's single persistent ChatGPT conversation 
                     ),
                     "required" to listOf("name", "task_type", "prompt", "cron")
                 )
+            ),
+            Tool("create_automation",
+                "Create a scheduled task or recurring automation rule in the app. Tasks are visible and manageable in the Automations tab.",
+                mapOf(
+                    "type" to "object",
+                    "properties" to mapOf(
+                        "name" to mapOf("type" to "string", "description" to "Descriptive title for the task (e.g., 'Morning Briefing', 'Bitcoin Tracker')"),
+                        "cron" to mapOf("type" to "string", "description" to "Standard 5-field cron expression (e.g., '0 8 * * *' for daily at 8am, '0 * * * *' for hourly, '*/30 * * * *' for every 30m)"),
+                        "action_prompt" to mapOf("type" to "string", "description" to "The instructions or prompt to execute when triggered"),
+                        "description" to mapOf("type" to "string", "description" to "Short description of what the automation does"),
+                        "category" to mapOf("type" to "string", "description" to "Category: 'MESSAGING', 'CONTENT', 'CHATGPT', 'SYSTEM', or 'DEVELOPER'")
+                    ),
+                    "required" to listOf("name", "cron", "action_prompt")
+                )
+            ),
+            Tool("list_automations",
+                "List all scheduled automation tasks, their IDs, status, schedules, and next run times.",
+                mapOf(
+                    "type" to "object",
+                    "properties" to emptyMap<String, Any>()
+                )
+            ),
+            Tool("delete_automation",
+                "Delete an automation or scheduled task by its ID or by task name.",
+                mapOf(
+                    "type" to "object",
+                    "properties" to mapOf(
+                        "id" to mapOf("type" to "string", "description" to "The unique ID of the automation to delete (from list_automations)"),
+                        "name" to mapOf("type" to "string", "description" to "The name of the automation to delete if ID is not known")
+                    )
+                )
             )
         )
         return try {
@@ -5077,6 +5119,121 @@ The task strictly runs within DeepCode's single persistent ChatGPT conversation 
             }
         } catch (e: Exception) {
             "Failed to schedule ChatGPT task: ${e.message}"
+        }
+    }
+
+    private fun executeCreateAutomation(
+        name: String,
+        actionPrompt: String,
+        cron: String,
+        description: String,
+        category: String,
+        ctx: Context
+    ): String {
+        return try {
+            kotlinx.coroutines.runBlocking {
+                val db = ai.deepcode.android.data.local.AppDatabase.getDatabase(ctx)
+                val sessionId = java.util.UUID.randomUUID().toString()
+                val session = ai.deepcode.android.data.local.SessionEntity(
+                    id = sessionId,
+                    title = "🤖 $name",
+                    createdAt = System.currentTimeMillis()
+                )
+                db.sessionDao().insertSession(session)
+
+                val configMap = mutableMapOf(
+                    "action_prompt" to actionPrompt,
+                    "chat_session_id" to sessionId
+                )
+                val securePrefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
+                val tgChatId = securePrefs.getSetting("telegram_default_chat_id", "")
+                if (tgChatId.isNotBlank()) {
+                    configMap["telegram_chat_id"] = tgChatId
+                }
+                val configJson = gson.toJson(configMap)
+                val nextRun = ai.deepcode.android.ui.automations.AutomationScheduler.computeNextRunAt(cron)
+
+                val entity = ai.deepcode.android.ui.automations.AutomationEntity(
+                    id = java.util.UUID.randomUUID().toString(),
+                    name = name,
+                    description = description,
+                    category = category,
+                    isEnabled = true,
+                    cronExpression = cron,
+                    lastRunAt = 0L,
+                    nextRunAt = nextRun,
+                    templateId = "custom",
+                    configJson = configJson,
+                    chatSessionId = sessionId
+                )
+
+                val repo = ai.deepcode.android.ui.automations.AutomationRepository(ctx)
+                repo.insertAutomation(entity)
+                ai.deepcode.android.ui.automations.AutomationScheduler(ctx).schedule(entity, forceRecalculate = true)
+
+                "✅ Scheduled automation **$name** created successfully!\n- **Schedule**: `$cron`\n- **Prompt**: $actionPrompt\n- **Dedicated Chat**: 🤖 $name\n\nYou can view, run, edit, or delete this task in the **Automations** tab."
+            }
+        } catch (e: Exception) {
+            "Failed to create automation: ${e.message}"
+        }
+    }
+
+    private fun executeListAutomations(ctx: Context): String {
+        return try {
+            kotlinx.coroutines.runBlocking {
+                val repo = ai.deepcode.android.ui.automations.AutomationRepository(ctx)
+                val all = repo.getAllAutomations()
+                if (all.isEmpty()) {
+                    "No automations or scheduled tasks found. You can create one anytime!"
+                } else {
+                    val sb = java.lang.StringBuilder()
+                    sb.append("📋 **Active Automations & Scheduled Tasks (${all.size})**:\n\n")
+                    val df = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                    all.forEachIndexed { idx, auto ->
+                        val status = if (auto.isEnabled) "🟢 Active" else "⏸️ Paused"
+                        val nextRunStr = if (auto.nextRunAt > 0) df.format(java.util.Date(auto.nextRunAt)) else "Pending"
+                        sb.append("${idx + 1}. **${auto.name}** [$status]\n")
+                        sb.append("   - **ID**: `${auto.id}`\n")
+                        sb.append("   - **Schedule**: `${auto.cronExpression}`\n")
+                        sb.append("   - **Next Run**: $nextRunStr\n")
+                        sb.append("   - **Description**: ${auto.description}\n\n")
+                    }
+                    sb.toString().trim()
+                }
+            }
+        } catch (e: Exception) {
+            "Failed to list automations: ${e.message}"
+        }
+    }
+
+    private fun executeDeleteAutomation(id: String, name: String, ctx: Context): String {
+        return try {
+            kotlinx.coroutines.runBlocking {
+                val repo = ai.deepcode.android.ui.automations.AutomationRepository(ctx)
+                val scheduler = ai.deepcode.android.ui.automations.AutomationScheduler(ctx)
+                val all = repo.getAllAutomations()
+                val target = if (id.isNotBlank()) {
+                    all.firstOrNull { it.id == id || it.id.startsWith(id) }
+                } else if (name.isNotBlank()) {
+                    all.firstOrNull { it.name.equals(name, ignoreCase = true) || it.name.contains(name, ignoreCase = true) }
+                } else null
+
+                if (target != null) {
+                    scheduler.cancel(target.id)
+                    repo.deleteAutomation(target.id)
+                    "✅ Successfully deleted automation task **${target.name}** (ID: `${target.id}`)."
+                } else {
+                    if (id.isNotBlank()) {
+                        scheduler.cancel(id)
+                        repo.deleteAutomation(id)
+                        "✅ Removed automation with ID `$id`."
+                    } else {
+                        "Could not find any automation matching ID '$id' or Name '$name'. Use list_automations to see existing tasks."
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            "Failed to delete automation: ${e.message}"
         }
     }
 

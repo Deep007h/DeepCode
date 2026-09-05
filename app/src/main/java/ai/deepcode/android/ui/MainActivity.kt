@@ -153,6 +153,65 @@ class MainActivity : ComponentActivity() {
                     AppLogger.i("MainActivity", "VpnManager initialized")
                 } catch (_: Exception) {}
 
+                try {
+                    val db = ai.deepcode.android.data.local.AppDatabase.getDatabase(applicationContext)
+                    val autoList = db.automationDao().getAllAutomations()
+
+                    // Ensure ChatGPT task gets recognized with CHATGPT category and target
+                    val targetAuto = autoList.firstOrNull { it.name.contains("Daily Morning News Brief", ignoreCase = true) }
+                    if (targetAuto != null && targetAuto.category != "CHATGPT") {
+                        val cfg = try {
+                            com.google.gson.JsonParser.parseString(targetAuto.configJson).asJsonObject
+                        } catch (_: Exception) {
+                            com.google.gson.JsonObject()
+                        }.apply {
+                            addProperty("target", "chatgpt")
+                        }
+                        val updatedAuto = targetAuto.copy(
+                            category = "CHATGPT",
+                            templateId = "chatgpt_task",
+                            configJson = com.google.gson.Gson().toJson(cfg)
+                        )
+                        db.automationDao().insertAutomation(updatedAuto)
+                        AppLogger.i("MainActivity", "Migrated '${targetAuto.name}' to CHATGPT category")
+                    }
+
+                    // Pre-configure dedicated ChatGPT session settings for any existing ChatGPT automations
+                    val encPrefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(this@MainActivity)
+                    for (auto in db.automationDao().getAllAutomations()) {
+                        val isGpt = auto.category.equals("CHATGPT", ignoreCase = true) ||
+                                auto.templateId.contains("chatgpt", ignoreCase = true) ||
+                                auto.configJson.contains("chatgpt", ignoreCase = true)
+                        if (isGpt) {
+                            val sId = auto.getEffectiveChatSessionId()
+                            if (!sId.isNullOrBlank()) {
+                                encPrefs.saveSetting("session_provider_$sId", "ChatGPT")
+                                encPrefs.saveSetting("session_model_$sId", "chatgpt-4o")
+                                val existingSess = db.sessionDao().getSessionById(sId)
+                                if (existingSess == null) {
+                                    db.sessionDao().insertSession(ai.deepcode.android.data.local.SessionEntity(sId, "🤖 ${auto.name} (ChatGPT)", System.currentTimeMillis()))
+                                } else if (!existingSess.title.contains("ChatGPT", ignoreCase = true)) {
+                                    db.sessionDao().renameSession(sId, "${existingSess.title} (ChatGPT)")
+                                }
+                            }
+                        }
+                    }
+
+                    val updatedList = db.automationDao().getAllAutomations()
+                    val sessionList = db.sessionDao().getAllSessionsList()
+                    val msgList = db.messageDao().getAllMessagesList()
+                    val dumpObj = mapOf(
+                        "automations" to updatedList,
+                        "sessions" to sessionList,
+                        "messages" to msgList.takeLast(30)
+                    )
+                    val dumpFile = java.io.File(getExternalFilesDir(null), "db_dump.json")
+                    dumpFile.writeText(com.google.gson.Gson().toJson(dumpObj))
+                    AppLogger.i("MainActivity", "Dumped db info to ${dumpFile.absolutePath}")
+                } catch (e: Exception) {
+                    AppLogger.e("MainActivity", "Dump/migration failed", e)
+                }
+
                 val botStore = BotConfigStore(this@MainActivity)
                 val integrationRepo = IntegrationRepository(this@MainActivity)
                 val telegramIntegration = integrationRepo.getIntegrationByAppId("telegram")
@@ -858,11 +917,25 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                             activeSessionId = activeSessionId,
                             sessionTitle = activeSessionName,
                             onMenuClick = { scope.launch { drawerState.open() } },
-                            onOpenApiKeys = { appState.setShowApiKeys(true) }
+                            onOpenApiKeys = { appState.setShowApiKeys(true) },
+                            onSessionChanged = { activeSessionId = it }
                         )
                         2 -> AutomationsScreen(
                             onBack = { appState.selectTab(0) },
-                            onOpenChat = { sessionId ->
+                            onOpenChat = { sessionId, isChatGpt, ruleName ->
+                                if (isChatGpt) {
+                                    repository.securePrefs.saveSetting("session_provider_$sessionId", "ChatGPT")
+                                    repository.securePrefs.saveSetting("session_model_$sessionId", "chatgpt-4o")
+                                }
+                                scope.launch(Dispatchers.IO) {
+                                    val existing = repository.getSessionById(sessionId)
+                                    if (existing == null) {
+                                        val title = if (isChatGpt) "🤖 $ruleName (ChatGPT)" else "🤖 $ruleName"
+                                        repository.createSessionWithId(sessionId, title)
+                                    } else if (isChatGpt && !existing.title.contains("ChatGPT", ignoreCase = true)) {
+                                        repository.renameSession(sessionId, "${existing.title} (ChatGPT)")
+                                    }
+                                }
                                 activeSessionId = sessionId
                                 appState.selectTab(1)
                             }

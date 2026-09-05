@@ -82,17 +82,7 @@ class GitHubHandler(private val context: Context) {
                     "repos" -> {
                         val result = service.listRepos()
                         if (result.isFailure) "GitHub error: ${result.exceptionOrNull()?.message}"
-                        else {
-                            val repos = result.getOrThrow()
-                            if (repos.isEmpty()) "No repositories found."
-                            else buildString {
-                                appendLine("📦 Your GitHub Repositories (${repos.size}):")
-                                repos.forEach { r ->
-                                    val icon = if (r.private) "🔒" else "🌍"
-                                    appendLine("$icon **${r.fullName}** (${r.defaultBranch})${if (r.fork) " [fork]" else ""}${if (r.description.isNotEmpty()) " — ${r.description}" else ""}")
-                                }
-                            }.trimEnd()
-                        }
+                        else service.formatReposAsTable(result.getOrThrow())
                     }
                     "issues" -> {
                         if (parsed.owner == null || parsed.repo == null) {
@@ -104,9 +94,15 @@ class GitHubHandler(private val context: Context) {
                                 val issues = result.getOrThrow()
                                 if (issues.isEmpty()) "No open issues in ${parsed.owner}/${parsed.repo}."
                                 else buildString {
-                                    appendLine("❗ Issues in ${parsed.owner}/${parsed.repo} (${issues.size}):")
+                                    appendLine("### ❗ Issues in `${parsed.owner}/${parsed.repo}` (${issues.size})")
+                                    appendLine()
+                                    appendLine("| # | Status | Title | Link |")
+                                    appendLine("| :--- | :--- | :--- | :--- |")
                                     issues.forEach { i ->
-                                        appendLine("• #${i.number} [${i.state}] ${i.title} (${i.url})")
+                                        val status = if (i.state.equals("open", ignoreCase = true)) "🟢 Open" else "🔴 Closed"
+                                        val titleClean = i.title.replace("|", " - ").replace("\n", " ").trim()
+                                        val link = if (i.url.isNotBlank()) "[View #${i.number}](${i.url})" else "#${i.number}"
+                                        appendLine("| #${i.number} | $status | $titleClean | $link |")
                                     }
                                 }.trimEnd()
                             }
@@ -122,9 +118,20 @@ class GitHubHandler(private val context: Context) {
                                 val prs = result.getOrThrow()
                                 if (prs.isEmpty()) "No open pull requests in ${parsed.owner}/${parsed.repo}."
                                 else buildString {
-                                    appendLine("🔀 Pull Requests in ${parsed.owner}/${parsed.repo} (${prs.size}):")
+                                    appendLine("### 🔀 Pull Requests in `${parsed.owner}/${parsed.repo}` (${prs.size})")
+                                    appendLine()
+                                    appendLine("| PR | Status | Title | Link |")
+                                    appendLine("| :--- | :--- | :--- | :--- |")
                                     prs.forEach { pr ->
-                                        appendLine("• PR #${pr.number} [${pr.state}] ${pr.title} (${pr.url})")
+                                        val status = when (pr.state.lowercase()) {
+                                            "open" -> "🟢 Open"
+                                            "closed" -> "🔴 Closed"
+                                            "merged" -> "🟣 Merged"
+                                            else -> pr.state
+                                        }
+                                        val titleClean = pr.title.replace("|", " - ").replace("\n", " ").trim()
+                                        val link = if (pr.url.isNotBlank()) "[View PR #${pr.number}](${pr.url})" else "#${pr.number}"
+                                        appendLine("| #${pr.number} | $status | $titleClean | $link |")
                                     }
                                 }.trimEnd()
                             }

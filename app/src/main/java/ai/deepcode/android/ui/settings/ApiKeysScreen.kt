@@ -1042,11 +1042,16 @@ private fun ApiKeyProviderCard(
             ?: "Select Model"
     }
 
-    // Trigger fetchModels in background if key exists and models are empty
-    LaunchedEffect(provider.id, keys[0].value) {
-        if (keys[0].value.isNotEmpty() && availableModels.isEmpty()) {
+    var isFetchingModels by remember(provider.id) { mutableStateOf(false) }
+
+    // Trigger fetchModels in background if key exists and live models are not yet cached
+    LaunchedEffect(provider.id, keys.map { it.value }.firstOrNull { it.isNotBlank() }) {
+        val keyVal = keys.firstOrNull { it.value.isNotBlank() }?.value?.trim() ?: ""
+        val hasCached = securePrefs.getSetting("cached_models_${provider.name}", "").isNotBlank()
+        val inCatalog = !ModelCatalog.models.value[provider.name].isNullOrEmpty()
+        if (keyVal.isNotEmpty() && (!hasCached || !inCatalog)) {
             val baseUrl = providerDefaultBaseUrl(provider.name)
-            val fetched = fetchModels(keys[0].value.trim(), baseUrl, provider.name)
+            val fetched = fetchModels(keyVal, baseUrl, provider.name)
             if (fetched.isNotEmpty()) {
                 ModelCatalog.setModels(provider.name, fetched, securePrefs)
             }
@@ -1196,7 +1201,7 @@ private fun ApiKeyProviderCard(
                                     onValueChange = { newVal ->
                                         keys[activeSlot - 1].value = newVal
                                         securePrefs.saveApiKeySlot(provider.id, activeSlot, newVal.trim())
-                                        if (newVal.trim().isNotEmpty() && activeSlot == 1) {
+                                        if (newVal.trim().isNotEmpty()) {
                                             scope.launch(Dispatchers.IO) {
                                                 try {
                                                     val baseUrl = providerDefaultBaseUrl(provider.name)
@@ -1299,16 +1304,66 @@ private fun ApiKeyProviderCard(
                             )
                         }
                     }
-                    IconButton(
-                        onClick = { showModelsDrawer = false },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close models drawer",
-                            tint = Color(0xFFA1A1AA),
-                            modifier = Modifier.size(18.dp)
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isFetchingModels) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color(0xFF6366F1),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        } else if (hasKey) {
+                            IconButton(
+                                onClick = {
+                                    val keyToUse = keys.firstOrNull { it.value.isNotBlank() }?.value?.trim() ?: ""
+                                    if (keyToUse.isNotEmpty()) {
+                                        scope.launch(Dispatchers.IO) {
+                                            isFetchingModels = true
+                                            try {
+                                                val baseUrl = providerDefaultBaseUrl(provider.name)
+                                                val fetched = fetchModels(keyToUse, baseUrl, provider.name)
+                                                if (fetched.isNotEmpty()) {
+                                                    ModelCatalog.setModels(provider.name, fetched, securePrefs)
+                                                    withContext(Dispatchers.Main) {
+                                                        Toast.makeText(context, "Loaded ${fetched.size} models", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                } else {
+                                                    withContext(Dispatchers.Main) {
+                                                        Toast.makeText(context, "No models returned", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            } catch (e: Exception) {
+                                                withContext(Dispatchers.Main) {
+                                                    Toast.makeText(context, "Fetch failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                }
+                                            } finally {
+                                                isFetchingModels = false
+                                            }
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Refresh models",
+                                    tint = Color(0xFFA1A1AA),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        IconButton(
+                            onClick = { showModelsDrawer = false },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close models drawer",
+                                tint = Color(0xFFA1A1AA),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
 

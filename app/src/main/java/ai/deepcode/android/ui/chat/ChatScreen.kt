@@ -28,12 +28,14 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.*
@@ -58,6 +60,10 @@ import ai.deepcode.android.orchestrator.*
 import ai.deepcode.android.ui.components.*
 import ai.deepcode.android.ui.settings.*
 import ai.deepcode.android.ui.theme.*
+import ai.deepcode.android.ui.connections.IntegrationRepository
+import ai.deepcode.android.ui.connections.IntegrationEntity
+import ai.deepcode.android.ui.automations.AutomationRepository
+import ai.deepcode.android.ui.automations.AutomationEntity
 import ai.deepcode.android.util.AppLogger
 import android.content.Context
 import coil.compose.AsyncImage
@@ -179,6 +185,16 @@ private val RE_PROMPT_IMG_SUBJECT = Regex("""(?i)^(image|picture|photo|drawing|i
 private val RE_WHITESPACE = Regex("""\s+""")
 private val RE_UNTITLED_SESSION = Regex("""(?i)^(session\s*\d*|chat|new session|untitled)$""")
 
+data class DynamicSuggestionCard(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val actionText: String,
+    val iconBackgroundColor: Color = Color(0xFFFF6D00),
+    val iconContent: @Composable () -> Unit,
+    val onClick: () -> Unit
+)
+
 @Composable
 fun PlaceholderFeatureCard(
     iconContent: @Composable () -> Unit,
@@ -186,7 +202,8 @@ fun PlaceholderFeatureCard(
     subtitle: String,
     actionText: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    iconBackgroundColor: Color = Color(0xFFFF6D00)
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -197,26 +214,26 @@ fun PlaceholderFeatureCard(
 
     Card(
         modifier = modifier
-            .width(210.dp)
-            .height(200.dp)
+            .width(168.dp)
+            .height(160.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF16181D)),
         border = BorderStroke(1.dp, Color(0xFF282B34))
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(18.dp),
+                .padding(14.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFFFF6D00)),
+                        .size(35.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(iconBackgroundColor),
                     contentAlignment = Alignment.Center
                 ) {
                     iconContent()
@@ -224,25 +241,27 @@ fun PlaceholderFeatureCard(
                 Text(
                     text = title,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp,
-                    color = Color.White
+                    fontSize = 14.sp,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = subtitle,
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     color = Color(0xFF9E9EA7),
-                    lineHeight = 18.sp,
+                    lineHeight = 15.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Text(
                     text = actionText,
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFFFF6D00)
                 )
@@ -250,7 +269,7 @@ fun PlaceholderFeatureCard(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = null,
                     tint = Color(0xFFFF6D00),
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(13.dp)
                 )
             }
         }
@@ -265,6 +284,7 @@ fun ChatScreen(
     sessionTitle: String = "Chat",
     onMenuClick: () -> Unit = {},
     onOpenApiKeys: () -> Unit = {},
+    onSessionChanged: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val viewModel: ChatViewModel = viewModel { ChatViewModel(repository) }
@@ -279,7 +299,14 @@ fun ChatScreen(
     val agentsWorking by viewModel.agentsWorking.collectAsStateWithLifecycle()
     val orchestratedResult by viewModel.orchestratedResult.collectAsStateWithLifecycle()
 
-    var inputMsg by remember { mutableStateOf("") }
+    val currentSessionId by viewModel.activeSessionIdFlow.collectAsStateWithLifecycle()
+    LaunchedEffect(currentSessionId) {
+        if (currentSessionId.isNotEmpty() && activeSessionId.isEmpty()) {
+            onSessionChanged(currentSessionId)
+        }
+    }
+
+    var inputMsg by rememberSaveable { mutableStateOf("") }
     val lazyListState = rememberLazyListState()
     var showModelPicker by remember { mutableStateOf(false) }
     var showSessionPicker by remember { mutableStateOf(false) }
@@ -308,6 +335,10 @@ fun ChatScreen(
     }
 
     val sessions by repository.getAllSessions().collectAsStateWithLifecycle(initialValue = emptyList())
+    val integrationRepo = remember { IntegrationRepository(context) }
+    val integrations by integrationRepo.getAllIntegrationsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
+    val automationRepo = remember { AutomationRepository(context) }
+    val automations by automationRepo.getAllAutomationsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
     val activeSessionTokenSummary by remember(activeSessionId) { repository.tokenRepository.observeSession(activeSessionId) }.collectAsStateWithLifecycle(initialValue = null)
     val userTurns = remember(messages) { messages.count { it.role == "user" } }
     val maxTurns = remember { repository.securePrefs.getSetting("max_history_turns", "8").toIntOrNull() ?: 8 }
@@ -334,10 +365,14 @@ fun ChatScreen(
                             if (sizeIndex != -1) fileSize = cursor.getLong(sizeIndex)
                         }
                     }
-                    if (fileName.lowercase().endsWith(".pdf")) {
+                    val lowerName = fileName.lowercase()
+                    val isImage = lowerName.endsWith(".png") || lowerName.endsWith(".jpg") ||
+                            lowerName.endsWith(".jpeg") || lowerName.endsWith(".webp") ||
+                            lowerName.endsWith(".gif") || lowerName.endsWith(".bmp")
+                    if (lowerName.endsWith(".pdf") || isImage) {
                         val destDir = File(context.filesDir, "attachments")
                         destDir.mkdirs()
-                        val destFile = File(destDir, fileName)
+                        val destFile = File(destDir, "${System.currentTimeMillis()}_$fileName")
                         context.contentResolver.openInputStream(targetUri)?.use { input ->
                             FileOutputStream(destFile).use { output -> input.copyTo(output) }
                         }
@@ -383,20 +418,36 @@ fun ChatScreen(
         }
     }
 
+    var lastScrolledSessionId by remember { mutableStateOf("") }
+    var lastObservedMessageCount by remember { mutableIntStateOf(0) }
+
     // Single authority for "new settled message" scrolls: only when NOT streaming,
     // so streaming tokens never trigger a competing animated scroll.
-    LaunchedEffect(messages.size, isStreaming) {
+    LaunchedEffect(messages.size, isStreaming, activeSessionId) {
         if (messages.isNotEmpty() && !isStreaming) {
-            // Small settle delay lets the new item measure before scrolling,
-            // avoiding a mid-layout animateScrollToItem jump.
-            kotlinx.coroutines.delay(60L)
-            val totalItems = lazyListState.layoutInfo.totalItemsCount
-            if (totalItems > 0 && !lazyListState.isScrollInProgress) {
-                val lastVisible = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                if (lastVisible >= totalItems - 3) {
+            val isNewSession = (activeSessionId != lastScrolledSessionId)
+            val isNewMessageAdded = (messages.size > lastObservedMessageCount)
+            lastScrolledSessionId = activeSessionId
+            lastObservedMessageCount = messages.size
+
+            if (isNewSession) {
+                // Instantly position at the bottom of the loaded session without animating across huge content
+                val totalItems = lazyListState.layoutInfo.totalItemsCount
+                if (totalItems > 0) {
                     try {
-                        lazyListState.animateScrollToItem(totalItems - 1)
+                        lazyListState.scrollToItem(totalItems - 1)
                     } catch (_: Exception) {}
+                }
+            } else if (isNewMessageAdded) {
+                kotlinx.coroutines.delay(60L)
+                val totalItems = lazyListState.layoutInfo.totalItemsCount
+                if (totalItems > 0 && !lazyListState.isScrollInProgress) {
+                    val lastVisible = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                    if (lastVisible >= totalItems - 3) {
+                        try {
+                            lazyListState.animateScrollToItem(totalItems - 1)
+                        } catch (_: Exception) {}
+                    }
                 }
             }
         }
@@ -518,11 +569,13 @@ fun ChatScreen(
                     scope.launch {
                         val newId = repository.createSession("New Session")
                         viewModel.switchSession(newId)
+                        onSessionChanged(newId)
                     }
                 },
                 onSwitchSession = {
                     showSessionPicker = false
                     viewModel.switchSession(it)
+                    onSessionChanged(it)
                 },
                 repository = repository,
                 onModelSelected = { viewModel.changeActiveModel(it) },
@@ -657,74 +710,300 @@ fun ChatScreen(
                         )
                     }
 
-                    // 2. Middle Cards (Horizontal Scrolling Carousel)
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        contentPadding = PaddingValues(horizontal = 20.dp)
-                    ) {
-                        item {
-                            PlaceholderFeatureCard(
+                    // 2. Dynamic Middle Cards (Horizontal Scrolling Carousel - 0.8x scaled & dynamic)
+                    val dynamicSuggestions = remember(integrations, sessions, automations) {
+                        val items = mutableListOf<DynamicSuggestionCard>()
+
+                        // 1. Available Connections
+                        val connectedIntegrations = integrations.filter { it.status.equals("connected", ignoreCase = true) }
+
+                        // GitHub
+                        if (connectedIntegrations.any { it.appId.contains("github", ignoreCase = true) }) {
+                            items.add(
+                                DynamicSuggestionCard(
+                                    id = "conn_github",
+                                    title = "GitHub Repos",
+                                    subtitle = "Browse and inspect your connected repositories",
+                                    actionText = "View repos",
+                                    iconBackgroundColor = Color(0xFF24292E),
+                                    iconContent = {
+                                        Icon(
+                                            imageVector = Icons.Default.Code,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(19.dp)
+                                        )
+                                    },
+                                    onClick = { inputMsg = "List my GitHub repositories and show their status" }
+                                )
+                            )
+                        }
+
+                        // Telegram
+                        if (connectedIntegrations.any { it.appId.contains("telegram", ignoreCase = true) }) {
+                            items.add(
+                                DynamicSuggestionCard(
+                                    id = "conn_telegram",
+                                    title = "Telegram Bot",
+                                    subtitle = "Check bot status, alerts & message history",
+                                    actionText = "Check bot",
+                                    iconBackgroundColor = Color(0xFF0284C7),
+                                    iconContent = {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.Send,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(19.dp)
+                                        )
+                                    },
+                                    onClick = { inputMsg = "Check my Telegram bot status and recent messages" }
+                                )
+                            )
+                        }
+
+                        // Gmail
+                        if (connectedIntegrations.any { it.appId.contains("gmail", ignoreCase = true) || it.appId.contains("google_mail", ignoreCase = true) }) {
+                            items.add(
+                                DynamicSuggestionCard(
+                                    id = "conn_gmail",
+                                    title = "Inbox Digest",
+                                    subtitle = "Summarize unread emails and priorities",
+                                    actionText = "Check mail",
+                                    iconBackgroundColor = Color(0xFFDC2626),
+                                    iconContent = {
+                                        Icon(
+                                            imageVector = Icons.Default.Email,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(19.dp)
+                                        )
+                                    },
+                                    onClick = { inputMsg = "Summarize my unread emails" }
+                                )
+                            )
+                        }
+
+                        // WhatsApp
+                        if (connectedIntegrations.any { it.appId.contains("whatsapp", ignoreCase = true) }) {
+                            items.add(
+                                DynamicSuggestionCard(
+                                    id = "conn_whatsapp",
+                                    title = "WhatsApp Bridge",
+                                    subtitle = "Check bridge status and incoming chats",
+                                    actionText = "Bridge status",
+                                    iconBackgroundColor = Color(0xFF10B981),
+                                    iconContent = {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.Chat,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(19.dp)
+                                        )
+                                    },
+                                    onClick = { inputMsg = "Check WhatsApp bridge status" }
+                                )
+                            )
+                        }
+
+                        // 2. Automations & Morning News Brief
+                        val hasNewsBrief = automations.any {
+                            it.name.contains("news brief", ignoreCase = true) ||
+                            it.name.contains("morning brief", ignoreCase = true)
+                        }
+                        if (hasNewsBrief) {
+                            items.add(
+                                DynamicSuggestionCard(
+                                    id = "auto_morning_news",
+                                    title = "Morning Brief",
+                                    subtitle = "Crypto 🪙, India 🇮🇳, AI 🤖 & Conflict ⚔️ news",
+                                    actionText = "Get brief",
+                                    iconBackgroundColor = Color(0xFFF59E0B),
+                                    iconContent = {
+                                        Icon(
+                                            imageVector = Icons.Default.Schedule,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(19.dp)
+                                        )
+                                    },
+                                    onClick = { inputMsg = "Deliver today's daily morning news brief" }
+                                )
+                            )
+                        }
+
+                        // 3. Previous Sessions & Topics
+                        val validRecent = sessions
+                            .filter { it.title.isNotBlank() && !RE_UNTITLED_SESSION.matches(it.title.trim()) && it.id != activeSessionId }
+                            .sortedByDescending { it.createdAt }
+                            .distinctBy { it.title.trim().lowercase() }
+                            .take(2)
+
+                        for (s in validRecent) {
+                            val cleanTitle = s.title.removePrefix("🤖 ").trim()
+                            items.add(
+                                DynamicSuggestionCard(
+                                    id = "session_${s.id}",
+                                    title = "Continue: ${cleanTitle.take(14)}",
+                                    subtitle = "Resume: \"${cleanTitle.take(28)}\"",
+                                    actionText = "Resume",
+                                    iconBackgroundColor = Color(0xFF8B5CF6),
+                                    iconContent = {
+                                        Icon(
+                                            imageVector = Icons.Default.History,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(19.dp)
+                                        )
+                                    },
+                                    onClick = { onSessionChanged(s.id) }
+                                )
+                            )
+                        }
+
+                        // 4. Topic Discovery from Sessions
+                        val knownTopics = listOf("Python", "Kotlin", "Android", "React", "Bug", "API", "Database", "Music", "UI", "Git", "Compose")
+                        val detectedTopic = sessions
+                            .flatMap { it.title.split(Regex("""[\s\-_/]+""")) }
+                            .map { it.trim() }
+                            .firstOrNull { word -> knownTopics.any { it.equals(word, ignoreCase = true) } }
+
+                        if (detectedTopic != null) {
+                            val topicProper = knownTopics.first { it.equals(detectedTopic, ignoreCase = true) }
+                            items.add(
+                                DynamicSuggestionCard(
+                                    id = "topic_$topicProper",
+                                    title = "$topicProper Topic",
+                                    subtitle = "Deep dive into $topicProper architecture & patterns",
+                                    actionText = "Ask now",
+                                    iconBackgroundColor = Color(0xFFEC4899),
+                                    iconContent = {
+                                        Icon(
+                                            imageVector = Icons.Default.Code,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(19.dp)
+                                        )
+                                    },
+                                    onClick = { inputMsg = "Help me design and optimize a $topicProper solution" }
+                                )
+                            )
+                        }
+
+                        // 5. Core Coding Suggestions
+                        items.add(
+                            DynamicSuggestionCard(
+                                id = "code_explain",
+                                title = "Explain code",
+                                subtitle = "Explain how recursion works with an example",
+                                actionText = "Get explanation",
+                                iconBackgroundColor = Color(0xFFFF6D00),
                                 iconContent = {
                                     Text(
                                         "</>",
-                                        fontSize = 16.sp,
+                                        fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White
                                     )
                                 },
-                                title = "Explain this code",
-                                subtitle = "Explain how recursion works with an example",
-                                actionText = "Get explanation",
                                 onClick = { inputMsg = "Explain how recursion works with an example" }
                             )
-                        }
-                        item {
-                            PlaceholderFeatureCard(
+                        )
+
+                        items.add(
+                            DynamicSuggestionCard(
+                                id = "code_debug",
+                                title = "Debug help",
+                                subtitle = "Why is my loop infinite? Find logic bugs",
+                                actionText = "Get help",
+                                iconBackgroundColor = Color(0xFFEF4444),
                                 iconContent = {
                                     Icon(
                                         imageVector = Icons.Default.BugReport,
                                         contentDescription = null,
                                         tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
+                                        modifier = Modifier.size(19.dp)
                                     )
                                 },
-                                title = "Debug help",
-                                subtitle = "Why is my loop infinite?",
-                                actionText = "Get help",
-                                onClick = { inputMsg = "Why is my loop infinite?" }
+                                onClick = { inputMsg = "Why is my loop infinite? Help me debug it" }
                             )
-                        }
-                        item {
-                            PlaceholderFeatureCard(
+                        )
+
+                        items.add(
+                            DynamicSuggestionCard(
+                                id = "code_style",
+                                title = "Code style",
+                                subtitle = "Validate code patterns and best practices",
+                                actionText = "Check now",
+                                iconBackgroundColor = Color(0xFF6366F1),
                                 iconContent = {
                                     Text(
                                         "{ }",
-                                        fontSize = 18.sp,
+                                        fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White
                                     )
                                 },
-                                title = "Code style",
-                                subtitle = "Validate code patterns and best practices",
-                                actionText = "Check now",
                                 onClick = { inputMsg = "Validate code patterns and best practices" }
                             )
-                        }
-                        item {
-                            PlaceholderFeatureCard(
+                        )
+
+                        items.add(
+                            DynamicSuggestionCard(
+                                id = "code_generate",
+                                title = "Generate code",
+                                subtitle = "Write a function to parse JSON in Python",
+                                actionText = "Generate",
+                                iconBackgroundColor = Color(0xFF3B82F6),
                                 iconContent = {
                                     Icon(
                                         imageVector = Icons.Default.AutoAwesome,
                                         contentDescription = null,
                                         tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
+                                        modifier = Modifier.size(19.dp)
                                     )
                                 },
-                                title = "Generate code",
-                                subtitle = "Write a function to parse JSON in Python",
-                                actionText = "Generate",
                                 onClick = { inputMsg = "Write a function to parse JSON in Python" }
+                            )
+                        )
+
+                        // If no connections are connected, offer a connection setup suggestion
+                        if (connectedIntegrations.isEmpty()) {
+                            items.add(
+                                DynamicSuggestionCard(
+                                    id = "conn_explore",
+                                    title = "Connect Tools",
+                                    subtitle = "Link GitHub, Gmail or Telegram to unlock tools",
+                                    actionText = "Explore",
+                                    iconBackgroundColor = Color(0xFF14B8A6),
+                                    iconContent = {
+                                        Icon(
+                                            imageVector = Icons.Default.Share,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(19.dp)
+                                        )
+                                    },
+                                    onClick = { inputMsg = "How do I connect GitHub, Gmail, or Telegram in DeepCode?" }
+                                )
+                            )
+                        }
+
+                        items
+                    }
+
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(11.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp)
+                    ) {
+                        items(dynamicSuggestions, key = { it.id }) { card ->
+                            PlaceholderFeatureCard(
+                                iconContent = card.iconContent,
+                                title = card.title,
+                                subtitle = card.subtitle,
+                                actionText = card.actionText,
+                                iconBackgroundColor = card.iconBackgroundColor,
+                                onClick = card.onClick
                             )
                         }
                     }
@@ -1172,18 +1451,31 @@ private fun TopBar(
 
         // Right: Model selection capsule pill [ deepseek v4 flash  ⋮ ]
         Box {
-            val modelDisplayName = activeModel.name.lowercase().ifEmpty { "deepseek v4 flash" }
+            val isGpt = activeModel.provider.equals("ChatGPT", ignoreCase = true) ||
+                    activeModel.id.equals("chatgpt-4o", ignoreCase = true) ||
+                    activeModel.name.contains("chatgpt", ignoreCase = true)
+            val modelDisplayName = if (isGpt) "chatgpt" else activeModel.name.lowercase().ifEmpty { "deepseek v4 flash" }
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(24.dp))
-                    .background(Color(0xFF1E1E1E))
+                    .background(if (isGpt) Color(0xFF10A37F).copy(alpha = 0.15f) else Color(0xFF1E1E1E))
+                    .border(1.dp, if (isGpt) Color(0xFF10A37F).copy(alpha = 0.5f) else Color.Transparent, RoundedCornerShape(24.dp))
                     .clickable { expandedSelectorDropdown = !expandedSelectorDropdown }
-                    .padding(horizontal = 18.dp, vertical = 10.dp),
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (isGpt) {
+                    Icon(
+                        painter = androidx.compose.ui.res.painterResource(id = ai.deepcode.android.R.drawable.ic_chatgpt),
+                        contentDescription = "ChatGPT",
+                        tint = Color.Unspecified,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
                 Text(
                     text = modelDisplayName,
-                    color = Color.White,
+                    color = if (isGpt) Color(0xFF10A37F) else Color.White,
                     fontWeight = FontWeight.Medium,
                     fontSize = 15.sp,
                     maxLines = 1,
@@ -1194,7 +1486,7 @@ private fun TopBar(
                 Icon(
                     imageVector = Icons.Default.MoreVert,
                     contentDescription = "Select model",
-                    tint = Color.White,
+                    tint = if (isGpt) Color(0xFF10A37F) else Color.White,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -2094,7 +2386,7 @@ fun StreamingBubble(
         horizontalAlignment = Alignment.Start
     ) {
         if (isImageGenerating) {
-            ImageGenerationSkeleton(statusText = if (mediaProcessingPrompt.isNotBlank()) mediaProcessingPrompt else "Generating image...")
+            ImageGenerationSkeleton(statusText = "Creating image")
         } else if (cleanText.isEmpty() || isAudioGenerating) {
             Column(
                 modifier = Modifier
@@ -2983,7 +3275,14 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
     private val _mediaProcessingPrompt = MutableStateFlow("")
     val mediaProcessingPrompt = _mediaProcessingPrompt.asStateFlow()
 
-    private var activeSessionId = ""
+    private val _activeSessionIdFlow = MutableStateFlow("")
+    val activeSessionIdFlow = _activeSessionIdFlow.asStateFlow()
+    var activeSessionId: String
+        get() = _activeSessionIdFlow.value
+        private set(value) {
+            _activeSessionIdFlow.value = value
+        }
+
     private var messagesJob: Job? = null
     private var sendJob: Job? = null
     private var orchestrator: OrchestratorEngine? = null
@@ -3016,35 +3315,25 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         }
     }
 
-    fun switchSession(sessionId: String) {
-        activeSessionId = sessionId
-        messagesJob?.cancel()
-        // Don't leak in-flight send into the new session (was writing tool results to wrong session).
-        sendJob?.cancel()
-        sendJob = null
-        _attachedFiles.value = emptyList()
-
-        // Reset ALL streaming/loading state to prevent cross-session leaking
-        _isStreaming.value = false
-        _streamedText.value = ""
-        _streamingMessageId.value = ""
-        _mediaProcessingType.value = null
-        _mediaProcessingPrompt.value = ""
-        _pendingToolCall.value = null
-        _orchestrationPlan.value = null
-        _orchestrationExpanded.value = false
-        _agentsWorking.value = false
-        _orchestratedResult.value = null
-        _deferredResponse = ""
-        toolCallDepth = 0
-        consecutiveWebSearches = 0
-
+    private fun updateModelForSession(sessionId: String) {
         val prefs = repository.securePrefs
         val sessionProvider = prefs.getSetting("session_provider_$sessionId", "")
         val rawSessionModelId = prefs.getSetting("session_model_$sessionId", "")
         val sessionModelId = if (rawSessionModelId.isNotEmpty()) DecommissionedModels.sanitize(rawSessionModelId) else ""
         if (sessionModelId != rawSessionModelId && sessionModelId.isNotEmpty()) {
             prefs.saveSetting("session_model_$sessionId", sessionModelId)
+        }
+
+        if (sessionProvider.equals("ChatGPT", ignoreCase = true) || sessionModelId.equals("chatgpt-4o", ignoreCase = true)) {
+            _activeModel.value = AIModel(
+                id = "chatgpt-4o",
+                name = "ChatGPT",
+                provider = "ChatGPT",
+                isFree = true,
+                contextWindow = "128k",
+                badge = "GPT"
+            )
+            return
         }
 
         val targetProvider = sessionProvider.ifEmpty { prefs.getSetting("chat_provider", "Zen AI") }
@@ -3063,10 +3352,49 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 badge = if (isFree) "Free" else "Paid"
             )
         }
+    }
 
-        messagesJob = viewModelScope.launch(Dispatchers.IO) {
-            repository.getMessagesForSession(sessionId).collect { msgList ->
-                _messages.value = msgList
+    fun switchSession(sessionId: String) {
+        if (sessionId.isBlank()) return
+        val isSameSession = (sessionId == activeSessionId)
+        if (isSameSession && messagesJob?.isActive == true) {
+            // Already observing this session, keep sendJob running, but ensure model matches session settings!
+            updateModelForSession(sessionId)
+            return
+        }
+        activeSessionId = sessionId
+
+        if (!isSameSession) {
+            messagesJob?.cancel()
+            _messages.value = emptyList() // Clear immediately to avoid displaying stale messages from previous session
+            // Don't leak in-flight send into the new session (was writing tool results to wrong session).
+            sendJob?.cancel()
+            sendJob = null
+            _attachedFiles.value = emptyList()
+
+            // Reset ALL streaming/loading state to prevent cross-session leaking
+            _isStreaming.value = false
+            _streamedText.value = ""
+            _streamingMessageId.value = ""
+            _mediaProcessingType.value = null
+            _mediaProcessingPrompt.value = ""
+            _pendingToolCall.value = null
+            _orchestrationPlan.value = null
+            _orchestrationExpanded.value = false
+            _agentsWorking.value = false
+            _orchestratedResult.value = null
+            _deferredResponse = ""
+            toolCallDepth = 0
+            consecutiveWebSearches = 0
+        }
+
+        updateModelForSession(sessionId)
+
+        if (messagesJob?.isActive != true) {
+            messagesJob = viewModelScope.launch(Dispatchers.IO) {
+                repository.getMessagesForSession(sessionId).collect { msgList ->
+                    _messages.value = msgList
+                }
             }
         }
     }
@@ -3138,12 +3466,28 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     repository.renameSession(sessionId, dynamicTitle)
                 }
             }
-            val msgText = if (_attachedFiles.value.isNotEmpty()) {
-                val filesSection = _attachedFiles.value.joinToString("\n") { f ->
-                    if (f.filePath != null) "\uD83D\uDCCE ${f.name}\n[File: ${f.filePath}]"
-                    else "\uD83D\uDCCE ${f.name}\n${f.content}"
+            val currentAttachments = _attachedFiles.value
+            val isImageAtt = { f: AttachedFile ->
+                val n = f.name.lowercase()
+                val p = f.filePath?.lowercase() ?: ""
+                n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") ||
+                n.endsWith(".webp") || n.endsWith(".gif") || n.endsWith(".bmp") ||
+                p.endsWith(".png") || p.endsWith(".jpg") || p.endsWith(".jpeg") ||
+                p.endsWith(".webp") || p.endsWith(".gif") || p.endsWith(".bmp")
+            }
+            val uploadedImage = currentAttachments.firstOrNull { isImageAtt(it) }
+
+            val msgText = if (currentAttachments.isNotEmpty()) {
+                val filesSection = currentAttachments.joinToString("\n") { f ->
+                    if (isImageAtt(f) && f.filePath != null) {
+                        "[image:${f.filePath}]"
+                    } else if (f.filePath != null) {
+                        "📎 ${f.name}\n[File: ${f.filePath}]"
+                    } else {
+                        "📎 ${f.name}\n${f.content}"
+                    }
                 }
-                "$filesSection\n\n$text"
+                if (text.isBlank()) filesSection else "$filesSection\n\n$text"
             } else text
 
             val userMsg = Message(
@@ -3250,6 +3594,28 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 }
             }
 
+            // Direct Automation creation fast-path (instant scheduling)
+            val autoHandler = try { ai.deepcode.android.service.schedule.AutomationHandler(repository.appContext) } catch (_: Exception) { null }
+            val autoIntent = autoHandler?.parse(text)
+            if (autoIntent != null) {
+                _mediaProcessingType.value = "tool"
+                _mediaProcessingPrompt.value = "Scheduling automation..."
+                _streamedText.value = ""
+                val autoResponse = try {
+                    autoHandler.create(text)
+                } catch (e: Exception) {
+                    "Failed to schedule task: ${e.message}"
+                }
+                if (autoResponse.isNotBlank()) {
+                    appendAssistantMessage(autoResponse, sessionId)
+                    _isStreaming.value = false
+                    _streamingMessageId.value = ""
+                    _mediaProcessingType.value = null
+                    _mediaProcessingPrompt.value = ""
+                    return@launch
+                }
+            }
+
             // Direct GitHub action fast-path (instant query resolution)
             val ghQuery = try { ai.deepcode.android.service.github.GitHubHandler(repository.appContext).parse(text) } catch (_: Exception) { null }
             if (ghQuery != null) {
@@ -3269,6 +3635,69 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     _mediaProcessingPrompt.value = ""
                     return@launch
                 }
+            }
+
+            // Route uploaded images or image action buttons to ChatGPT
+            val isImageAction = text.contains("Remove background", ignoreCase = true) ||
+                    text.contains("Erase the", ignoreCase = true) ||
+                    text.contains("Resize and reframe", ignoreCase = true) ||
+                    text.contains("For this image:", ignoreCase = true)
+            val hasImageTag = RE_IMAGE_TAG.containsMatchIn(msgText) || RE_MARKDOWN_IMAGE.containsMatchIn(msgText)
+            val shouldRouteToChatGPT = uploadedImage != null || isImageAction || (hasImageTag && !isAudioCreationRequest(text))
+
+            if (shouldRouteToChatGPT) {
+                _mediaProcessingType.value = "chatgpt"
+                _mediaProcessingPrompt.value = "ChatGPT analyzing image..."
+                _streamedText.value = ""
+
+                val targetImagePath = uploadedImage?.filePath
+                    ?: RE_IMAGE_TAG.find(msgText)?.groupValues?.get(1)?.trim()
+                    ?: RE_MARKDOWN_IMAGE.find(msgText)?.groupValues?.get(2)?.trim()
+
+                val promptForGpt = text.replace(RE_IMAGE_TAG, "").replace(RE_MARKDOWN_IMAGE, "").trim().ifEmpty {
+                    "Describe and analyze this image in detail."
+                }
+
+                val bridge = ai.deepcode.android.service.chatgpt.ChatGPTBridge.getInstance(repository.appContext)
+                val accumulated = StringBuilder()
+
+                bridge.streamTurn(
+                    prompt = promptForGpt,
+                    imagePath = targetImagePath,
+                    onToken = { token ->
+                        _mediaProcessingType.value = null
+                        _mediaProcessingPrompt.value = ""
+                        accumulated.append(token)
+                        _streamedText.value = accumulated.toString()
+                    },
+                    onComplete = { fullText ->
+                        _isStreaming.value = false
+                        _streamingMessageId.value = ""
+                        _mediaProcessingType.value = null
+                        _mediaProcessingPrompt.value = ""
+                        _streamedText.value = ""
+                        val finalText = if (fullText.isNotBlank()) fullText else accumulated.toString().trim()
+                        viewModelScope.launch(Dispatchers.IO) {
+                            if (finalText.isNotBlank()) {
+                                appendAssistantMessage(finalText, sessionId)
+                            } else {
+                                appendAssistantMessage("ChatGPT completed without text.", sessionId)
+                            }
+                        }
+                    },
+                    onError = { err ->
+                        if (err is kotlin.coroutines.cancellation.CancellationException) return@streamTurn
+                        _isStreaming.value = false
+                        _streamingMessageId.value = ""
+                        _mediaProcessingType.value = null
+                        _mediaProcessingPrompt.value = ""
+                        _streamedText.value = ""
+                        viewModelScope.launch(Dispatchers.IO) {
+                            appendAssistantMessage("ChatGPT Error: ${err.message ?: "Unknown error"}", sessionId)
+                        }
+                    }
+                )
+                return@launch
             }
 
             val model = _activeModel.value
@@ -3303,6 +3732,9 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             if (apiKey.isEmpty() && (model.provider == "Ollama" || model.provider == "OllamaCloud")) {
                 apiKey = "ollama"
             }
+            if (currentKeySlot == 0 && apiKey.isNotEmpty()) {
+                currentKeySlot = ApiKeyRotator.findSlotForKey(repository.securePrefs, storageId, apiKey)
+            }
             if (apiKey.isEmpty()) {
                 _isStreaming.value = false
                 _streamedText.value = "No API key configured for ${model.provider}. Go to Settings to add one."
@@ -3321,6 +3753,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
 
             while (attempts < maxAttempts) {
                 attempts++
+                var pacingJob: kotlinx.coroutines.Job? = null
                 try {
                     _streamedText.value = ""
                     var streamHadToolCall = false
@@ -3330,7 +3763,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     var isStreamComplete = false
                     val minCharsThreshold = 220
 
-                    val pacingJob = launch {
+                    pacingJob = launch {
                         var currentEmittedLength = 0
                         while (isActive) {
                             val readyToStream = synchronized(bufferLock) {
@@ -3416,23 +3849,16 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                             _deferredResponse = fullResponse
                         },
                         onError = { error ->
-                            pacingJob.cancel()
+                            pacingJob?.cancel()
                             val msg = error.message.orEmpty()
-                            val isRotatableError = error is RateLimitException ||
-                                    msg.contains("401") ||
-                                    msg.contains("403") ||
-                                    msg.contains("429") ||
-                                    msg.contains("rate limit", ignoreCase = true) ||
-                                    msg.contains("quota", ignoreCase = true) ||
-                                    msg.contains("FreeUsageLimitError", ignoreCase = true) ||
-                                    msg.contains("limit exceeded", ignoreCase = true)
+                            val isRotatableError = ApiKeyRotator.isRotatableError(error, null, msg)
                             if (isRotatableError) {
                                 throw (error as? RateLimitException) ?: RateLimitException(model.provider, 429, error.message ?: "Rate limited")
                             }
                             _isStreaming.value = false
                             val errMsg = "Error: ${error.message}"
                             _streamedText.value = errMsg
-                            viewModelScope.launch { appendAssistantMessage(errMsg) }
+                            viewModelScope.launch { appendAssistantMessage(errMsg, sessionId) }
                             _streamedText.value = ""
                         },
                         onUsage = { usage ->
@@ -3441,7 +3867,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                             }
                         }
                     )
-                    pacingJob.join()
+                    pacingJob?.join()
                     if (streamHadAudioTool) {
                         _streamedText.value = ""
                         _deferredResponse = ""
@@ -3462,13 +3888,12 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     _deferredResponse = ""
                     break  // Success — exit retry loop
                 } catch (e: RateLimitException) {
-                    // Instant silent key rotation
-                    if (retrySlot > 0) {
-                        ApiKeyRotator.markKeyExhausted(storageId, retrySlot)
-                    }
-                    val nextKey = ApiKeyRotator.getAvailableKeyAfter(repository.securePrefs, storageId, retrySlot)
+                    pacingJob?.cancel()
+                    val actualSlot = if (retrySlot > 0) retrySlot else ApiKeyRotator.findSlotForKey(repository.securePrefs, storageId, retryApiKey)
+                    ApiKeyRotator.markKeyExhausted(storageId, actualSlot, retryApiKey)
+                    val nextKey = ApiKeyRotator.getAvailableKeyAfter(repository.securePrefs, storageId, actualSlot)
                     if (nextKey != null && attempts < maxAttempts) {
-                        val sameKey = nextKey.second == retrySlot
+                        val sameKey = nextKey.second == actualSlot
                         retryApiKey = nextKey.first
                         retrySlot = nextKey.second
                         if (retryApiKey.isNotEmpty() && model.provider == "Antigravity") {
@@ -3476,6 +3901,8 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                             if (projectId.isNotEmpty()) retryApiKey += "||$projectId"
                         }
                         _streamedText.value = ""  // Clear partial output from failed attempt
+                        _deferredResponse = ""
+                        ai.deepcode.android.util.AppLogger.i("ChatScreen", "Rotating $storageId key: slot $actualSlot -> slot ${nextKey.second} (attempt $attempts/$maxAttempts)")
                         if (sameKey && totalConfiguredKeys <= 1) {
                             kotlinx.coroutines.delay(1000)
                         }
@@ -3484,18 +3911,43 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     // All keys exhausted after max rotation attempts
                     _isStreaming.value = false
                     _streamedText.value = "Error: ${model.provider} rate limit reached across all keys. Please try again shortly."
-                    appendAssistantMessage(_streamedText.value)
+                    appendAssistantMessage(_streamedText.value, sessionId)
                     _streamedText.value = ""
+                    _deferredResponse = ""
                     break
                 } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                    pacingJob?.cancel()
                     // Stop / session switch — don't save a phantom error bubble.
                     _isStreaming.value = false
                     throw e
                 } catch (e: Exception) {
+                    pacingJob?.cancel()
+                    if (ApiKeyRotator.isRotatableError(e, null, e.message)) {
+                        val actualSlot = if (retrySlot > 0) retrySlot else ApiKeyRotator.findSlotForKey(repository.securePrefs, storageId, retryApiKey)
+                        ApiKeyRotator.markKeyExhausted(storageId, actualSlot, retryApiKey)
+                        val nextKey = ApiKeyRotator.getAvailableKeyAfter(repository.securePrefs, storageId, actualSlot)
+                        if (nextKey != null && attempts < maxAttempts) {
+                            val sameKey = nextKey.second == actualSlot
+                            retryApiKey = nextKey.first
+                            retrySlot = nextKey.second
+                            if (retryApiKey.isNotEmpty() && model.provider == "Antigravity") {
+                                val projectId = repository.securePrefs.getSetting("oauth_project_$storageId", "")
+                                if (projectId.isNotEmpty()) retryApiKey += "||$projectId"
+                            }
+                            _streamedText.value = ""
+                            _deferredResponse = ""
+                            ai.deepcode.android.util.AppLogger.i("ChatScreen", "Rotating $storageId key on rotatable exception: slot $actualSlot -> slot ${nextKey.second}")
+                            if (sameKey && totalConfiguredKeys <= 1) {
+                                kotlinx.coroutines.delay(1000)
+                            }
+                            continue
+                        }
+                    }
                     _isStreaming.value = false
                     _streamedText.value = "Error: ${e.message}"
                     appendAssistantMessage(_streamedText.value, sessionId)
                     _streamedText.value = ""
+                    _deferredResponse = ""
                     break
                 }
             }
@@ -3612,7 +4064,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 content = result,
                 timestamp = System.currentTimeMillis(),
                 isToolCall = true,
-                toolCallsJson = toolCall.id
+                toolCallsJson = """{"id":"${toolCall.id}","name":"${toolCall.name}"}"""
             )
             repository.insertMessage(toolResultMsg)
             // Feed the tool result back to the AI so it can respond
@@ -3661,6 +4113,15 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             val projectId = repository.securePrefs.getSetting("oauth_project_$storageId", "")
             if (projectId.isNotEmpty()) apiKey += "||$projectId"
         }
+        if (apiKey.isEmpty() && (model.provider == "Zen AI" || model.provider == "Zen" || model.provider == "Zen (Free)")) {
+            apiKey = repository.securePrefs.getApiKey("zen").ifEmpty { "zen-free" }
+        }
+        if (apiKey.isEmpty() && (model.provider == "Ollama" || model.provider == "OllamaCloud")) {
+            apiKey = "ollama"
+        }
+        if (currentKeySlot == 0 && apiKey.isNotEmpty()) {
+            currentKeySlot = ApiKeyRotator.findSlotForKey(repository.securePrefs, storageId, apiKey)
+        }
         if (apiKey.isEmpty()) {
             _isStreaming.value = false
             appendAssistantMessage("No API key configured for ${model.provider}.")
@@ -3706,6 +4167,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
 
         while (attempts < maxAttempts) {
             attempts++
+            var pacingJob: kotlinx.coroutines.Job? = null
             try {
                 _streamedText.value = ""
                 var nextStreamHadToolCall = false
@@ -3715,7 +4177,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 var isStreamComplete = false
                 val minCharsThreshold = 220
 
-                val pacingJob = viewModelScope.launch {
+                pacingJob = viewModelScope.launch {
                     var currentEmittedLength = 0
                     while (isActive) {
                         val readyToStream = synchronized(bufferLock) {
@@ -3801,16 +4263,9 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         _deferredResponse = fullResponse
                     },
                     onError = { error ->
-                        pacingJob.cancel()
+                        pacingJob?.cancel()
                         val msg = error.message.orEmpty()
-                        val isRotatableError = error is RateLimitException ||
-                                msg.contains("401") ||
-                                msg.contains("403") ||
-                                msg.contains("429") ||
-                                msg.contains("rate limit", ignoreCase = true) ||
-                                msg.contains("quota", ignoreCase = true) ||
-                                msg.contains("FreeUsageLimitError", ignoreCase = true) ||
-                                msg.contains("limit exceeded", ignoreCase = true)
+                        val isRotatableError = ApiKeyRotator.isRotatableError(error, null, msg)
                         if (isRotatableError) {
                             throw (error as? RateLimitException) ?: RateLimitException(model.provider, 429, error.message ?: "Rate limited")
                         }
@@ -3826,7 +4281,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         }
                     }
                 )
-                pacingJob.join()
+                pacingJob?.join()
                 if (nextStreamHadAudioTool) {
                     _streamedText.value = ""
                     _deferredResponse = ""
@@ -3855,12 +4310,12 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 _deferredResponse = ""
                 break
             } catch (e: RateLimitException) {
-                if (retrySlot > 0) {
-                    ApiKeyRotator.markKeyExhausted(storageId, retrySlot)
-                }
-                val nextKey = ApiKeyRotator.getAvailableKeyAfter(repository.securePrefs, storageId, retrySlot)
+                pacingJob?.cancel()
+                val actualSlot = if (retrySlot > 0) retrySlot else ApiKeyRotator.findSlotForKey(repository.securePrefs, storageId, retryApiKey)
+                ApiKeyRotator.markKeyExhausted(storageId, actualSlot, retryApiKey)
+                val nextKey = ApiKeyRotator.getAvailableKeyAfter(repository.securePrefs, storageId, actualSlot)
                 if (nextKey != null && attempts < maxAttempts) {
-                    val sameKey = nextKey.second == retrySlot
+                    val sameKey = nextKey.second == actualSlot
                     retryApiKey = nextKey.first
                     retrySlot = nextKey.second
                     if (retryApiKey.isNotEmpty() && model.provider == "Antigravity") {
@@ -3868,6 +4323,8 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         if (projectId.isNotEmpty()) retryApiKey += "||$projectId"
                     }
                     _streamedText.value = ""
+                    _deferredResponse = ""
+                    ai.deepcode.android.util.AppLogger.i("ChatScreen", "Rotating $storageId key: slot $actualSlot -> slot ${nextKey.second} (tool continuation attempt $attempts/$maxAttempts)")
                     if (sameKey && totalConfiguredKeys <= 1) {
                         kotlinx.coroutines.delay(1000)
                     }
@@ -3877,15 +4334,40 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 _streamedText.value = "Error: ${model.provider} rate limit reached across all keys. Please try again shortly."
                 appendAssistantMessage(_streamedText.value)
                 _streamedText.value = ""
+                _deferredResponse = ""
                 break
             } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                pacingJob?.cancel()
                 _isStreaming.value = false
                 throw e
             } catch (e: Exception) {
+                pacingJob?.cancel()
+                if (ApiKeyRotator.isRotatableError(e, null, e.message)) {
+                    val actualSlot = if (retrySlot > 0) retrySlot else ApiKeyRotator.findSlotForKey(repository.securePrefs, storageId, retryApiKey)
+                    ApiKeyRotator.markKeyExhausted(storageId, actualSlot, retryApiKey)
+                    val nextKey = ApiKeyRotator.getAvailableKeyAfter(repository.securePrefs, storageId, actualSlot)
+                    if (nextKey != null && attempts < maxAttempts) {
+                        val sameKey = nextKey.second == actualSlot
+                        retryApiKey = nextKey.first
+                        retrySlot = nextKey.second
+                        if (retryApiKey.isNotEmpty() && model.provider == "Antigravity") {
+                            val projectId = repository.securePrefs.getSetting("oauth_project_$storageId", "")
+                            if (projectId.isNotEmpty()) retryApiKey += "||$projectId"
+                        }
+                        _streamedText.value = ""
+                        _deferredResponse = ""
+                        ai.deepcode.android.util.AppLogger.i("ChatScreen", "Rotating $storageId key on rotatable exception in tool continuation: slot $actualSlot -> slot ${nextKey.second}")
+                        if (sameKey && totalConfiguredKeys <= 1) {
+                            kotlinx.coroutines.delay(1000)
+                        }
+                        continue
+                    }
+                }
                 _isStreaming.value = false
                 _streamedText.value = "Error: ${e.message}"
                 appendAssistantMessage(_streamedText.value)
                 _streamedText.value = ""
+                _deferredResponse = ""
                 break
             }
         }
@@ -4345,8 +4827,9 @@ $githubSection
             "web_search", "web_fetch", "create_pdf", "analyze_pdf",
             "list_pdf_layouts", "create_pdf_layout", "create_pdf_from_reference",
             "read_file", "list_directory", "grep_search", "search_image",
-            "list_automations", "memory_read", "edge_tts",
-            "generate_image", "generate_video"
+            "create_automation", "list_automations", "delete_automation",
+            "schedule_chatgpt_task", "cron_add", "cron_list", "cron_remove",
+            "memory_read", "edge_tts", "generate_image", "generate_video"
         )
     }
 

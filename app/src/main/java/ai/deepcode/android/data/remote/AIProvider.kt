@@ -29,12 +29,22 @@ import java.io.InputStreamReader
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
+import java.io.ByteArrayOutputStream
+import java.io.File
 
 
 fun shouldIncludeTools(messages: List<Message>, tools: List<Tool>?): Boolean {
     if (tools.isNullOrEmpty()) return false
     val lastUserMsg = messages.lastOrNull { it.role == "user" }?.content?.lowercase() ?: ""
-    val toolTriggers = listOf("search", "google", "web", "fetch", "url", "http", "image", "video", "audio", "tts", "speak", "voice", "pdf", "file", "read", "write", "list", "directory", "dir", "grep", "command", "exec", "terminal", "run", "qr", "csv", "zip", "json", "hash", "base64", "calendar", "contact", "vcard")
+    val toolTriggers = listOf(
+        "search", "google", "web", "fetch", "url", "http", "image", "video", "audio", "tts", "speak", "voice",
+        "pdf", "file", "read", "write", "list", "directory", "dir", "grep", "command", "exec", "terminal", "run",
+        "qr", "csv", "zip", "json", "hash", "base64", "calendar", "contact", "vcard",
+        "schedule", "automation", "automate", "cron", "daily", "weekly", "hourly", "recurring", "remind", "reminder", "task", "tasks"
+    )
     return toolTriggers.any { lastUserMsg.contains(it) } || messages.any { it.role == "tool" || it.isToolCall }
 }
 interface AIProvider {
@@ -465,16 +475,12 @@ class ZenProvider : AIProvider {
             }
 
             val errStr = lastException?.message ?: ""
-            val isAuthOrRateLimit = lastException is RateLimitException ||
-                errStr.contains("401") || errStr.contains("403") || errStr.contains("429") ||
-                errStr.contains("FreeUsageLimitError", ignoreCase = true) ||
-                errStr.contains("quota", ignoreCase = true) ||
-                errStr.contains("rate limit", ignoreCase = true)
+            val isAuthOrRateLimit = ApiKeyRotator.isRotatableError(lastException, null, errStr)
 
             if (isAuthOrRateLimit) {
                 val ex = (lastException as? RateLimitException) ?: RateLimitException("Zen AI", 429, errStr)
-                onError(ex)
-                return
+                try { onError(ex) } catch (_: Throwable) {}
+                throw ex
             }
 
             val isHttpError = errStr.contains("503") || errStr.contains("502") ||
@@ -568,8 +574,8 @@ class ZenProvider : AIProvider {
 
                 val responseCode = conn.responseCode
                 if (responseCode != 200) {
-                    val errBody = try { conn.errorStream?.bufferedReader()?.readText()?.take(500) ?: "" } catch (_: Exception) { "" }
-                    if (responseCode in listOf(401, 403, 429) || errBody.contains("FreeUsageLimitError", ignoreCase = true) || errBody.contains("rate limit", ignoreCase = true) || errBody.contains("quota", ignoreCase = true)) {
+                    val errBody = try { conn.errorStream?.bufferedReader()?.readText()?.take(1024) ?: "" } catch (_: Exception) { "" }
+                    if (ApiKeyRotator.isRotatableError(null, responseCode, errBody)) {
                         throw RateLimitException("Zen AI", responseCode, "Zen API Error $responseCode: $errBody")
                     }
                     throw Exception("Zen API Error $responseCode: $errBody")
@@ -619,8 +625,8 @@ class ZenProvider : AIProvider {
             val response = call.execute()
             response.use { resp ->
                 if (!resp.isSuccessful) {
-                    val errBody = resp.body?.string()?.take(500) ?: ""
-                    if (resp.code in listOf(401, 403, 429) || errBody.contains("FreeUsageLimitError", ignoreCase = true) || errBody.contains("rate limit", ignoreCase = true) || errBody.contains("quota", ignoreCase = true)) {
+                    val errBody = resp.body?.string()?.take(1024) ?: ""
+                    if (ApiKeyRotator.isRotatableError(null, resp.code, errBody)) {
                         throw RateLimitException("Zen AI", resp.code, "Zen API Error ${resp.code}: $errBody")
                     }
                     throw Exception("Zen API Error ${resp.code}: $errBody")
@@ -717,6 +723,18 @@ class ZenProvider : AIProvider {
         onUsage: ((TurnTokenUsage) -> Unit)?
     ) {
         val json = try { com.google.gson.JsonParser.parseString(body).asJsonObject } catch (_: Exception) { onComplete(""); return }
+        if (json.has("error") && !json.get("error").isJsonNull) {
+            val errObj = json.get("error")
+            val errMsg = if (errObj.isJsonObject) {
+                errObj.asJsonObject.get("message")?.asString ?: gson.toJson(errObj)
+            } else {
+                errObj.asString
+            }
+            if (ApiKeyRotator.isRotatableError(null, 429, errMsg)) {
+                throw RateLimitException("Zen AI", 429, errMsg)
+            }
+            throw Exception("Zen API Error: $errMsg")
+        }
         val choice = try { json.getAsJsonArray("choices")?.firstOrNull()?.asJsonObject } catch (_: Exception) { null } ?: run { onComplete(""); return }
         // Some providers return delta-shaped choices even in non-streaming mode.
         val msg = try { choice.getAsJsonObject("message") } catch (_: Exception) { null }
@@ -784,7 +802,15 @@ class ZenProvider : AIProvider {
             try {
                 val chunk = gson.fromJson(dataVal, com.google.gson.JsonObject::class.java) ?: continue
                 if (chunk.has("error") && !chunk.get("error").isJsonNull) {
-                    val errMsg = try { gson.toJson(chunk.get("error")).take(500) } catch (_: Exception) { "unknown error" }
+                    val errObj = chunk.get("error")
+                    val errMsg = if (errObj.isJsonObject) {
+                        errObj.asJsonObject.get("message")?.asString ?: gson.toJson(errObj)
+                    } else {
+                        errObj.asString
+                    }
+                    if (ApiKeyRotator.isRotatableError(null, 429, errMsg)) {
+                        throw RateLimitException("Zen AI", 429, errMsg)
+                    }
                     throw Exception("Zen stream error: $errMsg")
                 }
                 if (chunk.has("usage") && !chunk.get("usage").isJsonNull) {
@@ -896,10 +922,10 @@ class GeminiProvider : AIProvider {
     override val name = "Google Gemini"
     override val isFree = false
     override val models = listOf(
-        AIModel("gemini-3.8-flash", "Gemini 3.8 Flash", "Google Gemini", true, "1M tokens", "Free"),
+        AIModel("gemini-2.5-flash", "Gemini 2.5 Flash", "Google Gemini", true, "1M tokens", "Free"),
+        AIModel("gemini-2.5-pro", "Gemini 2.5 Pro", "Google Gemini", false, "2M tokens", "Paid"),
         AIModel("gemini-2.0-flash", "Gemini 2.0 Flash", "Google Gemini", true, "1M tokens", "Free"),
         AIModel("gemini-2.0-flash-lite", "Gemini 2.0 Flash Lite", "Google Gemini", true, "1M tokens", "Free"),
-        AIModel("gemini-2.0-pro-exp-02-05", "Gemini 2.0 Pro Experimental", "Google Gemini", true, "2M tokens", "Free"),
         AIModel("gemini-1.5-flash", "Gemini 1.5 Flash", "Google Gemini", true, "1M tokens", "Free"),
         AIModel("gemini-1.5-pro", "Gemini 1.5 Pro", "Google Gemini", false, "2M tokens", "Paid"),
         AIModel("imagen-3.0-generate-002", "Imagen 3 (Image Creation)", "Google Gemini", false, "Image Gen", "Free"),
@@ -920,12 +946,12 @@ class GeminiProvider : AIProvider {
     ) {
         withContext(Dispatchers.IO) {
             try {
-                val finalKey = apiKey.ifEmpty { "DUMMY_GEMINI_KEY" }
+                val finalKey = apiKey.trim()
                 val targetModel = when {
                     model.startsWith("imagen-") -> model
-                    model in listOf("gemini-3.8-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-pro") -> model
-                    model.startsWith("gemini-") -> model
-                    else -> "gemini-3.8-flash"
+                    model in listOf("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-pro") -> model
+                    model.startsWith("gemini-") && !model.contains("3.8") -> model
+                    else -> "gemini-2.5-flash"
                 }
 
                 // Handle Imagen 3 Image Generation Models directly
@@ -973,29 +999,73 @@ class GeminiProvider : AIProvider {
                     return@withContext
                 }
 
-                ai.deepcode.android.util.AppLogger.i("GeminiProvider", "model=$targetModel keySet=${apiKey.isNotEmpty()} keyLen=${apiKey.length}")
+                ai.deepcode.android.util.AppLogger.i("GeminiProvider", "model=$targetModel keySet=${finalKey.isNotEmpty()} keyLen=${finalKey.length}")
                 val baseUrl = resolveBaseUrl(customBaseUrl, "https://generativelanguage.googleapis.com")
                 val url = "$baseUrl/v1beta/models/$targetModel:streamGenerateContent?alt=sse&key=$finalKey"
 
                 val contentsArray = JsonArray()
                 var systemText: String? = null
 
+                fun addOrMergeTurn(role: String, parts: JsonArray) {
+                    if (parts.size() == 0) return
+                    if (contentsArray.size() > 0) {
+                        val lastObj = contentsArray.get(contentsArray.size() - 1).asJsonObject
+                        val lastRole = lastObj.get("role")?.asString
+                        if (lastRole == role) {
+                            val lastParts = lastObj.getAsJsonArray("parts")
+                            for (p in parts) {
+                                lastParts.add(p)
+                            }
+                            return
+                        }
+                    }
+                    val turnObj = JsonObject().apply {
+                        addProperty("role", role)
+                        add("parts", parts)
+                    }
+                    contentsArray.add(turnObj)
+                }
+
                 for (msg in messages) {
                     if (msg.role == "system") {
                         systemText = (systemText ?: "") + msg.content + "\n"
                         continue
                     }
-                    val contentObj = JsonObject()
+
                     val partsArray = JsonArray()
 
                     if (msg.role == "tool") {
+                        var toolName = "tool"
+                        val rawId = msg.toolCallsJson ?: ""
+                        try {
+                            val parsed = JsonParser.parseString(rawId)
+                            if (parsed.isJsonObject && parsed.asJsonObject.has("name")) {
+                                toolName = parsed.asJsonObject.get("name").asString
+                            }
+                        } catch (_: Exception) {}
+
+                        if (toolName == "tool" || toolName.isBlank()) {
+                            // Find the corresponding tool call name from assistant history
+                            val lastAssistantWithTool = messages.lastOrNull { it.role == "assistant" && it.isToolCall && !it.toolCallsJson.isNullOrEmpty() }
+                            if (lastAssistantWithTool != null) {
+                                try {
+                                    val tcArray = JsonParser.parseString(lastAssistantWithTool.toolCallsJson).asJsonArray
+                                    for (i in 0 until tcArray.size()) {
+                                        val tc = tcArray.get(i).asJsonObject
+                                        if (tc.has("id") && tc.get("id").asString == rawId) {
+                                            toolName = tc.get("name")?.asString ?: toolName
+                                            break
+                                        }
+                                    }
+                                    if (toolName == "tool" && tcArray.size() > 0) {
+                                        toolName = tcArray.get(0).asJsonObject.get("name")?.asString ?: toolName
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        }
+
                         val fnRespPart = JsonObject().apply {
                             val fnRespObj = JsonObject().apply {
-                                val rawId = msg.toolCallsJson ?: ""
-                                val toolName = try {
-                                    val parsed = JsonParser.parseString(rawId)
-                                    if (parsed.isJsonObject) parsed.asJsonObject.get("name")?.asString ?: "tool" else "tool"
-                                } catch (_: Exception) { "tool" }
                                 addProperty("name", toolName)
                                 val responseObj = JsonObject().apply {
                                     addProperty("result", msg.content)
@@ -1004,20 +1074,10 @@ class GeminiProvider : AIProvider {
                             }
                             add("functionResponse", fnRespObj)
                         }
-                        val lastContentObj = if (contentsArray.size() > 0) contentsArray.get(contentsArray.size() - 1).asJsonObject else null
-                        val lastRole = lastContentObj?.get("role")?.asString
-                        val lastParts = lastContentObj?.getAsJsonArray("parts")
-
-                        if (lastRole == "user" && lastParts != null && lastParts.size() > 0 && lastParts.get(0).asJsonObject.has("functionResponse")) {
-                            lastParts.add(fnRespPart)
-                            continue
-                        } else {
-                            contentObj.addProperty("role", "user")
-                            partsArray.add(fnRespPart)
-                        }
+                        partsArray.add(fnRespPart)
+                        addOrMergeTurn("user", partsArray)
                     } else if (msg.role == "assistant" && msg.isToolCall && !msg.toolCallsJson.isNullOrEmpty()) {
-                        contentObj.addProperty("role", "model")
-                        if (msg.content.isNotEmpty()) {
+                        if (msg.content.isNotBlank()) {
                             val textObj = JsonObject().apply { addProperty("text", msg.content) }
                             partsArray.add(textObj)
                         }
@@ -1038,14 +1098,36 @@ class GeminiProvider : AIProvider {
                                 partsArray.add(fnCallPart)
                             }
                         } catch (_: Exception) {}
+                        addOrMergeTurn("model", partsArray)
                     } else {
-                        contentObj.addProperty("role", if (msg.role == "assistant") "model" else "user")
-                        val partObj = JsonObject().apply { addProperty("text", msg.content) }
-                        partsArray.add(partObj)
+                        val role = if (msg.role == "assistant") "model" else "user"
+                        if (msg.content.isNotBlank()) {
+                            val partObj = JsonObject().apply { addProperty("text", msg.content) }
+                            partsArray.add(partObj)
+                        } else if (messages.size == 1) {
+                            partsArray.add(JsonObject().apply { addProperty("text", " ") })
+                        }
+                        addOrMergeTurn(role, partsArray)
                     }
+                }
 
-                    contentObj.add("parts", partsArray)
-                    contentsArray.add(contentObj)
+                // Ensure Gemini conversation starts with user turn
+                if (contentsArray.size() > 0 && contentsArray.get(0).asJsonObject.get("role")?.asString == "model") {
+                    val dummyUser = JsonObject().apply {
+                        addProperty("role", "user")
+                        val dummyParts = JsonArray().apply {
+                            add(JsonObject().apply { addProperty("text", "Hello") })
+                        }
+                        add("parts", dummyParts)
+                    }
+                    val newContentsArray = JsonArray().apply {
+                        add(dummyUser)
+                        for (c in contentsArray) add(c)
+                    }
+                    contentsArray.apply {
+                        while (size() > 0) remove(0)
+                        for (c in newContentsArray) add(c)
+                    }
                 }
 
                 val payload = JsonObject()
@@ -1103,6 +1185,9 @@ class GeminiProvider : AIProvider {
                     .url(url)
                     .addHeader("Accept", "text/event-stream")
                     .addHeader("Content-Type", "application/json")
+                    .apply {
+                        if (finalKey.isNotEmpty()) addHeader("x-goog-api-key", finalKey)
+                    }
                     .post(requestBody)
                     .build()
                 val call = client.newCall(request)
@@ -1115,8 +1200,8 @@ class GeminiProvider : AIProvider {
                     responseCode = response.code
                     if (!response.isSuccessful) {
                         val errBody = response.body?.string()?.take(1024) ?: ""
-                        if (response.code == 429 || errBody.contains("rate_limit", ignoreCase = true) || errBody.contains("quota", ignoreCase = true) || errBody.contains("RESOURCE_EXHAUSTED", ignoreCase = true)) {
-                            throw RateLimitException("Google Gemini", response.code, "API Error ${response.code}: $errBody")
+                        if (ApiKeyRotator.isRotatableError(null, response.code, errBody)) {
+                            throw RateLimitException("Google Gemini", response.code, "Gemini API Error ${response.code}: $errBody")
                         }
                         throw Exception("API Error ${response.code}: $errBody")
                     }
@@ -1125,6 +1210,7 @@ class GeminiProvider : AIProvider {
                     var line: String?
                     val accumulatedJson = StringBuilder()
                     val collectedGeminiText = StringBuilder()
+                    var inThoughtBlock = false
                     var geminiInputTokens = 0
                     var geminiOutputTokens = 0
 
@@ -1141,18 +1227,38 @@ class GeminiProvider : AIProvider {
                             val content = firstCand.getAsJsonObject("content")
                             if (content != null) {
                                 val parts = content.getAsJsonArray("parts")
-                                if (parts != null && parts.size() > 0) {
-                                    val firstPart = parts.get(0).asJsonObject
-                                    if (firstPart.has("functionCall")) {
-                                        val fc = firstPart.getAsJsonObject("functionCall")
-                                        val name = fc.get("name")?.asString ?: "unknown_function"
-                                        val args = fc.getAsJsonObject("args")?.toString() ?: "{}"
-                                        val callId = UUID.randomUUID().toString()
-                                        onToolCall(ToolCall(callId, name, args))
-                                    } else if (firstPart.has("text") && !firstPart.get("text").isJsonNull && !firstPart.has("thought") && !firstPart.has("thoughtSignature") && firstPart.get("thought")?.asBoolean != true) {
-                                        val text = firstPart.get("text").asString
-                                        collectedGeminiText.append(text)
-                                        onToken(text)
+                                if (parts != null) {
+                                    for (i in 0 until parts.size()) {
+                                        val part = parts.get(i).asJsonObject
+                                        if (part.has("functionCall")) {
+                                            val fc = part.getAsJsonObject("functionCall")
+                                            val name = fc.get("name")?.asString ?: "unknown_function"
+                                            val args = fc.getAsJsonObject("args")?.toString() ?: "{}"
+                                            val callId = UUID.randomUUID().toString()
+                                            onToolCall(ToolCall(callId, name, args))
+                                        } else if (part.has("text") && !part.get("text").isJsonNull) {
+                                            val text = part.get("text").asString ?: ""
+                                            if (text.isNotEmpty()) {
+                                                val isThought = (part.has("thought") && part.get("thought")?.asBoolean == true) || part.has("thoughtSignature")
+                                                if (isThought) {
+                                                    if (!inThoughtBlock) {
+                                                        inThoughtBlock = true
+                                                        onToken("<thought>")
+                                                        collectedGeminiText.append("<thought>")
+                                                    }
+                                                    collectedGeminiText.append(text)
+                                                    onToken(text)
+                                                } else {
+                                                    if (inThoughtBlock) {
+                                                        inThoughtBlock = false
+                                                        onToken("</thought>\n\n")
+                                                        collectedGeminiText.append("</thought>\n\n")
+                                                    }
+                                                    collectedGeminiText.append(text)
+                                                    onToken(text)
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1202,6 +1308,12 @@ class GeminiProvider : AIProvider {
                     }
                     ai.deepcode.android.util.AppLogger.i("GeminiProvider", "Response: code=$responseCode candidates=$totalCandidates")
                     
+                    if (inThoughtBlock) {
+                        inThoughtBlock = false
+                        onToken("</thought>")
+                        collectedGeminiText.append("</thought>")
+                    }
+
                     if (geminiInputTokens > 0 || geminiOutputTokens > 0) {
                         onUsage?.invoke(TurnTokenUsage(geminiInputTokens, geminiOutputTokens, 0))
                     } else if (onUsage != null) {
@@ -1223,12 +1335,19 @@ class GeminiProvider : AIProvider {
         if (src == null) return obj
         for ((k, v) in src) {
             val key = k.toString()
+            if (key == "additionalProperties") continue
             when (v) {
-                is String -> obj.addProperty(key, v)
+                is String -> {
+                    if (key.equals("type", ignoreCase = true)) {
+                        obj.addProperty(key, v.uppercase())
+                    } else {
+                        obj.addProperty(key, v)
+                    }
+                }
                 is Number -> obj.addProperty(key, v)
                 is Boolean -> obj.addProperty(key, v)
                 is Map<*, *> -> when (key) {
-                    "items", "additionalProperties" -> obj.add(key, convertSchemaObj(v))
+                    "items" -> obj.add(key, convertSchemaObj(v))
                     "properties" -> {
                         val props = JsonObject()
                         for ((pk, pv) in v) {
@@ -1646,7 +1765,7 @@ class AnthropicProvider : AIProvider {
                 call.execute().use { response ->
                     if (!response.isSuccessful) {
                         val errBody = response.body?.string()?.take(1024) ?: ""
-                        if (response.code == 429 || errBody.contains("rate_limit", ignoreCase = true) || errBody.contains("overloaded", ignoreCase = true)) {
+                        if (ApiKeyRotator.isRotatableError(null, response.code, errBody)) {
                             throw RateLimitException("Anthropic", response.code, "Anthropic API Error ${response.code}: $errBody")
                         }
                         throw Exception("Anthropic API Error ${response.code}: $errBody")
@@ -1834,6 +1953,36 @@ private fun resolveBaseUrl(customBaseUrl: String?, defaultUrl: String): String {
     return defaultUrl
 }
 
+private fun resolveImageToDataUrl(pathOrUrl: String): String? {
+    if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://") || pathOrUrl.startsWith("data:image/")) {
+        return pathOrUrl
+    }
+    val file = File(pathOrUrl.removePrefix("file://"))
+    if (!file.exists() || file.length() == 0L) return null
+    return try {
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return null
+        val maxDim = 1536
+        val scaled = if (bitmap.width > maxDim || bitmap.height > maxDim) {
+            val ratio = bitmap.width.toFloat() / bitmap.height.toFloat()
+            val (newW, newH) = if (ratio > 1f) {
+                maxDim to (maxDim / ratio).toInt()
+            } else {
+                (maxDim * ratio).toInt() to maxDim
+            }
+            Bitmap.createScaledBitmap(bitmap, newW, newH, true)
+        } else {
+            bitmap
+        }
+        val stream = ByteArrayOutputStream()
+        scaled.compress(Bitmap.CompressFormat.JPEG, 85, stream)
+        val bytes = stream.toByteArray()
+        val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+        "data:image/jpeg;base64,$b64"
+    } catch (e: Exception) {
+        null
+    }
+}
+
 // ==========================================
 // UTILITY TO NORMALIZE AND MERGE MESSAGES FOR API COMPLIANCE
 // ==========================================
@@ -1854,11 +2003,45 @@ private fun normalizeMessagesForApi(messages: List<Message>): JsonArray {
         when (role) {
             "user", "system" -> {
                 flushAssistant()
-                val userObj = JsonObject().apply {
-                    addProperty("role", role)
-                    addProperty("content", msg.content)
+                val imageRegex = Regex("""\[image:([^\]]+)\]""")
+                val imageMatches = if (role == "user") imageRegex.findAll(msg.content).toList() else emptyList()
+                if (role == "user" && imageMatches.isNotEmpty()) {
+                    val cleanText = msg.content.replace(imageRegex, "").trim()
+                    val parts = JsonArray()
+                    if (cleanText.isNotEmpty()) {
+                        parts.add(JsonObject().apply {
+                            addProperty("type", "text")
+                            addProperty("text", cleanText)
+                        })
+                    }
+                    for (match in imageMatches) {
+                        val imgRef = match.groupValues[1].trim()
+                        val dataUrl = resolveImageToDataUrl(imgRef)
+                        if (!dataUrl.isNullOrEmpty()) {
+                            parts.add(JsonObject().apply {
+                                addProperty("type", "image_url")
+                                add("image_url", JsonObject().apply {
+                                    addProperty("url", dataUrl)
+                                })
+                            })
+                        }
+                    }
+                    val userObj = JsonObject().apply {
+                        addProperty("role", role)
+                        if (parts.size() > 0) {
+                            add("content", parts)
+                        } else {
+                            addProperty("content", msg.content)
+                        }
+                    }
+                    messagesArray.add(userObj)
+                } else {
+                    val userObj = JsonObject().apply {
+                        addProperty("role", role)
+                        addProperty("content", msg.content)
+                    }
+                    messagesArray.add(userObj)
                 }
-                messagesArray.add(userObj)
             }
             "tool" -> {
                 flushAssistant()
@@ -2112,7 +2295,7 @@ private suspend fun streamOpenAiCompatible(
             call.execute().use { response ->
                 if (!response.isSuccessful) {
                     val errBody = response.body?.string()?.take(1024) ?: ""
-                    if (response.code == 429 || errBody.contains("rate_limit", ignoreCase = true) || errBody.contains("quota", ignoreCase = true)) {
+                    if (ApiKeyRotator.isRotatableError(null, response.code, errBody)) {
                         throw RateLimitException(effectiveModel, response.code, "API Error ${response.code}: $errBody")
                     }
                     // Auto-recovery for model_decommissioned (e.g. Groq HTTP 400)
@@ -2339,17 +2522,17 @@ class AntigravityProvider : AIProvider {
                 .build()
 
             client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                val errBody = response.body?.string() ?: ""
-                if (response.code == 429 || errBody.contains("rate_limit", ignoreCase = true) || errBody.contains("quota", ignoreCase = true)) {
-                    onError(RateLimitException("Antigravity", response.code, "Antigravity API error: HTTP ${response.code} $errBody"))
-                } else {
-                    onError(Exception("Antigravity API error: HTTP ${response.code} $errBody"))
+                if (!response.isSuccessful) {
+                    val errBody = response.body?.string() ?: ""
+                    if (ApiKeyRotator.isRotatableError(null, response.code, errBody)) {
+                        onError(RateLimitException("Antigravity", response.code, "Antigravity API error: HTTP ${response.code} $errBody"))
+                    } else {
+                        onError(Exception("Antigravity API error: HTTP ${response.code} $errBody"))
+                    }
+                    return@withContext
                 }
-                return@withContext
-            }
 
-            val bodyStream = response.body?.byteStream()
+                val bodyStream = response.body?.byteStream()
             if (bodyStream == null) {
                 onError(Exception("Empty response body from Antigravity"))
                 return@withContext
