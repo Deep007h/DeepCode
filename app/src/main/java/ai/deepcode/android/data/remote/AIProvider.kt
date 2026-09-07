@@ -111,7 +111,8 @@ class GenericOpenAIProvider(private val config: OpenAIProviderConfig) : AIProvid
             onToolCall = onToolCall,
             onComplete = onComplete,
             onError = onError,
-            onUsage = onUsage
+            onUsage = onUsage,
+            providerName = config.name
         )
     }
 }
@@ -271,32 +272,27 @@ fun selectProvider(providers: List<AIProvider>, preferredName: String, apiKeyLoo
 
 class AIProviderFactory {
     companion object {
-        val providers = listOf(
-            ZenProvider(),
-            GeminiProvider(),
-            GroqProvider(),
-            CerebrusProvider(),
-            OpenRouterProvider(),
-            OmnirouteProvider(),
-            OpenAIProvider(),
-            AnthropicProvider(),
-            MistralProvider(),
-            OllamaCloudProvider(),
-            AntigravityProvider(),
-            GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "DeepSeek" }!!),
-            GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "Together AI" }!!),
-            GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "Perplexity" }!!),
-            GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "xAI" }!!),
-            GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "Cohere" }!!),
-            GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "DeepInfra" }!!),
-            GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "Fireworks AI" }!!),
-            GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "NVIDIA NIM" }!!),
-            GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "SambaNova" }!!),
-            GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "Hyperbolic" }!!),
-            GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "GitHub Models" }!!),
-            GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "Agent Router" }!!),
-            GenericOpenAIProvider(OPENAI_PROVIDERS.find { it.name == "GMI Cloud" }!!),
-        )
+        val providers: List<AIProvider> by lazy {
+            val baseList = mutableListOf<AIProvider>(
+                ZenProvider(),
+                GeminiProvider(),
+                GroqProvider(),
+                CerebrusProvider(),
+                OpenRouterProvider(),
+                OmnirouteProvider(),
+                OpenAIProvider(),
+                AnthropicProvider(),
+                MistralProvider(),
+                OllamaCloudProvider(),
+                AntigravityProvider(),
+            )
+            for (openAiProv in OPENAI_PROVIDERS) {
+                if (baseList.none { it.name.equals(openAiProv.name, ignoreCase = true) }) {
+                    baseList.add(GenericOpenAIProvider(openAiProv))
+                }
+            }
+            baseList
+        }
     }
 }
 
@@ -2208,7 +2204,8 @@ private suspend fun streamOpenAiCompatible(
     onToolCall: (ToolCall) -> Unit,
     onComplete: (String) -> Unit,
     onError: (Throwable) -> Unit,
-    onUsage: ((TurnTokenUsage) -> Unit)? = null
+    onUsage: ((TurnTokenUsage) -> Unit)? = null,
+    providerName: String? = null
 ) {
     withContext(Dispatchers.IO) {
         try {
@@ -2297,7 +2294,7 @@ private suspend fun streamOpenAiCompatible(
                 if (!response.isSuccessful) {
                     val errBody = response.body?.string()?.take(1024) ?: ""
                     if (ApiKeyRotator.isRotatableError(null, response.code, errBody)) {
-                        throw RateLimitException(effectiveModel, response.code, "API Error ${response.code}: $errBody")
+                        throw RateLimitException(providerName ?: effectiveModel, response.code, "API Error ${response.code}: $errBody")
                     }
                     // Auto-recovery for model_decommissioned (e.g. Groq HTTP 400)
                     if (response.code == 400 && (errBody.contains("model_decommissioned", ignoreCase = true) || errBody.contains("decommissioned", ignoreCase = true))) {
@@ -2319,7 +2316,8 @@ private suspend fun streamOpenAiCompatible(
                                 onToolCall = onToolCall,
                                 onComplete = onComplete,
                                 onError = onError,
-                                onUsage = onUsage
+                                onUsage = onUsage,
+                                providerName = providerName
                             )
                             return@withContext
                         }
@@ -2796,65 +2794,161 @@ val PROVIDER_BASE_URLS = mapOf(
     "Groq" to "https://api.groq.com/openai/v1",
     "Cerebrus" to "https://api.cerebrus.com/v1",
     "Cerebras" to "https://api.cerebras.ai/v1",
+    "Mistral AI" to "https://api.mistral.ai/v1",
     "Mistral" to "https://api.mistral.ai/v1",
     "Antigravity" to "https://daily-cloudcode-pa.googleapis.com",
     "OpenAI" to "https://api.openai.com/v1",
     "Anthropic" to "https://api.anthropic.com/v1",
+    "Claude" to "https://api.anthropic.com/v1",
     "DeepSeek" to "https://api.deepseek.com/v1",
     "Together AI" to "https://api.together.xyz/v1",
+    "Together" to "https://api.together.xyz/v1",
     "Perplexity" to "https://api.perplexity.ai",
     "xAI" to "https://api.x.ai/v1",
     "Cohere" to "https://api.cohere.com/v1",
     "DeepInfra" to "https://api.deepinfra.com/v1/openai",
     "Fireworks AI" to "https://api.fireworks.ai/inference/v1",
+    "Fireworks" to "https://api.fireworks.ai/inference/v1",
     "NVIDIA NIM" to "https://integrate.api.nvidia.com/v1",
+    "NVIDIA" to "https://integrate.api.nvidia.com/v1",
     "SambaNova" to "https://api.sambanova.ai/v1",
     "Hyperbolic" to "https://api.hyperbolic.xyz/v1",
     "GitHub Models" to "https://models.inference.ai.azure.com",
     "Novita AI" to "https://api.novita.ai/v1",
+    "Novita" to "https://api.novita.ai/v1",
     "SiliconFlow" to "https://api.siliconflow.cn/v1",
     "Agent Router" to "https://agentrouter.org/v1",
+    "AgentRouter" to "https://agentrouter.org/v1",
     "GMI Cloud" to "https://api.gmi-serving.com/v1",
+    "GMI" to "https://api.gmi-serving.com/v1",
     "Ollama Cloud" to "https://ollama.com/v1",
+    "OllamaCloud" to "https://ollama.com/v1",
     "Ollama" to "https://ollama.com/v1",
+    "Nebius AI" to "https://api.studio.nebius.ai/v1",
+    "Nebius" to "https://api.studio.nebius.ai/v1",
+    "AIML API" to "https://api.aimlapi.com/v1",
+    "AIML" to "https://api.aimlapi.com/v1",
+    "Friendli AI" to "https://api.friendli.ai/dedicated/v1",
+    "Scaleway" to "https://api.scaleway.ai/v1",
+    "Lambda AI" to "https://api.lambdalabs.com/v1",
+    "Inference.net" to "https://api.inference.net/v1",
+    "Synthetic" to "https://api.synthetic.ai/v1",
+    "MiniMax" to "https://api.minimax.chat/v1",
+    "Moonshot" to "https://api.moonshot.cn/v1",
+    "Qwen" to "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "Baichuan" to "https://api.baichuan-ai.com/v1",
+    "Yi" to "https://api.lingyiwanwu.com/v1",
+    "StepFun" to "https://api.stepfun.com/v1",
+    "VolcEngine" to "https://ark.cn-beijing.volces.com/api/v3",
+    "Baidu" to "https://qianfan.baidubce.com/v2",
 )
 
 fun providerDefaultBaseUrl(providerName: String): String =
-    PROVIDER_BASE_URLS[providerName] ?: "https://api.openai.com/v1"
+    PROVIDER_BASE_URLS[providerName]
+        ?: PROVIDER_BASE_URLS.entries.firstOrNull { it.key.equals(providerName, ignoreCase = true) }?.value
+        ?: OPENAI_PROVIDERS.find { it.name.equals(providerName, ignoreCase = true) }?.baseUrl
+        ?: "https://api.openai.com/v1"
 
-fun providerStorageId(providerName: String): String = when (providerName) {
-    "OpenAI" -> "openai"
-    "Anthropic" -> "anthropic"
-    "Zen AI" -> "zen"
-    "Zen" -> "zen"
-    "Zen (Free)" -> "zen"
-    "Google Gemini" -> "gemini"
-    "Gemini" -> "gemini"
-    "Groq" -> "groq"
-    "Cerebrus" -> "cerebrus"
-    "OpenRouter" -> "openrouter"
-    "Omniroute" -> "omniroute"
-    "Mistral AI" -> "mistral"
-    "Mistral" -> "mistral"
-    "Ollama" -> "ollama"
-    "OllamaCloud" -> "ollamacloud"
-    "Antigravity" -> "antigravity"
-    "DeepSeek" -> "deepseek"
-    "Together AI" -> "together"
-    "Perplexity" -> "perplexity"
-    "xAI" -> "xai"
-    "Cohere" -> "cohere"
-    "DeepInfra" -> "deepinfra"
-    "Fireworks AI" -> "fireworks"
-    "NVIDIA NIM" -> "nvidia"
-    "SambaNova" -> "sambanova"
-    "Hyperbolic" -> "hyperbolic"
-    "GitHub Models" -> "github-models"
-    "Novita AI" -> "novita"
-    "SiliconFlow" -> "siliconflow"
-    "Agent Router" -> "agentrouter"
-    "GMI Cloud" -> "gmi"
-    else -> providerName.lowercase().replace(" ", "-")
+fun providerStorageId(providerName: String): String {
+    val clean = providerName.trim().lowercase()
+    return when (clean) {
+        "zen ai", "zen", "zen (free)" -> "zen"
+        "openai" -> "openai"
+        "anthropic", "claude" -> "anthropic"
+        "google gemini", "gemini" -> "gemini"
+        "groq" -> "groq"
+        "cerebrus", "cerebras" -> "cerebras"
+        "openrouter" -> "openrouter"
+        "omniroute" -> "omniroute"
+        "mistral ai", "mistral" -> "mistral"
+        "ollama" -> "ollama"
+        "ollamacloud", "ollama cloud", "ollama-cloud" -> "ollama-cloud"
+        "antigravity" -> "antigravity"
+        "deepseek" -> "deepseek"
+        "together ai", "together" -> "together"
+        "perplexity" -> "perplexity"
+        "xai", "grok" -> "xai"
+        "cohere" -> "cohere"
+        "deepinfra" -> "deepinfra"
+        "fireworks ai", "fireworks" -> "fireworks"
+        "nvidia nim", "nvidia" -> "nvidia"
+        "nebius ai", "nebius" -> "nebius"
+        "sambanova" -> "sambanova"
+        "hyperbolic" -> "hyperbolic"
+        "github models", "github-models" -> "github-models"
+        "novita ai", "novita" -> "novita"
+        "siliconflow" -> "siliconflow"
+        "agent router", "agentrouter" -> "agentrouter"
+        "gmi cloud", "gmi" -> "gmi"
+        "aiml api", "aimlapi" -> "aimlapi"
+        "synthetic" -> "synthetic"
+        "friendli ai", "friendliai" -> "friendliai"
+        "featherless ai", "featherless-ai" -> "featherless-ai"
+        "liquid ai", "liquid" -> "liquid"
+        "scaleway" -> "scaleway"
+        "monster api", "monsterapi" -> "monsterapi"
+        "modelscope" -> "modelscope"
+        "sensenova" -> "sensenova"
+        "lambda ai", "lambda-ai" -> "lambda-ai"
+        "kluster ai", "kluster" -> "kluster"
+        "galadriel" -> "galadriel"
+        "qianfan" -> "qianfan"
+        "meta llama", "meta-llama" -> "meta-llama"
+        "nous research", "nous-research" -> "nous-research"
+        "alibaba" -> "alibaba"
+        "ai21 labs", "ai21" -> "ai21"
+        "huggingface" -> "huggingface"
+        "free ai api key", "freeaiapikey" -> "freeaiapikey"
+        "public ai", "publicai" -> "publicai"
+        "venice ai", "venice" -> "venice"
+        "tokenrouter" -> "tokenrouter"
+        "requesty" -> "requesty"
+        "digitalocean" -> "digitalocean"
+        "hcnsec" -> "hcnsec"
+        "openadapter" -> "openadapter"
+        "baseten" -> "baseten"
+        "heroku" -> "heroku"
+        "maritalk" -> "maritalk"
+        "bluesminds" -> "bluesminds"
+        "snowflake" -> "snowflake"
+        "databricks" -> "databricks"
+        "reka ai", "reka" -> "reka"
+        "modal" -> "modal"
+        "chutes" -> "chutes"
+        "factory ai", "factory" -> "factory"
+        "x5 lab", "x5lab" -> "x5lab"
+        "kenari" -> "kenari"
+        "pioneer" -> "pioneer"
+        "sumopod" -> "sumopod"
+        "wafer" -> "wafer"
+        "dit" -> "dit"
+        "morph ai", "morph" -> "morph"
+        "nanogpt" -> "nanogpt"
+        "zai" -> "zai"
+        "inclusion ai", "inclusionai" -> "inclusionai"
+        "llamagate" -> "llamagate"
+        "inference.net", "inference-net" -> "inference-net"
+        "llm7" -> "llm7"
+        "charm hyper", "charm-hyper" -> "charm-hyper"
+        "nube" -> "nube"
+        "sparkdesk" -> "sparkdesk"
+        "api airforce", "api-airforce" -> "api-airforce"
+        "hack club", "hackclub" -> "hackclub"
+        "tencent" -> "tencent"
+        "coze" -> "coze"
+        "yi" -> "yi"
+        "baichuan" -> "baichuan"
+        "qwen" -> "qwen"
+        "minimax" -> "minimax"
+        "moonshot" -> "moonshot"
+        "stepfun" -> "stepfun"
+        "doubao" -> "doubao"
+        "bailian coding", "bailian-coding-plan" -> "bailian-coding-plan"
+        "volcengine" -> "volcengine"
+        "baidu" -> "baidu"
+        "gigachat" -> "gigachat"
+        else -> clean.replace(" ai", "").replace(" ", "-")
+    }
 }
 
 object ModelCatalog {

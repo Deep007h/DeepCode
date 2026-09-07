@@ -11,7 +11,11 @@ import android.os.IBinder
 import ai.deepcode.android.util.AppLogger
 import androidx.core.app.NotificationCompat
 import ai.deepcode.android.data.repository.DeepCodeRepository
+import ai.deepcode.android.data.local.EncryptedPrefs
+import ai.deepcode.android.data.remote.AIProvider
 import ai.deepcode.android.data.remote.AIProviderFactory
+import ai.deepcode.android.data.remote.OPENAI_PROVIDERS
+import ai.deepcode.android.data.remote.GenericOpenAIProvider
 import ai.deepcode.android.data.remote.ModelCatalog
 import ai.deepcode.android.data.remote.providerStorageId
 import ai.deepcode.android.data.remote.providerDefaultBaseUrl
@@ -59,6 +63,42 @@ class TelegramBridgeService : Service() {
                 "The service is currently busy or has reached its request limit.\n" +
                 "Please wait a moment before trying again, or use /models to switch.\n\n" +
                 "<b>𝟰𝟮𝟵 · 𝗥𝗮𝘁𝗲 𝗹𝗶𝗺𝗶𝘁 𝗲𝘅𝗰𝗲𝗲𝗱𝗲𝗱 ($providerName)</b>"
+        }
+
+        fun getProviderErrorReply(providerName: String, errorText: String): String {
+            val lower = errorText.lowercase()
+            return when {
+                lower.contains("401") || lower.contains("unauthorized") || lower.contains("invalid api key") || lower.contains("invalid_api_key") -> {
+                    "⚠️ <b>Authentication Failed ($providerName)</b>\n\n" +
+                    "The API key configured for <b>$providerName</b> is invalid or expired.\n\n" +
+                    "👉 Please update your key in the DeepCode app: <b>Settings → API Keys → $providerName</b>, or switch models with /models.\n\n" +
+                    "<b>𝟰𝟬𝟭 · 𝗨𝗻𝗮𝘂𝘁𝗵𝗼𝗿𝗶𝘇𝗲𝗱</b>"
+                }
+                lower.contains("402") || lower.contains("quota") || lower.contains("insufficient_quota") || lower.contains("credit balance") || lower.contains("credits") || lower.contains("payment") || lower.contains("billing") -> {
+                    "⚠️ <b>Credits / Quota Exhausted ($providerName)</b>\n\n" +
+                    "Your account for <b>$providerName</b> has exhausted its balance or monthly quota.\n\n" +
+                    "👉 Please add credits to your $providerName account or switch to another provider using /models.\n\n" +
+                    "<b>𝟰𝟬𝟮 · 𝗣𝗮𝘆𝗺𝗲𝗻𝘁 𝗥𝗲𝗾𝘂𝗶𝗿𝗲𝗱</b>"
+                }
+                lower.contains("429") || lower.contains("rate limit") || lower.contains("too many requests") || lower.contains("resource_exhausted") -> {
+                    getRateLimitReply(providerName)
+                }
+                lower.contains("403") || lower.contains("forbidden") -> {
+                    "⚠️ <b>Access Denied ($providerName)</b>\n\n" +
+                    "Access to this model or provider was rejected ($providerName).\n\n" +
+                    "<b>𝟰𝟬𝟯 · 𝗙𝗼𝗿𝗯𝗶𝗱𝗱𝗲𝗻</b>"
+                }
+                lower.contains("api key configured") || lower.contains("api key required") -> {
+                    "⚠️ <b>$providerName API Key Required</b>\n\n" +
+                    "No API key is configured for <b>$providerName</b>.\n\n" +
+                    "👉 Please add your key in DeepCode app: <b>Settings → API Keys → $providerName</b>, or use /models to switch."
+                }
+                else -> {
+                    "⚠️ <b>Error contacting $providerName</b>\n\n" +
+                    errorText.take(400) + "\n\n" +
+                    "👉 Try again shortly or switch providers with /models."
+                }
+            }
         }
         const val TELEGRAM_RATE_LIMIT_REPLY = "<b>✦ 𝗜’𝗺 𝗵𝗮𝘃𝗶𝗻𝗴 𝗮 𝗹𝗶𝘁𝘁𝗹𝗲 𝘁𝗿𝗼𝘂𝗯𝗹𝗲 𝗿𝗲𝗮𝗰𝗵𝗶𝗻𝗴 𝘁𝗵𝗲 𝗔𝗜</b>\n\n" +
                 "The service is currently busy and has reached its request limit.\n" +
@@ -381,15 +421,84 @@ class TelegramBridgeService : Service() {
     private fun hasProviderCredentials(storageKey: String, isFree: Boolean): Boolean {
         if (isFree || storageKey == "zen") return true
         val prefs = repository.securePrefs
-        val hasKey = prefs.getApiKeys(storageKey).isNotEmpty() ||
-            prefs.getApiKey(storageKey).isNotEmpty() ||
-            (ai.deepcode.android.data.remote.ApiKeyRotator.getNextAvailableKey(prefs, storageKey)?.first?.isNotEmpty() == true)
-        if (hasKey) return true
-        if (prefs.getSetting("oauth_token_$storageKey", "").isNotEmpty()) return true
-        if (prefs.getSetting("cookie_$storageKey", "").isNotEmpty()) return true
-        if (prefs.getSetting("web_cookie_$storageKey", "").isNotEmpty()) return true
-        if (prefs.getSetting("api_key_$storageKey", "").isNotEmpty()) return true
+        val keysToCheck = mutableListOf(storageKey)
+        if (storageKey.contains("-")) {
+            keysToCheck.add(storageKey.replace("-", ""))
+        }
+        if (storageKey == "cerebras") keysToCheck.add("cerebrus")
+        if (storageKey == "cerebrus") keysToCheck.add("cerebras")
+        if (storageKey == "gemini") keysToCheck.add("google gemini")
+        if (storageKey == "gmi") keysToCheck.add("gmi-cloud")
+        if (storageKey == "gmi-cloud") keysToCheck.add("gmi")
+        if (storageKey == "aimlapi") keysToCheck.add("aiml-api")
+        if (storageKey == "nebius") keysToCheck.add("nebius-ai")
+        if (storageKey == "friendliai") keysToCheck.add("friendli-ai")
+        if (storageKey == "together") keysToCheck.add("together-ai")
+        if (storageKey == "fireworks") keysToCheck.add("fireworks-ai")
+        if (storageKey == "nvidia") keysToCheck.add("nvidia-nim")
+
+        for (k in keysToCheck) {
+            val hasKey = prefs.getApiKeys(k).isNotEmpty() ||
+                prefs.getApiKey(k).isNotEmpty() ||
+                (ai.deepcode.android.data.remote.ApiKeyRotator.getNextAvailableKey(prefs, k)?.first?.isNotEmpty() == true)
+            if (hasKey) return true
+            if (prefs.getSetting("oauth_token_$k", "").isNotEmpty()) return true
+            if (prefs.getSetting("cookie_$k", "").isNotEmpty()) return true
+            if (prefs.getSetting("web_cookie_$k", "").isNotEmpty()) return true
+            if (prefs.getSetting("api_key_$k", "").isNotEmpty()) return true
+            for (slot in 1..EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER) {
+                if (prefs.getApiKeySlot(k, slot).isNotEmpty()) return true
+            }
+        }
         return false
+    }
+
+    private fun inferProviderForModel(modelId: String): String? {
+        if (modelId.isBlank()) return null
+
+        // 1. Check ModelCatalog excluding Zen AI
+        for ((provName, models) in ModelCatalog.models.value) {
+            if (!provName.contains("Zen", ignoreCase = true) && models.any { it.id.equals(modelId, ignoreCase = true) }) {
+                return provName
+            }
+        }
+
+        // 2. Check static and generic OpenAI providers in AIProviderFactory excluding Zen AI
+        for (prov in AIProviderFactory.providers) {
+            if (!prov.name.contains("Zen", ignoreCase = true) && prov.models.any { it.id.equals(modelId, ignoreCase = true) }) {
+                return prov.name
+            }
+        }
+
+        // 3. Check OPENAI_PROVIDERS
+        for (openAiProv in OPENAI_PROVIDERS) {
+            if (openAiProv.models.any { it.id.equals(modelId, ignoreCase = true) }) {
+                return openAiProv.name
+            }
+        }
+
+        // 4. Prefix and naming heuristics for models that may have been fetched or typed
+        val lowerId = modelId.lowercase()
+        when {
+            lowerId.startsWith("claude-") -> return "Anthropic"
+            lowerId.startsWith("gpt-") || lowerId.startsWith("o1-") || lowerId.startsWith("o3-") || lowerId.startsWith("chatgpt-") -> return "OpenAI"
+            lowerId.startsWith("gemini-") -> return "Google Gemini"
+            lowerId.startsWith("grok-") -> return "xAI"
+            lowerId.startsWith("mistral-") || lowerId.startsWith("codestral-") || lowerId.startsWith("pixtral-") -> return "Mistral AI"
+            lowerId.startsWith("moonshot-") || lowerId.startsWith("kimi-") -> return "Moonshot"
+            lowerId.startsWith("minimax-") -> return "MiniMax"
+            lowerId.startsWith("qwen-") || lowerId.startsWith("qwq-") -> return "Qwen"
+            lowerId.startsWith("command-") -> return "Cohere"
+            lowerId.startsWith("deepseek-") && !lowerId.contains("free") -> return "DeepSeek"
+        }
+
+        // 5. Check Zen AI last
+        val zenProv = AIProviderFactory.providers.firstOrNull { it.name.contains("Zen", ignoreCase = true) }
+        if (zenProv?.models?.any { it.id.equals(modelId, ignoreCase = true) } == true) {
+            return zenProv.name
+        }
+
+        return null
     }
 
     private fun getAvailableModels(): List<AIModel> {
@@ -430,7 +539,13 @@ class TelegramBridgeService : Service() {
     }
 
     private fun getSavedModelForChat(chatId: Long): String? {
-        return repository.securePrefs.getSetting("tg_model_$chatId", "")
+        val tgModel = repository.securePrefs.getSetting("tg_model_$chatId", "")
+            .ifEmpty { null }
+        if (tgModel != null) return tgModel
+        val agentModel = repository.securePrefs.getSetting("agent_model", "")
+            .ifEmpty { null }
+        if (agentModel != null) return agentModel
+        return repository.securePrefs.getSetting("chat_model", "")
             .ifEmpty { null }
     }
 
@@ -438,17 +553,25 @@ class TelegramBridgeService : Service() {
         val prov = repository.securePrefs.getSetting("tg_provider_$chatId", "")
             .ifEmpty { null }
         if (prov != null) return prov
+        val agentProv = repository.securePrefs.getSetting("agent_provider", "")
+            .ifEmpty { null }
+        if (agentProv != null) return agentProv
+        val chatProv = repository.securePrefs.getSetting("chat_provider", "")
+            .ifEmpty { null }
+        if (chatProv != null) return chatProv
         // Automatically infer provider from saved model ID if provider was not explicitly stored
         val modelId = getSavedModelForChat(chatId) ?: return null
-        return AIProviderFactory.providers.firstOrNull { it.models.any { m -> m.id == modelId } }?.name
+        return inferProviderForModel(modelId)
     }
 
     private fun saveModelForChat(chatId: Long, modelId: String, providerName: String? = null) {
         repository.securePrefs.saveSetting("tg_model_$chatId", modelId)
         val prov = providerName
-            ?: AIProviderFactory.providers.firstOrNull { it.models.any { m -> m.id == modelId } }?.name
+            ?: inferProviderForModel(modelId)
             ?: "Zen AI"
         repository.securePrefs.saveSetting("tg_provider_$chatId", prov)
+        repository.securePrefs.saveSetting("agent_provider", prov)
+        repository.securePrefs.saveSetting("agent_model", modelId)
     }
 
     private suspend fun handleMessage(token: String, chatId: Long, text: String) {
@@ -478,25 +601,41 @@ class TelegramBridgeService : Service() {
     private suspend fun _handleMessageLocked(token: String, chatId: Long, text: String) {
         val savedModelId = getSavedModelForChat(chatId)
         val savedProviderName = getSavedProviderForChat(chatId)
-        val modelInfo = if (savedModelId != null) {
-            val dynamic = if (savedProviderName != null) ModelCatalog.getModelsForProvider(savedProviderName, repository.securePrefs) else emptyList()
-            dynamic.firstOrNull { it.id == savedModelId }
-                ?: AIProviderFactory.providers.flatMap { it.models }.firstOrNull {
-                    it.id == savedModelId && (savedProviderName == null || it.provider == savedProviderName)
-                }
-                ?: AIModel(
-                    id = savedModelId,
-                    name = formatModelTitle(savedModelId),
-                    provider = savedProviderName ?: "Zen AI",
-                    isFree = false,
-                    contextWindow = "128k",
-                    badge = "Paid"
-                )
-        } else null
+        val effectiveProvider = savedProviderName ?: inferProviderForModel(savedModelId ?: "") ?: "Zen AI"
 
-        val effectiveProvider = savedProviderName ?: modelInfo?.provider ?: "Zen AI"
-        val effectiveModelId = savedModelId ?: modelInfo?.id ?: "deepseek-v4-flash-free"
-        val isProviderFree = AIProviderFactory.providers.firstOrNull { it.name.equals(effectiveProvider, ignoreCase = true) }?.isFree == true
+        val providerObj: AIProvider? = AIProviderFactory.providers.firstOrNull { it.name.equals(effectiveProvider, ignoreCase = true) }
+            ?: (OPENAI_PROVIDERS.find { it.name.equals(effectiveProvider, ignoreCase = true) }?.let { GenericOpenAIProvider(it) })
+        val dynamicModels = ModelCatalog.getModelsForProvider(effectiveProvider, repository.securePrefs)
+        val allProviderModels = (dynamicModels + (providerObj?.models ?: emptyList())).associateBy { it.id }.values.toList()
+
+        var effectiveModelId = savedModelId ?: ""
+        if (effectiveModelId.isEmpty() || (allProviderModels.isNotEmpty() && allProviderModels.none { it.id == effectiveModelId })) {
+            val storageId = providerStorageId(effectiveProvider)
+            val defaultModelSetting = repository.securePrefs.getSetting("default_model_$storageId", "")
+            effectiveModelId = if (defaultModelSetting.isNotEmpty() && allProviderModels.any { it.id == defaultModelSetting }) {
+                defaultModelSetting
+            } else {
+                allProviderModels.firstOrNull { it.isFree }?.id
+                    ?: allProviderModels.firstOrNull()?.id
+                    ?: (if (effectiveProvider.contains("Zen", ignoreCase = true)) "deepseek-v4-flash-free" else effectiveModelId)
+            }
+            if (effectiveModelId.isNotEmpty()) {
+                saveModelForChat(chatId, effectiveModelId, effectiveProvider)
+            }
+        }
+
+        val modelInfo = allProviderModels.firstOrNull { it.id == effectiveModelId }
+            ?: AIModel(
+                id = effectiveModelId,
+                name = formatModelTitle(effectiveModelId),
+                provider = effectiveProvider,
+                isFree = effectiveProvider.contains("Zen", ignoreCase = true),
+                contextWindow = "128k",
+                badge = if (effectiveProvider.contains("Zen", ignoreCase = true)) "Free" else "Paid"
+            )
+
+        val isProviderFree = AIProviderFactory.providers.firstOrNull { it.name.equals(effectiveProvider, ignoreCase = true) }?.isFree == true ||
+            effectiveProvider.contains("Zen", ignoreCase = true)
         val storageKey = providerStorageId(effectiveProvider)
 
         val processingText = detectProcessingMessage(text)
@@ -642,9 +781,7 @@ class TelegramBridgeService : Service() {
                 }
             }
 
-            if (isRateLimitError(finalResponse)) {
-                finalResponse = getRateLimitReply(effectiveProvider)
-            } else if (finalResponse.trim().isEmpty()) {
+            if (finalResponse.trim().isEmpty()) {
                 finalResponse = "Sorry, I couldn't generate a response."
             }
 
@@ -762,17 +899,23 @@ class TelegramBridgeService : Service() {
             }
             AppLogger.e(TAG, "Agent run timed out", e)
         } catch (e: Exception) {
-            val errorMsg = if (isRateLimitException(e)) {
-                getRateLimitReply(effectiveProvider)
-            } else if (e is IllegalStateException && e.message?.contains("API key configured") == true) {
-                "⚠️ ${e.message}"
+            val rawError = e.message?.ifBlank { null } ?: e.cause?.message?.ifBlank { null } ?: e.toString()
+            val errorMsg = if (rawError.isNotBlank()) {
+                // Route through the friendly formatter so provider/auth/rate-limit errors
+                // reach the user as readable messages instead of raw exception text.
+                try {
+                    if (isRateLimitException(e)) getRateLimitReply(effectiveProvider)
+                    else getProviderErrorReply(effectiveProvider, rawError)
+                } catch (_: Exception) {
+                    rawError
+                }
             } else {
-                "⚠️ An error occurred: ${e.message}"
+                "Error: ${e.javaClass.simpleName}"
             }
             if (processingMsgId != null) {
-                editMessage(token, chatId, processingMsgId, errorMsg)
+                editMessage(token, chatId, processingMsgId, errorMsg, parseMode = "HTML")
             } else {
-                sendMessage(token, chatId, errorMsg)
+                sendMessage(token, chatId, errorMsg, parseMode = "HTML")
             }
             AppLogger.e(TAG, "Agent run failed", e)
         }
@@ -785,7 +928,8 @@ class TelegramBridgeService : Service() {
                 repository.deleteSession(sessionId)
                 sendMessage(token, chatId, "🧹 Conversation history cleared! Starting fresh. 🚀")
             }
-            command.startsWith("/models") || command.startsWith("/model") || command.startsWith("/change") -> {
+            command.startsWith("/models") || command.startsWith("/model") || command.startsWith("/change") ||
+            command.startsWith("/provider") || command.startsWith("/providers") -> {
                 sendProviderSelection(token, chatId)
             }
             command.startsWith("/voice") -> {
@@ -858,16 +1002,21 @@ class TelegramBridgeService : Service() {
         val availableModels = getAvailableModels()
         val savedId = getSavedModelForChat(chatId)
         val savedProvider = getSavedProviderForChat(chatId)
-        val currentModel = availableModels.firstOrNull { it.id == savedId && it.provider == savedProvider }
+        val currentModel = availableModels.firstOrNull { it.id == savedId && it.provider.equals(savedProvider, ignoreCase = true) }
 
         val allProviders = AIProviderFactory.providers.map { it.name }.distinct()
         val activeProviders = availableModels.map { it.provider }.distinct()
         val sortedProviders = (listOf("Zen AI") + activeProviders + allProviders).distinct()
 
+        val activeProviderName = savedProvider ?: currentModel?.provider ?: "Zen AI"
+
         val header = buildString {
             append("🧠 *Select AI Provider*\n\n")
             if (currentModel != null) {
                 append("Current: *${currentModel.name}* (${currentModel.provider})\n\n")
+            } else if (savedProvider != null) {
+                val modelName = savedId?.let { formatModelTitle(it) } ?: "Default Model"
+                append("Current: *$modelName* ($savedProvider)\n\n")
             } else {
                 append("Current: *DeepSeek V4 Flash* (Zen AI - Free)\n\n")
             }
@@ -879,8 +1028,8 @@ class TelegramBridgeService : Service() {
             val row = JsonArray()
             for (provider in chunk) {
                 val btn = JsonObject()
-                val isActiveProvider = currentModel?.provider == provider || (currentModel == null && provider == "Zen AI")
-                val isFreeOrConfigured = provider == "Zen AI" || hasProviderCredentials(providerStorageId(provider), provider.contains("Free"))
+                val isActiveProvider = provider.equals(activeProviderName, ignoreCase = true)
+                val isFreeOrConfigured = provider.contains("Zen", ignoreCase = true) || hasProviderCredentials(providerStorageId(provider), provider.contains("Free"))
                 val prefix = if (isActiveProvider) "✓ " else if (isFreeOrConfigured) "⚡ " else ""
                 btn.addProperty("text", "$prefix$provider")
                 btn.addProperty("callback_data", "select_provider:$provider")
@@ -899,10 +1048,32 @@ class TelegramBridgeService : Service() {
         page: Int = 0
     ) {
         val storageId = providerStorageId(providerName)
-        val apiKey = ApiKeyRotator.getNextAvailableKey(repository.securePrefs, storageId)?.first
-            ?: repository.securePrefs.getApiKey(storageId).ifEmpty {
-                if (providerName.contains("Zen", ignoreCase = true)) "zen-free" else ""
+        val aliasKeys = mutableListOf(storageId)
+        if (storageId.contains("-")) aliasKeys.add(storageId.replace("-", ""))
+        if (storageId == "cerebras") aliasKeys.add("cerebrus")
+        if (storageId == "cerebrus") aliasKeys.add("cerebras")
+        if (storageId == "gemini") aliasKeys.add("google gemini")
+        if (storageId == "gmi") aliasKeys.add("gmi-cloud")
+        if (storageId == "gmi-cloud") aliasKeys.add("gmi")
+        if (storageId == "aimlapi") aliasKeys.add("aiml-api")
+        if (storageId == "nebius") aliasKeys.add("nebius-ai")
+        if (storageId == "friendliai") aliasKeys.add("friendli-ai")
+        if (storageId == "together") aliasKeys.add("together-ai")
+        if (storageId == "fireworks") aliasKeys.add("fireworks-ai")
+        if (storageId == "nvidia") aliasKeys.add("nvidia-nim")
+
+        var apiKey = ""
+        for (k in aliasKeys) {
+            val candidate = ApiKeyRotator.getNextAvailableKey(repository.securePrefs, k)?.first
+                ?: repository.securePrefs.getApiKey(k)
+            if (candidate.isNotEmpty()) {
+                apiKey = candidate
+                break
             }
+        }
+        if (apiKey.isEmpty() && providerName.contains("Zen", ignoreCase = true)) {
+            apiKey = "zen-free"
+        }
         val baseUrl = providerDefaultBaseUrl(providerName)
 
         // Live Model Fetching — check cached models first, then fetch live if key is present
@@ -922,7 +1093,8 @@ class TelegramBridgeService : Service() {
             }
         }
 
-        val providerObj = AIProviderFactory.providers.firstOrNull { it.name == providerName }
+        val providerObj: AIProvider? = AIProviderFactory.providers.firstOrNull { it.name.equals(providerName, ignoreCase = true) }
+            ?: (OPENAI_PROVIDERS.find { it.name.equals(providerName, ignoreCase = true) }?.let { GenericOpenAIProvider(it) })
         val isFree = providerObj?.isFree == true || providerName.contains("Zen", ignoreCase = true)
         val hasCreds = hasProviderCredentials(storageId, isFree)
 
@@ -1273,9 +1445,28 @@ class TelegramBridgeService : Service() {
             }
             callbackData.startsWith("select_provider:") -> {
                 val providerName = callbackData.removePrefix("select_provider:")
+                val providerObj: AIProvider? = AIProviderFactory.providers.firstOrNull { it.name.equals(providerName, ignoreCase = true) }
+                    ?: (OPENAI_PROVIDERS.find { it.name.equals(providerName, ignoreCase = true) }?.let { GenericOpenAIProvider(it) })
+                val dynamicModels = ModelCatalog.getModelsForProvider(providerName, repository.securePrefs)
+                val allProviderModels = (dynamicModels + (providerObj?.models ?: emptyList())).associateBy { it.id }.values.toList()
+                val storageId = providerStorageId(providerName)
+                val defaultModelSetting = repository.securePrefs.getSetting("default_model_$storageId", "")
+                val defaultModelId = if (defaultModelSetting.isNotEmpty() && allProviderModels.any { it.id == defaultModelSetting }) {
+                    defaultModelSetting
+                } else {
+                    allProviderModels.firstOrNull { it.isFree }?.id
+                        ?: allProviderModels.firstOrNull()?.id
+                        ?: (if (providerName.contains("Zen", ignoreCase = true)) "deepseek-v4-flash-free" else "")
+                }
+                repository.securePrefs.saveSetting("tg_provider_$chatId", providerName)
+                repository.securePrefs.saveSetting("agent_provider", providerName)
+                if (defaultModelId.isNotEmpty()) {
+                    repository.securePrefs.saveSetting("tg_model_$chatId", defaultModelId)
+                    repository.securePrefs.saveSetting("agent_model", defaultModelId)
+                }
                 showModelsForProvider(token, chatId, messageId, providerName)
-                answerCallbackQuery(token, callbackId, "")
-                AppLogger.d(TAG, "handleCallbackQuery finish (provider).")
+                answerCallbackQuery(token, callbackId, "Switched to $providerName")
+                AppLogger.d(TAG, "handleCallbackQuery finish (provider switched to $providerName).")
             }
             callbackData.startsWith("models_page:") -> {
                 val parts = callbackData.removePrefix("models_page:").split(":")
@@ -1382,9 +1573,10 @@ class TelegramBridgeService : Service() {
         val providerLabel = if (providerName != null) " ($providerName)" else ""
 
         val effectiveProvider = providerName
-            ?: AIProviderFactory.providers.firstOrNull { it.models.any { m -> m.id == modelId } }?.name
+            ?: inferProviderForModel(modelId)
             ?: "Zen AI"
-        val isFree = AIProviderFactory.providers.firstOrNull { it.name.equals(effectiveProvider, ignoreCase = true) }?.isFree == true
+        val isFree = AIProviderFactory.providers.firstOrNull { it.name.equals(effectiveProvider, ignoreCase = true) }?.isFree == true ||
+            effectiveProvider.contains("Zen", ignoreCase = true)
         val storageId = providerStorageId(effectiveProvider)
         val hasCreds = hasProviderCredentials(storageId, isFree)
 
@@ -1519,15 +1711,17 @@ class TelegramBridgeService : Service() {
 
     private fun sendMessage(token: String, chatId: Long, text: String, parseMode: String = "Markdown"): Long? {
         val cleanText = stripThoughts(text)
-        val isHtml = parseMode.equals("HTML", ignoreCase = true) || (cleanText.contains("<b>") || cleanText.contains("</b>") || cleanText.contains("<code>"))
-        val targetParseMode = if (isHtml) "HTML" else "Markdown"
-        val processed = if (isHtml) cleanText else preprocessMarkdown(cleanText)
+        val isHtml = parseMode.equals("HTML", ignoreCase = true) || (parseMode.isNotEmpty() && (cleanText.contains("<b>") || cleanText.contains("</b>") || cleanText.contains("<code>")))
+        val targetParseMode = if (isHtml) "HTML" else parseMode
+        val processed = if (targetParseMode == "Markdown") preprocessMarkdown(cleanText) else cleanText
         return try {
             val url = "${API_BASE}${token}/sendMessage"
             val payload = JsonObject().apply {
                 addProperty("chat_id", chatId)
                 addProperty("text", processed)
-                addProperty("parse_mode", targetParseMode)
+                if (targetParseMode.isNotEmpty()) {
+                    addProperty("parse_mode", targetParseMode)
+                }
             }
             val request = Request.Builder()
                 .url(url)
@@ -1601,7 +1795,7 @@ class TelegramBridgeService : Service() {
     private fun editMessage(token: String, chatId: Long, messageId: Long, text: String, parseMode: String = "Markdown") {
         AppLogger.d(TAG, "editMessage entry: messageId=$messageId, text.length=${text.length}, parseMode=$parseMode")
         val cleanText = stripThoughts(text)
-        val isHtml = parseMode.equals("HTML", ignoreCase = true) || (cleanText.contains("<b>") || cleanText.contains("</b>") || cleanText.contains("<code>"))
+        val isHtml = parseMode.equals("HTML", ignoreCase = true) || (parseMode.isNotEmpty() && (cleanText.contains("<b>") || cleanText.contains("</b>") || cleanText.contains("<code>")))
         val targetParseMode = if (isHtml) "HTML" else parseMode
         val processed = if (targetParseMode == "Markdown") preprocessMarkdown(cleanText) else cleanText
         try {

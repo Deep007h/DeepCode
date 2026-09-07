@@ -6,6 +6,10 @@ import ai.deepcode.android.data.remote.AIProviderFactory
 import ai.deepcode.android.domain.model.Message
 import ai.deepcode.android.domain.model.Tool
 import ai.deepcode.android.domain.model.ToolCall
+import ai.deepcode.android.data.remote.ModelCatalog
+import ai.deepcode.android.data.remote.OPENAI_PROVIDERS
+import ai.deepcode.android.data.remote.GenericOpenAIProvider
+import ai.deepcode.android.data.remote.providerStorageId
 import ai.deepcode.android.service.gmail.GmailHandler
 import ai.deepcode.android.service.github.GitHubHandler
 import ai.deepcode.android.service.music.MusicDetectionHandler
@@ -822,52 +826,62 @@ class SimpleAutomationRunner(private val context: Context) {
     private fun resolveProvider(): Resolved {
         val modelSetting = securePrefs.getSetting("agent_model", "deepseek-v4-flash-free")
         val providerSetting = securePrefs.getSetting("agent_provider", "Zen AI")
-        var provider = AIProviderFactory.providers.firstOrNull { it.name == providerSetting }
-            ?: AIProviderFactory.providers.firstOrNull { it.name == "Zen AI" }
+        val isZenChosen = providerSetting.contains("Zen", ignoreCase = true)
+
+        var provider: AIProvider = AIProviderFactory.providers.firstOrNull { it.name.equals(providerSetting, ignoreCase = true) }
+            ?: (OPENAI_PROVIDERS.find { it.name.equals(providerSetting, ignoreCase = true) }?.let { GenericOpenAIProvider(it) })
+            ?: (if (isZenChosen) AIProviderFactory.providers.firstOrNull { it.name.contains("Zen", ignoreCase = true) } else null)
             ?: AIProviderFactory.providers.firstOrNull()
-            ?: return Resolved(ai.deepcode.android.data.remote.ZenProvider(), "deepseek-v4-flash-free")
+            ?: ai.deepcode.android.data.remote.ZenProvider()
 
         val key = getApiKey(provider)
-        if (!provider.isFree && key.isEmpty()) {
+        if (isZenChosen && !provider.isFree && key.isEmpty()) {
             provider = AIProviderFactory.providers.firstOrNull { p -> p.isFree || getApiKey(p).isNotEmpty() }
                 ?: provider
         }
-        val hasModel = provider.models.any { it.id == modelSetting }
+        val hasModel = provider.models.any { it.id == modelSetting } ||
+            ModelCatalog.getModelsForProvider(provider.name, securePrefs).any { it.id == modelSetting }
         val finalModel = if (hasModel) modelSetting else (provider.models.firstOrNull()?.id ?: "")
         return Resolved(provider, finalModel)
     }
 
     private fun getApiKey(provider: AIProvider): String {
-        return when (provider.name) {
-            "Zen AI", "Zen", "Zen (Free)" -> securePrefs.getApiKey("zen")
-            "Google Gemini" -> securePrefs.getApiKey("gemini")
-            "Groq" -> securePrefs.getApiKey("groq")
-            "Cerebrus" -> securePrefs.getApiKey("cerebrus")
-            "OpenRouter" -> securePrefs.getApiKey("openrouter")
-            "OpenAI" -> securePrefs.getApiKey("openai")
-            "Anthropic" -> securePrefs.getApiKey("anthropic")
-            "Mistral AI" -> securePrefs.getApiKey("mistral")
-            "Agent Router" -> securePrefs.getApiKey("agentrouter")
-            "GMI Cloud" -> securePrefs.getApiKey("gmi")
-            else -> ""
+        val storageId = providerStorageId(provider.name)
+        val aliasKeys = mutableListOf(storageId)
+        if (storageId.contains("-")) aliasKeys.add(storageId.replace("-", ""))
+        if (storageId == "cerebras") aliasKeys.add("cerebrus")
+        if (storageId == "cerebrus") aliasKeys.add("cerebras")
+        if (storageId == "gemini") aliasKeys.add("google gemini")
+        if (storageId == "gmi") aliasKeys.add("gmi-cloud")
+        if (storageId == "gmi-cloud") aliasKeys.add("gmi")
+        if (storageId == "aimlapi") aliasKeys.add("aiml-api")
+        if (storageId == "nebius") aliasKeys.add("nebius-ai")
+        if (storageId == "friendliai") aliasKeys.add("friendli-ai")
+        if (storageId == "together") aliasKeys.add("together-ai")
+        if (storageId == "fireworks") aliasKeys.add("fireworks-ai")
+        if (storageId == "nvidia") aliasKeys.add("nvidia-nim")
+
+        for (k in aliasKeys) {
+            val key = securePrefs.getApiKey(k)
+            if (key.isNotEmpty()) return key
+            for (slot in 1..EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER) {
+                val sKey = securePrefs.getApiKeySlot(k, slot)
+                if (sKey.isNotEmpty()) return sKey
+            }
+            val oauth = securePrefs.getSetting("oauth_token_$k", "")
+            if (oauth.isNotEmpty()) return oauth
         }
+        return ""
     }
 
     private fun getCustomUrl(provider: AIProvider): String? {
-        val key = when (provider.name) {
-            "Zen AI", "Zen", "Zen (Free)" -> "url_zen"
-            "Google Gemini" -> "url_gemini"
-            "Groq" -> "url_groq"
-            "Cerebrus" -> "url_cerebrus"
-            "OpenRouter" -> "url_openrouter"
-            "OpenAI" -> "url_openai"
-            "Anthropic" -> "url_anthropic"
-            "Mistral AI" -> "url_mistral"
-            "Agent Router" -> "url_agentrouter"
-            "GMI Cloud" -> "url_gmi"
-            else -> ""
+        val storageId = providerStorageId(provider.name)
+        val custom = securePrefs.getSetting("url_$storageId", "")
+        if (custom.isNotEmpty()) return custom
+        if (storageId == "cerebras") {
+            val cerebrusUrl = securePrefs.getSetting("url_cerebrus", "")
+            if (cerebrusUrl.isNotEmpty()) return cerebrusUrl
         }
-        val url = securePrefs.getSetting(key, "")
-        return url.ifEmpty { null }
+        return null
     }
 }

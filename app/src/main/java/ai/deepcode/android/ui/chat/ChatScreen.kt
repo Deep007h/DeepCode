@@ -218,7 +218,7 @@ fun PlaceholderFeatureCard(
             .height(160.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF16181D)),
         border = BorderStroke(1.dp, Color(0xFF282B34))
     ) {
@@ -232,7 +232,7 @@ fun PlaceholderFeatureCard(
                 Box(
                     modifier = Modifier
                         .size(35.dp)
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(14.dp))
                         .background(iconBackgroundColor),
                     contentAlignment = Alignment.Center
                 ) {
@@ -406,8 +406,12 @@ fun ChatScreen(
     val isNearBottom by remember {
         derivedStateOf {
             val info = lazyListState.layoutInfo
-            val lastVis = info.visibleItemsInfo.lastOrNull()?.index ?: 0
-            info.totalItemsCount == 0 || lastVis >= (info.totalItemsCount - 2).coerceAtLeast(0)
+            if (info.totalItemsCount == 0) return@derivedStateOf true
+            val lastVis = info.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf true
+            if (lastVis.index < info.totalItemsCount - 1) return@derivedStateOf false
+            val viewportBottom = info.viewportEndOffset - info.afterContentPadding
+            val itemBottom = lastVis.offset + lastVis.size
+            itemBottom <= viewportBottom + 350
         }
     }
 
@@ -420,6 +424,25 @@ fun ChatScreen(
                 val total = lazyListState.layoutInfo.totalItemsCount
                 if (total > 0) {
                     try {
+                        lazyListState.scrollToItem(total - 1, 0)
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
+    var shouldScrollToBottomOnSend by remember { mutableStateOf(false) }
+
+    LaunchedEffect(messages.size, isStreaming, shouldScrollToBottomOnSend) {
+        if (shouldScrollToBottomOnSend) {
+            shouldScrollToBottomOnSend = false
+            kotlinx.coroutines.yield()
+            val total = lazyListState.layoutInfo.totalItemsCount
+            if (total > 0) {
+                try {
+                    lazyListState.animateScrollToItem(total - 1)
+                } catch (_: Exception) {
+                    try {
                         lazyListState.scrollToItem(total - 1)
                     } catch (_: Exception) {}
                 }
@@ -429,27 +452,34 @@ fun ChatScreen(
 
     LaunchedEffect(isImeVisible) {
         if (isImeVisible && isNearBottom) {
-            kotlinx.coroutines.delay(100L)
+            kotlinx.coroutines.delay(80L)
             val total = lazyListState.layoutInfo.totalItemsCount
             if (total > 0 && !lazyListState.isScrollInProgress) {
                 try {
-                    lazyListState.scrollToItem(total - 1)
+                    val lastItem = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()
+                    val scrollOffset = if (lastItem != null && lastItem.index == total - 1) lastItem.size else 0
+                    lazyListState.scrollToItem(total - 1, scrollOffset)
                 } catch (_: Exception) {}
             }
         }
     }
 
-    // Follow streaming text gently at ~4fps without micro-jitter
-    LaunchedEffect(Unit) {
+    // Follow streaming text gently without micro-jitter by scrolling to bottom edge
+    LaunchedEffect(isStreaming) {
+        if (!isStreaming) return@LaunchedEffect
         var lastScrollTime = 0L
         viewModel.streamedText.collect {
             val now = System.currentTimeMillis()
-            if (now - lastScrollTime >= 200L && isStreaming && isNearBottom && !lazyListState.isScrollInProgress) {
+            if (now - lastScrollTime >= 140L && isNearBottom && !lazyListState.isScrollInProgress) {
                 lastScrollTime = now
                 val total = lazyListState.layoutInfo.totalItemsCount
                 if (total > 0) {
                     try {
-                        lazyListState.scrollToItem(total - 1)
+                        val lastItem = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()
+                        val scrollOffset = if (lastItem != null && lastItem.index == total - 1) {
+                            lastItem.size
+                        } else 0
+                        lazyListState.scrollToItem(total - 1, scrollOffset)
                     } catch (_: Exception) {}
                 }
             }
@@ -550,8 +580,7 @@ fun ChatScreen(
             val showScrollToBottomButton by remember {
                 derivedStateOf {
                     val info = lazyListState.layoutInfo
-                    val lastVis = info.visibleItemsInfo.lastOrNull()?.index ?: 0
-                    info.totalItemsCount > 4 && lastVis < info.totalItemsCount - 2
+                    info.totalItemsCount > 1 && !isNearBottom
                 }
             }
 
@@ -977,10 +1006,10 @@ fun ChatScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                            .clip(RoundedCornerShape(24.dp))
                             .background(Color(0xFF13151A))
-                            .border(1.dp, Color(0xFF262933), RoundedCornerShape(16.dp))
-                            .padding(vertical = 12.dp, horizontal = 16.dp),
+                            .border(1.dp, Color(0xFF262933), RoundedCornerShape(24.dp))
+                            .padding(vertical = 12.dp, horizontal = 18.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Row(
@@ -990,9 +1019,9 @@ fun ChatScreen(
                             Box(
                                 modifier = Modifier
                                     .size(26.dp)
-                                    .clip(RoundedCornerShape(6.dp))
+                                    .clip(RoundedCornerShape(10.dp))
                                     .background(Color(0xFF1E2129))
-                                    .border(1.dp, Color(0xFF323642), RoundedCornerShape(6.dp)),
+                                    .border(1.dp, Color(0xFF323642), RoundedCornerShape(10.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
@@ -1057,21 +1086,13 @@ fun ChatScreen(
                         when (item) {
                             is ChatItem.NormalMessage -> {
                                 val onSelect = remember(viewModel) { { layoutName: String ->
+                                    shouldScrollToBottomOnSend = true
                                     viewModel.sendMessage("Use $layoutName layout")
-                                    scope.launch {
-                                        kotlinx.coroutines.delay(40L)
-                                        val total = lazyListState.layoutInfo.totalItemsCount
-                                        if (total > 0) lazyListState.animateScrollToItem(total - 1)
-                                    }
                                     Unit
                                 } }
                                 val onSendSug = remember(viewModel) { { suggestion: String ->
+                                    shouldScrollToBottomOnSend = true
                                     viewModel.sendMessage(suggestion)
-                                    scope.launch {
-                                        kotlinx.coroutines.delay(40L)
-                                        val total = lazyListState.layoutInfo.totalItemsCount
-                                        if (total > 0) lazyListState.animateScrollToItem(total - 1)
-                                    }
                                     Unit
                                 } }
                                 MessageBubble(
@@ -1149,9 +1170,9 @@ fun ChatScreen(
                         Box(contentAlignment = Alignment.TopEnd) {
                             Row(
                                 modifier = Modifier
-                                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
-                                    .border(1.5.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
+                                    .border(1.5.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(file.name, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp,
@@ -1191,9 +1212,10 @@ fun ChatScreen(
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 52.dp)
-                        .clip(RoundedCornerShape(28.dp))
-                        .background(Color(0xFF1E1E1E))
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                        .clip(RoundedCornerShape(32.dp))
+                        .background(Color(0xFF1E1E22))
+                        .border(1.dp, Color(0xFF2E2E36), RoundedCornerShape(32.dp))
+                        .padding(horizontal = 14.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
@@ -1238,14 +1260,8 @@ fun ChatScreen(
                             if ((inputMsg.isNotEmpty() || attachedFiles.isNotEmpty()) && !viewModel.isStreaming.value) {
                                 val toSend = inputMsg
                                 inputMsg = ""
+                                shouldScrollToBottomOnSend = true
                                 viewModel.sendMessage(toSend)
-                                scope.launch {
-                                    kotlinx.coroutines.delay(40L)
-                                    val total = lazyListState.layoutInfo.totalItemsCount
-                                    if (total > 0) {
-                                        lazyListState.animateScrollToItem(total - 1)
-                                    }
-                                }
                             }
                         })
                     )
@@ -1304,20 +1320,15 @@ fun ChatScreen(
                                 }
                                 .clip(CircleShape)
                                 .background(if (isStreaming) Color(0xFFDC2626) else Color.White)
+                                .border(1.dp, if (isStreaming) Color(0xFFEF4444).copy(alpha = 0.6f) else Color.White.copy(alpha = 0.3f), CircleShape)
                                 .bouncyClickable(provideHaptic = true) {
                                     if (isStreaming) {
                                         viewModel.cancelActiveChat()
                                     } else if (inputMsg.isNotEmpty() || attachedFiles.isNotEmpty()) {
                                         val toSend = inputMsg
                                         inputMsg = ""
+                                        shouldScrollToBottomOnSend = true
                                         viewModel.sendMessage(toSend)
-                                        scope.launch {
-                                            kotlinx.coroutines.delay(40L)
-                                            val total = lazyListState.layoutInfo.totalItemsCount
-                                            if (total > 0) {
-                                                lazyListState.animateScrollToItem(total - 1)
-                                            }
-                                        }
                                     }
                                 },
                             contentAlignment = Alignment.Center
@@ -1396,19 +1407,30 @@ private fun BoxScope.ScrollToBottomButton(visible: Boolean, lazyListState: LazyL
         modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)
     ) {
         val scope = rememberCoroutineScope()
-        FloatingActionButton(
-            onClick = { scope.launch {
-                val total = lazyListState.layoutInfo.totalItemsCount
-                if (total > 0) {
-                    lazyListState.animateScrollToItem(total - 1)
-                }
-            }},
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            shape = RoundedCornerShape(24.dp),
-            modifier = Modifier.size(48.dp)
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF1E1E1E).copy(alpha = 0.94f))
+                .border(1.dp, Color(0xFF383838), CircleShape)
+                .bouncyClickable(provideHaptic = true) {
+                    scope.launch {
+                        val total = lazyListState.layoutInfo.totalItemsCount
+                        if (total > 0) {
+                            val lastVis = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()
+                            val offset = if (lastVis != null && lastVis.index == total - 1) lastVis.size else 0
+                            lazyListState.animateScrollToItem(total - 1, offset)
+                        }
+                    }
+                },
+            contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.KeyboardArrowDown, "Scroll to bottom", modifier = Modifier.size(24.dp))
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowDown,
+                contentDescription = "Scroll to bottom",
+                tint = Color.White,
+                modifier = Modifier.size(22.dp)
+            )
         }
     }
 }
@@ -1608,7 +1630,7 @@ private fun UserBubble(
     var isExpanded by remember { mutableStateOf(false) }
 
     val shouldTruncate = remember(cleanedContent) {
-        cleanedContent.length > 200 || cleanedContent.lines().size > 6
+        cleanedContent.length > 250 || cleanedContent.lines().size > 6
     }
 
     val bubbleBg = if (isDarkThemeActive) {
@@ -1617,12 +1639,15 @@ private fun UserBubble(
         AppPrimary.copy(alpha = 0.15f).compositeOver(Color.White)
     }
 
+    val userBubbleShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 24.dp, bottomEnd = 6.dp)
+
     Box(
         modifier = Modifier
-            .widthIn(min = 48.dp, max = 300.dp)
-            .clip(RoundedCornerShape(22.dp))
+            .widthIn(min = 48.dp, max = 330.dp)
+            .clip(userBubbleShape)
             .background(bubbleBg)
-            .padding(horizontal = 18.dp, vertical = 14.dp)
+            .border(1.dp, AppPrimary.copy(alpha = 0.28f), userBubbleShape)
+            .padding(horizontal = 18.dp, vertical = 13.dp)
             .pointerInput(Unit) {
                 detectTapGestures(onLongPress = { offset ->
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1632,32 +1657,28 @@ private fun UserBubble(
             }
     ) {
         Column {
-            val contentToDisplay = if (shouldTruncate && !isExpanded) {
-                val lines = cleanedContent.lines().take(5)
-                lines.joinToString("\n")
-            } else {
-                cleanedContent
-            }
-
             Text(
-                text = contentToDisplay,
+                text = cleanedContent,
                 fontSize = 15.sp,
                 lineHeight = 22.sp,
-                color = Color.White
+                color = Color.White,
+                maxLines = if (isExpanded) Int.MAX_VALUE else 6,
+                overflow = TextOverflow.Ellipsis
             )
 
             if (shouldTruncate) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
                 Row(
                     modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
                         .clickable { isExpanded = !isExpanded }
-                        .padding(vertical = 2.dp),
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = if (isExpanded) "Show less ⌃" else "Show more ⌵",
-                        color = Color.White.copy(alpha = 0.9f),
-                        fontSize = 14.sp,
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
@@ -1708,7 +1729,11 @@ private fun AiBubble(
                     pressOffset.value = offset; showAiMenu.value = true
                 })
             }) {
-            Column {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+            ) {
                 val groupedParts = remember(parsedParts) {
                     val result = mutableListOf<Any>()
                     var currentTools = mutableListOf<MessageContentPart.ToolCall>()
@@ -2455,31 +2480,37 @@ fun StreamingBubble(
             val textColor = MaterialTheme.colorScheme.onSurface
 
             val streamingAnnotated = remember(cleanText, codeBg, codeColor, linkColor, textColor) {
-                buildStreamingMarkdown(
-                    text = cleanText,
-                    codeBg = codeBg,
-                    codeColor = codeColor,
-                    linkColor = linkColor,
-                    textColor = textColor
-                )
+                buildAnnotatedString {
+                    append(
+                        buildStreamingMarkdown(
+                            text = cleanText,
+                            codeBg = codeBg,
+                            codeColor = codeColor,
+                            linkColor = linkColor,
+                            textColor = textColor
+                        )
+                    )
+                    withStyle(
+                        SpanStyle(
+                            color = codeColor,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                    ) {
+                        append(" ▍")
+                    }
+                }
             }
 
-            Row(
+            Text(
+                text = streamingAnnotated,
+                fontSize = 15.sp,
+                lineHeight = 23.sp,
+                color = textColor,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                Text(
-                    text = streamingAnnotated,
-                    fontSize = 15.sp,
-                    lineHeight = 23.sp,
-                    color = textColor,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-                Spacer(Modifier.width(4.dp))
-                StreamingActiveCursor(color = AppPrimary)
-            }
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+            )
         }
     }
 }
@@ -2977,11 +3008,27 @@ fun ModelSelectionOverlay(
     fun isProviderConfigured(provider: AIProvider): Boolean {
         if (provider.isFree) return true
         val storageId = providerStorageId(provider.name)
-        val key = ApiKeyRotator.getNextAvailableKey(securePrefs, storageId)?.first
-            ?: securePrefs.getApiKey(storageId)
-        if (key.isNotEmpty()) return true
-        if (securePrefs.getSetting("oauth_token_$storageId", "").isNotEmpty()) return true
-        if (securePrefs.getSetting("web_cookie_$storageId", "").isNotEmpty()) return true
+        val aliasKeys = mutableListOf(storageId)
+        if (storageId.contains("-")) aliasKeys.add(storageId.replace("-", ""))
+        if (storageId == "cerebras") aliasKeys.add("cerebrus")
+        if (storageId == "cerebrus") aliasKeys.add("cerebras")
+        if (storageId == "gemini") aliasKeys.add("google gemini")
+        if (storageId == "gmi") aliasKeys.add("gmi-cloud")
+        if (storageId == "gmi-cloud") aliasKeys.add("gmi")
+        if (storageId == "aimlapi") aliasKeys.add("aiml-api")
+        if (storageId == "nebius") aliasKeys.add("nebius-ai")
+        if (storageId == "friendliai") aliasKeys.add("friendli-ai")
+        if (storageId == "together") aliasKeys.add("together-ai")
+        if (storageId == "fireworks") aliasKeys.add("fireworks-ai")
+        if (storageId == "nvidia") aliasKeys.add("nvidia-nim")
+
+        for (k in aliasKeys) {
+            val key = ApiKeyRotator.getNextAvailableKey(securePrefs, k)?.first
+                ?: securePrefs.getApiKey(k)
+            if (key.isNotEmpty()) return true
+            if (securePrefs.getSetting("oauth_token_$k", "").isNotEmpty()) return true
+            if (securePrefs.getSetting("web_cookie_$k", "").isNotEmpty()) return true
+        }
         return false
     }
 
@@ -3070,9 +3117,9 @@ fun ModelSelectionOverlay(
 
     val scrollState = rememberScrollState()
 
-    Column(modifier = Modifier.width(280.dp).heightIn(max = 480.dp).clip(RoundedCornerShape(12.dp))
-        .background(AppCard).border(1.dp, AppDivider, RoundedCornerShape(12.dp))
-        .verticalScroll(scrollState).padding(8.dp),
+    Column(modifier = Modifier.width(280.dp).heightIn(max = 480.dp).clip(RoundedCornerShape(22.dp))
+        .background(AppCard).border(1.dp, AppDivider, RoundedCornerShape(22.dp))
+        .verticalScroll(scrollState).padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (configuredProviders.isEmpty()) {
             Column(
@@ -3180,8 +3227,8 @@ fun ModelSelectionOverlay(
                     "Omniroute" -> Color(0xFF10B981); else -> Color(0xFF8B5CF6)
                 }
 
-                Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                    .background(AppField).border(1.dp, AppDivider, RoundedCornerShape(10.dp)).padding(8.dp)) {
+                Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                    .background(AppField).border(1.dp, AppDivider, RoundedCornerShape(16.dp)).padding(10.dp)) {
                     Row(
                         Modifier
                             .fillMaxWidth()
@@ -3269,10 +3316,10 @@ fun ModelSelectionOverlay(
                             finalModels.forEach { model ->
                                 val isSelected = activeModel.id == model.id
                                 val rowModifier = if (isSelected) {
-                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
-                                        .background(Color(0xFF8B5CF6).copy(alpha = 0.08f))
-                                        .border(1.dp, Color(0xFF8B5CF6), RoundedCornerShape(8.dp))
-                                } else Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                                        .background(Color(0xFF8B5CF6).copy(alpha = 0.12f))
+                                        .border(1.dp, Color(0xFF8B5CF6), RoundedCornerShape(14.dp))
+                                } else Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
                                 Row(Modifier.then(rowModifier).clickable { onModelSelected(model) }
                                     .padding(horizontal = 10.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -3546,7 +3593,17 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         if (messagesJob?.isActive != true) {
             messagesJob = viewModelScope.launch(Dispatchers.IO) {
                 repository.getMessagesForSession(sessionId).collect { msgList ->
-                    _messages.value = msgList
+                    _messages.update { current ->
+                        val currentIds = current.map { it.id }
+                        val newIds = msgList.map { it.id }
+                        if (currentIds == newIds && current.lastOrNull()?.content == msgList.lastOrNull()?.content) {
+                            current
+                        } else if (current.size > msgList.size && current.take(msgList.size).map { it.id } == newIds) {
+                            current
+                        } else {
+                            msgList
+                        }
+                    }
                 }
             }
         }
@@ -3558,6 +3615,8 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         _activeModel.value = sanitizedModel
         repository.securePrefs.saveSetting("chat_provider", sanitizedModel.provider)
         repository.securePrefs.saveSetting("chat_model", sanitizedModel.id)
+        repository.securePrefs.saveSetting("agent_provider", sanitizedModel.provider)
+        repository.securePrefs.saveSetting("agent_model", sanitizedModel.id)
         if (activeSessionId.isNotEmpty()) {
             repository.securePrefs.saveSetting("session_provider_$activeSessionId", sanitizedModel.provider)
             repository.securePrefs.saveSetting("session_model_$activeSessionId", sanitizedModel.id)
@@ -3608,9 +3667,19 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 sessionId = repository.createSession(dynamicTitle)
                 activeSessionId = sessionId
                 messagesJob?.cancel()
-                messagesJob = viewModelScope.launch {
+                messagesJob = viewModelScope.launch(Dispatchers.IO) {
                     repository.getMessagesForSession(sessionId).collect { msgList ->
-                        _messages.value = msgList
+                        _messages.update { current ->
+                            val currentIds = current.map { it.id }
+                            val newIds = msgList.map { it.id }
+                            if (currentIds == newIds && current.lastOrNull()?.content == msgList.lastOrNull()?.content) {
+                                current
+                            } else if (current.size > msgList.size && current.take(msgList.size).map { it.id } == newIds) {
+                                current
+                            } else {
+                                msgList
+                            }
+                        }
                     }
                 }
             } else {
@@ -3864,7 +3933,8 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             }
 
             val model = _activeModel.value
-            val provider = AIProviderFactory.providers.find { it.name == model.provider }
+            val provider = AIProviderFactory.providers.find { it.name.equals(model.provider, ignoreCase = true) }
+                ?: OPENAI_PROVIDERS.find { it.name.equals(model.provider, ignoreCase = true) }?.let { GenericOpenAIProvider(it) }
             if (provider == null) {
                 _streamedText.value = "Provider ${model.provider} not available"
                 _isStreaming.value = false
@@ -3875,13 +3945,38 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             val storageId = providerStorageId(model.provider)
             var currentKeySlot = 0
             var apiKey = ""
-            val rotatorResult = ApiKeyRotator.getNextAvailableKey(repository.securePrefs, storageId)
-            if (rotatorResult != null) {
-                apiKey = rotatorResult.first
-                currentKeySlot = rotatorResult.second
-            }
-            if (apiKey.isEmpty()) {
-                apiKey = repository.securePrefs.getSetting("oauth_token_$storageId", "")
+            val aliasKeys = mutableListOf(storageId)
+            if (storageId.contains("-")) aliasKeys.add(storageId.replace("-", ""))
+            if (storageId == "cerebras") aliasKeys.add("cerebrus")
+            if (storageId == "cerebrus") aliasKeys.add("cerebras")
+            if (storageId == "gemini") aliasKeys.add("google gemini")
+            if (storageId == "gmi") aliasKeys.add("gmi-cloud")
+            if (storageId == "gmi-cloud") aliasKeys.add("gmi")
+            if (storageId == "aimlapi") aliasKeys.add("aiml-api")
+            if (storageId == "nebius") aliasKeys.add("nebius-ai")
+            if (storageId == "friendliai") aliasKeys.add("friendli-ai")
+            if (storageId == "together") aliasKeys.add("together-ai")
+            if (storageId == "fireworks") aliasKeys.add("fireworks-ai")
+            if (storageId == "nvidia") aliasKeys.add("nvidia-nim")
+
+            for (k in aliasKeys) {
+                val rotatorResult = ApiKeyRotator.getNextAvailableKey(repository.securePrefs, k)
+                if (rotatorResult != null && rotatorResult.first.isNotEmpty()) {
+                    apiKey = rotatorResult.first
+                    currentKeySlot = rotatorResult.second
+                    break
+                }
+                val raw = repository.securePrefs.getApiKey(k)
+                if (raw.isNotEmpty()) {
+                    apiKey = raw
+                    currentKeySlot = 1
+                    break
+                }
+                val oauth = repository.securePrefs.getSetting("oauth_token_$k", "")
+                if (oauth.isNotEmpty()) {
+                    apiKey = oauth
+                    break
+                }
             }
             if (apiKey.isNotEmpty() && model.provider == "Antigravity") {
                 val projectId = repository.securePrefs.getSetting("oauth_project_$storageId", "")
@@ -3920,7 +4015,10 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 try {
                     _streamedText.value = ""
                     var streamHadToolCall = false
-                    var streamHadAudioTool = false
+                    // Cross-thread flag: written on the provider's network callback
+                    // thread and read on the pacing coroutine / other callbacks.
+                    // AtomicBoolean gives visibility without requiring bufferLock.
+                    val streamHadAudioTool = java.util.concurrent.atomic.AtomicBoolean(false)
                     val rawBuffer = StringBuilder()
                     val bufferLock = Any()
                     var isStreamComplete = false
@@ -3957,7 +4055,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                             }
 
                             if (nextWord != null) {
-                                if (!streamHadAudioTool) {
+                                if (!streamHadAudioTool.get()) {
                                     _streamedText.update { it + nextWord }
                                 }
                                 val isDone = synchronized(bufferLock) { isStreamComplete }
@@ -3977,7 +4075,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         apiKey = retryApiKey,
                         customBaseUrl = baseUrl,
                         onToken = { token ->
-                            if (streamHadAudioTool) return@streamCompletion
+                            if (streamHadAudioTool.get()) return@streamCompletion
                             if (token == "\u200B") {
                                 synchronized(bufferLock) { rawBuffer.setLength(0) }
                                 _streamedText.value = ""
@@ -3990,13 +4088,13 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         onToolCall = { toolCall ->
                             streamHadToolCall = true
                             if (toolCall.name == "edge_tts") {
-                                streamHadAudioTool = true
+                                streamHadAudioTool.set(true)
                                 _streamedText.value = ""
                             }
                             maybeAutoApproveTool(toolCall)
                         },
                         onComplete = { fullResponse ->
-                            if (streamHadAudioTool) {
+                            if (streamHadAudioTool.get()) {
                                 _streamedText.value = ""
                                 _deferredResponse = ""
                                 synchronized(bufferLock) { isStreamComplete = true }
@@ -4031,7 +4129,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         }
                     )
                     pacingJob?.join()
-                    if (streamHadAudioTool) {
+                    if (streamHadAudioTool.get()) {
                         _streamedText.value = ""
                         _deferredResponse = ""
                         break
@@ -4255,7 +4353,8 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         }
 
         val model = _activeModel.value
-        val provider = AIProviderFactory.providers.find { it.name == model.provider }
+        val provider = AIProviderFactory.providers.find { it.name.equals(model.provider, ignoreCase = true) }
+            ?: OPENAI_PROVIDERS.find { it.name.equals(model.provider, ignoreCase = true) }?.let { GenericOpenAIProvider(it) }
         if (provider == null) {
             _isStreaming.value = false
             appendAssistantMessage("Provider ${model.provider} not available.")
@@ -4264,13 +4363,38 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         val storageId = providerStorageId(model.provider)
         var currentKeySlot = 0
         var apiKey = ""
-        val rotatorResult = ApiKeyRotator.getNextAvailableKey(repository.securePrefs, storageId)
-        if (rotatorResult != null) {
-            apiKey = rotatorResult.first
-            currentKeySlot = rotatorResult.second
-        }
-        if (apiKey.isEmpty()) {
-            apiKey = repository.securePrefs.getSetting("oauth_token_$storageId", "")
+        val aliasKeys = mutableListOf(storageId)
+        if (storageId.contains("-")) aliasKeys.add(storageId.replace("-", ""))
+        if (storageId == "cerebras") aliasKeys.add("cerebrus")
+        if (storageId == "cerebrus") aliasKeys.add("cerebras")
+        if (storageId == "gemini") aliasKeys.add("google gemini")
+        if (storageId == "gmi") aliasKeys.add("gmi-cloud")
+        if (storageId == "gmi-cloud") aliasKeys.add("gmi")
+        if (storageId == "aimlapi") aliasKeys.add("aiml-api")
+        if (storageId == "nebius") aliasKeys.add("nebius-ai")
+        if (storageId == "friendliai") aliasKeys.add("friendli-ai")
+        if (storageId == "together") aliasKeys.add("together-ai")
+        if (storageId == "fireworks") aliasKeys.add("fireworks-ai")
+        if (storageId == "nvidia") aliasKeys.add("nvidia-nim")
+
+        for (k in aliasKeys) {
+            val rotatorResult = ApiKeyRotator.getNextAvailableKey(repository.securePrefs, k)
+            if (rotatorResult != null && rotatorResult.first.isNotEmpty()) {
+                apiKey = rotatorResult.first
+                currentKeySlot = rotatorResult.second
+                break
+            }
+            val raw = repository.securePrefs.getApiKey(k)
+            if (raw.isNotEmpty()) {
+                apiKey = raw
+                currentKeySlot = 1
+                break
+            }
+            val oauth = repository.securePrefs.getSetting("oauth_token_$k", "")
+            if (oauth.isNotEmpty()) {
+                apiKey = oauth
+                break
+            }
         }
         if (apiKey.isNotEmpty() && model.provider == "Antigravity") {
             val projectId = repository.securePrefs.getSetting("oauth_project_$storageId", "")
@@ -4334,7 +4458,8 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             try {
                 _streamedText.value = ""
                 var nextStreamHadToolCall = false
-                var nextStreamHadAudioTool = false
+                // Cross-thread flag (see streamHadAudioTool above).
+                val nextStreamHadAudioTool = java.util.concurrent.atomic.AtomicBoolean(false)
                 val rawBuffer = StringBuilder()
                 val bufferLock = Any()
                 var isStreamComplete = false
@@ -4371,7 +4496,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         }
 
                         if (nextWord != null) {
-                            if (!nextStreamHadAudioTool) {
+                            if (!nextStreamHadAudioTool.get()) {
                                 _streamedText.update { it + nextWord }
                             }
                             val isDone = synchronized(bufferLock) { isStreamComplete }
@@ -4391,7 +4516,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     apiKey = retryApiKey,
                     customBaseUrl = baseUrl,
                     onToken = { token ->
-                        if (nextStreamHadAudioTool) return@streamCompletion
+                        if (nextStreamHadAudioTool.get()) return@streamCompletion
                         if (token == "\u200B") {
                             synchronized(bufferLock) { rawBuffer.setLength(0) }
                             _streamedText.value = ""
@@ -4404,13 +4529,13 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     onToolCall = { tc ->
                         nextStreamHadToolCall = true
                         if (tc.name == "edge_tts") {
-                            nextStreamHadAudioTool = true
+                            nextStreamHadAudioTool.set(true)
                             _streamedText.value = ""
                         }
                         maybeAutoApproveTool(tc)
                     },
                     onComplete = { fullResponse ->
-                        if (nextStreamHadAudioTool) {
+                        if (nextStreamHadAudioTool.get()) {
                             _streamedText.value = ""
                             _deferredResponse = ""
                             synchronized(bufferLock) { isStreamComplete = true }
@@ -4445,7 +4570,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     }
                 )
                 pacingJob?.join()
-                if (nextStreamHadAudioTool) {
+                if (nextStreamHadAudioTool.get()) {
                     _streamedText.value = ""
                     _deferredResponse = ""
                     break

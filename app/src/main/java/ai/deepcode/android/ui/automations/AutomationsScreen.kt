@@ -365,7 +365,7 @@ fun AutomationsScreen(
                     } else if (rule.nextRunAt > 0L) {
                         "due now"
                     } else {
-                        "due now"
+                        "Not scheduled"
                     }
                 }
 

@@ -100,6 +100,7 @@ fun EditorScreen(
 
     var editorInstance: CodeEditor? by remember { mutableStateOf(null) }
     var loadedPath by remember { mutableStateOf("") }
+    var lastPushedContent by remember { mutableStateOf("") }
     var searchVal by remember { mutableStateOf("") }
     var replaceVal by remember { mutableStateOf("") }
     var showFindReplace by remember { mutableStateOf(false) }
@@ -261,9 +262,15 @@ fun EditorScreen(
                 }
             },
             update = { editor ->
-                if (filePath != loadedPath) {
-                    loadedPath = filePath
+                // filePath is set synchronously but fileContent loads asynchronously
+                // on an IO coroutine. Committing loadedPath as soon as filePath
+                // changes (while content is still "") would skip the real content
+                // when it arrives. Only mark the file as loaded once content has
+                // actually been pushed into the editor to avoid a blank editor.
+                if (filePath.isNotEmpty() && (filePath != loadedPath || lastPushedContent != fileContent)) {
                     editor.setText(fileContent)
+                    lastPushedContent = fileContent
+                    loadedPath = filePath
                 }
             }
         )

@@ -355,11 +355,10 @@ fun ConnectionsScreen(
                     )
                 }
                 Text(
-                    text = "View all >",
+                    text = "${activeConnections.size} connected",
                     color = Color(0xFF9E9E9E),
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.clickable { }
+                    fontWeight = FontWeight.Medium
                 )
             }
         }

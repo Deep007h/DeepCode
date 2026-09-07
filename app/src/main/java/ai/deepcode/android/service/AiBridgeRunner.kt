@@ -3,6 +3,7 @@ package ai.deepcode.android.service
 import android.content.Context
 import android.util.Log
 import ai.deepcode.android.data.remote.AIProviderFactory
+import ai.deepcode.android.data.remote.ModelCatalog
 import ai.deepcode.android.data.remote.providerDefaultBaseUrl
 import ai.deepcode.android.data.remote.providerStorageId
 import ai.deepcode.android.data.repository.DeepCodeRepository
@@ -105,7 +106,7 @@ object AiBridgeRunner {
                 val providerName = prefs.getSetting("chat_provider", "Zen AI")
                 val modelId = prefs.getSetting("chat_model", "")
 
-                val provider = AIProviderFactory.providers.find { it.name == providerName }
+                val provider = AIProviderFactory.providers.find { it.name.equals(providerName, ignoreCase = true) }
                     ?: AIProviderFactory.providers.firstOrNull()
 
                 if (provider == null) {
@@ -113,9 +114,10 @@ object AiBridgeRunner {
                     return@launch
                 }
 
-                val model = if (modelId.isNotEmpty()) provider.models.find { it.id == modelId }
+                val allModels = (ModelCatalog.getModelsForProvider(provider.name, prefs) + provider.models).distinctBy { it.id }
+                val model = if (modelId.isNotEmpty()) allModels.find { it.id == modelId || it.name.equals(modelId, ignoreCase = true) }
                     else null
-                val resolvedModel = model ?: provider.models.firstOrNull()
+                val resolvedModel = model ?: allModels.firstOrNull() ?: provider.models.firstOrNull()
 
                 if (resolvedModel == null) {
                     AdbCommandBridge.respond(reqId, "error", "No model available for provider: ${provider.name}")
@@ -148,13 +150,38 @@ object AiBridgeRunner {
                     }
                 }
                 val storageId = providerStorageId(provider.name)
-                val rotatorResult = ai.deepcode.android.data.remote.ApiKeyRotator.getNextAvailableKey(prefs, storageId)
-                var apiKey = rotatorResult?.first ?: ""
-                if (apiKey.isEmpty()) apiKey = prefs.getApiKey(storageId)
-                if (apiKey.isEmpty()) apiKey = prefs.getSetting("oauth_token_$storageId", "")
+                val aliasKeys = mutableListOf(storageId)
+                if (storageId.contains("-")) aliasKeys.add(storageId.replace("-", ""))
+                if (storageId == "cerebras") aliasKeys.add("cerebrus")
+                if (storageId == "cerebrus") aliasKeys.add("cerebras")
+                if (storageId == "gemini") aliasKeys.add("google gemini")
+                if (storageId == "gmi") aliasKeys.add("gmi-cloud")
+                if (storageId == "gmi-cloud") aliasKeys.add("gmi")
+
+                var apiKey = ""
+                for (k in aliasKeys) {
+                    val rotatorResult = ai.deepcode.android.data.remote.ApiKeyRotator.getNextAvailableKey(prefs, k)
+                    if (rotatorResult != null && rotatorResult.first.isNotEmpty()) {
+                        apiKey = rotatorResult.first
+                        break
+                    }
+                    val raw = prefs.getApiKey(k)
+                    if (raw.isNotEmpty()) {
+                        apiKey = raw
+                        break
+                    }
+                    val oauth = prefs.getSetting("oauth_token_$k", "")
+                    if (oauth.isNotEmpty()) {
+                        apiKey = oauth
+                        break
+                    }
+                }
                 if (apiKey.isNotEmpty() && provider.name == "Antigravity") {
                     val projectId = prefs.getSetting("oauth_project_$storageId", "")
                     if (projectId.isNotEmpty()) apiKey += "||$projectId"
+                }
+                if (apiKey.isEmpty() && (provider.isFree || provider.name.startsWith("Zen"))) {
+                    apiKey = "zen-free"
                 }
                 if (apiKey.isEmpty()) {
                     AdbCommandBridge.respond(reqId, "error",
@@ -465,8 +492,9 @@ object AiBridgeRunner {
                     "Unknown provider: $providerName. Use ai_list_models to see available providers.")
                 return
             }
-            val model = if (modelId.isNotBlank()) provider.models.find { it.id == modelId || it.name.equals(modelId, ignoreCase = true) }
-                else provider.models.firstOrNull()
+            val allModels = (ModelCatalog.getModelsForProvider(provider.name, repo.securePrefs) + provider.models).distinctBy { it.id }
+            val model = if (modelId.isNotBlank()) allModels.find { it.id == modelId || it.name.equals(modelId, ignoreCase = true) }
+                else allModels.firstOrNull()
             if (model == null) {
                 AdbCommandBridge.respond(reqId, "error",
                     "Model '$modelId' not found in provider '${provider.name}'")

@@ -4,6 +4,11 @@ import android.content.Context
 import ai.deepcode.android.data.local.EncryptedPrefs
 import ai.deepcode.android.data.remote.AIProvider
 import ai.deepcode.android.data.remote.AIProviderFactory
+import ai.deepcode.android.data.remote.ModelCatalog
+import ai.deepcode.android.data.remote.OPENAI_PROVIDERS
+import ai.deepcode.android.data.remote.GenericOpenAIProvider
+import ai.deepcode.android.data.remote.OpenAIProviderConfig
+import ai.deepcode.android.data.remote.providerDefaultBaseUrl
 import ai.deepcode.android.data.remote.providerStorageId
 import ai.deepcode.android.domain.model.Message
 import ai.deepcode.android.domain.model.Tool
@@ -341,53 +346,61 @@ class AgentEngine(private val context: Context) {
 
     // Resolves model and provider based on settings in EncryptedPrefs
     private fun resolveProviderAndModel(providerOverride: String? = null, modelOverride: String? = null): Pair<AIProvider, String> {
-        val modelSetting = modelOverride ?: securePrefs.getSetting("agent_model", "deepseek-v4-flash-free")
-        val providerSetting = providerOverride ?: securePrefs.getSetting("agent_provider", "Zen AI")
+        val providerSetting = providerOverride
+            ?: securePrefs.getSetting("agent_provider", "")
+            .ifEmpty { securePrefs.getSetting("chat_provider", "Zen AI") }
+        val modelSetting = modelOverride
+            ?: securePrefs.getSetting("agent_model", "")
+            .ifEmpty { securePrefs.getSetting("chat_model", "") }
         val providers = AIProviderFactory.providers
         if (providers.isEmpty()) {
             AppLogger.e("AgentEngine", "No AI providers available!")
             throw IllegalStateException("No AI providers configured")
         }
-        var provider = providers.firstOrNull { it.name.equals(providerSetting, ignoreCase = true) }
-            ?: providers.firstOrNull { it.name == "Zen AI" }
-            ?: providers.first()
-
-        // When an explicit override was given, trust it — don't silently replace
-        if (providerOverride == null) {
-            val key = getApiKeyForProvider(provider)
-            if (key.isEmpty()) {
-                val firstConfigured = AIProviderFactory.providers.firstOrNull { p ->
-                    getApiKeyForProvider(p).isNotEmpty()
-                }
-                if (firstConfigured != null) {
-                    provider = firstConfigured
-                    val modelId = provider.models.firstOrNull()?.id ?: ""
-                    return Pair(provider, modelId)
-                }
+        var provider: AIProvider = providers.firstOrNull { it.name.equals(providerSetting, ignoreCase = true) }
+            ?: (OPENAI_PROVIDERS.firstOrNull { it.name.equals(providerSetting, ignoreCase = true) }?.let { GenericOpenAIProvider(it) })
+            ?: run {
+                val baseUrl = providerDefaultBaseUrl(providerSetting)
+                val config = OpenAIProviderConfig(
+                    name = providerSetting,
+                    baseUrl = baseUrl,
+                    models = ModelCatalog.getModelsForProvider(providerSetting, securePrefs)
+                )
+                GenericOpenAIProvider(config)
             }
-        }
 
-        val hasModel = provider.models.any { it.id == modelSetting }
-        val finalModel = if (!modelOverride.isNullOrBlank()) {
+        val dynamicModels = ModelCatalog.getModelsForProvider(provider.name, securePrefs)
+        val hasModel = provider.models.any { it.id == modelSetting } || dynamicModels.any { it.id == modelSetting }
+        val finalModel = if (!modelOverride.isNullOrBlank() && hasModel) {
             modelOverride
-        } else if (hasModel) {
+        } else if (hasModel && modelSetting.isNotBlank()) {
             modelSetting
         } else {
-            provider.models.firstOrNull()?.id ?: ""
+            val storageId = providerStorageId(provider.name)
+            val defaultModel = securePrefs.getSetting("default_model_$storageId", "")
+            if (defaultModel.isNotEmpty() && (provider.models.any { it.id == defaultModel } || dynamicModels.any { it.id == defaultModel })) {
+                defaultModel
+            } else {
+                provider.models.firstOrNull()?.id ?: dynamicModels.firstOrNull()?.id ?: (if (provider.name.contains("Zen", ignoreCase = true)) "deepseek-v4-flash-free" else (modelOverride ?: ""))
+            }
         }
         return Pair(provider, finalModel)
     }
     // Helper to get API key for the chosen provider
     private fun getApiKeyForProvider(provider: AIProvider): String {
         val name = provider.name
-        if (name == "Antigravity") {
-            return securePrefs.getSetting("oauth_token_antigravity", "")
+        if (name.equals("Antigravity", ignoreCase = true)) {
+            val oauth = securePrefs.getSetting("oauth_token_antigravity", "")
+            if (oauth.isNotEmpty()) return oauth
         }
         val storageId = providerStorageId(name)
         val rotatedKey = ai.deepcode.android.data.remote.ApiKeyRotator.getNextAvailableKey(securePrefs, storageId)?.first
         if (!rotatedKey.isNullOrEmpty()) {
             return rotatedKey
         }
+        val directKey = securePrefs.getApiKey(storageId)
+        if (directKey.isNotEmpty()) return directKey
+
         val key = when (name) {
             "Zen AI", "Zen", "Zen (Free)" -> securePrefs.getApiKey("zen")
             "Google Gemini" -> securePrefs.getApiKey("gemini")
@@ -400,10 +413,10 @@ class AgentEngine(private val context: Context) {
             "Omniroute" -> securePrefs.getApiKey("omniroute")
             "OpenAI" -> securePrefs.getApiKey("openai")
             "Anthropic" -> securePrefs.getApiKey("anthropic")
-            "Mistral AI" -> securePrefs.getApiKey("mistral")
-            "Agent Router" -> securePrefs.getApiKey("agentrouter")
+            "Mistral AI", "Mistral" -> securePrefs.getApiKey("mistral")
+            "Agent Router", "AgentRouter" -> securePrefs.getApiKey("agentrouter")
             "GMI Cloud" -> securePrefs.getApiKey("gmi")
-            "Ollama Cloud" -> securePrefs.getApiKey("ollama-cloud")
+            "Ollama Cloud", "OllamaCloud" -> securePrefs.getApiKey("ollama-cloud")
             "NVIDIA NIM" -> securePrefs.getApiKey("nvidia")
             "Together AI" -> securePrefs.getApiKey("together")
             "Perplexity" -> securePrefs.getApiKey("perplexity")
@@ -423,7 +436,18 @@ class AgentEngine(private val context: Context) {
                 if (keyFromId.isNotEmpty()) keyFromId else securePrefs.getApiKey(name.lowercase().replace(" ", "-"))
             }
         }
-        return key
+        if (key.isNotEmpty()) return key
+
+        // Check alias keys
+        if (storageId == "cerebras" || storageId == "cerebrus") {
+            val alt = securePrefs.getApiKey("cerebras").ifEmpty { securePrefs.getApiKey("cerebrus") }
+            if (alt.isNotEmpty()) return alt
+        }
+        if (storageId.contains("-")) {
+            val noHyphen = securePrefs.getApiKey(storageId.replace("-", ""))
+            if (noHyphen.isNotEmpty()) return noHyphen
+        }
+        return ""
     }
 
     private suspend fun refreshAntigravityToken(): String {
@@ -446,7 +470,10 @@ class AgentEngine(private val context: Context) {
 
     // Helper to get Custom Endpoint URL
     private fun getCustomUrlForProvider(provider: AIProvider): String? {
-        val key = when (provider.name) {
+        val storageId = providerStorageId(provider.name)
+        val customUrl = securePrefs.getSetting("url_$storageId", "")
+        if (customUrl.isNotEmpty()) return customUrl
+        val legacyKey = when (provider.name) {
             "Zen AI", "Zen", "Zen (Free)" -> "url_zen"
             "Google Gemini" -> "url_gemini"
             "Groq" -> "url_groq"
@@ -461,7 +488,7 @@ class AgentEngine(private val context: Context) {
             "GMI Cloud" -> "url_gmi"
             else -> ""
         }
-        val url = securePrefs.getSetting(key, "")
+        val url = if (legacyKey.isNotEmpty()) securePrefs.getSetting(legacyKey, "") else ""
         return url.ifEmpty { null }
     }
 
@@ -1538,8 +1565,12 @@ class AgentEngine(private val context: Context) {
     fun run(sessionId: String, userPrompt: String, providerOverride: String? = null, modelOverride: String? = null, noFallback: Boolean = false): Flow<String> = callbackFlow {
         // Apply per-invocation overrides
         val effectiveProvider = providerOverride
+            ?: securePrefs.getSetting("agent_provider", "")
+            .ifEmpty { securePrefs.getSetting("chat_provider", "Zen AI") }
         val effectiveModel = modelOverride
-        var activeProviderName = effectiveProvider ?: securePrefs.getSetting("agent_provider", "Zen AI")
+            ?: securePrefs.getSetting("agent_model", "")
+            .ifEmpty { securePrefs.getSetting("chat_model", "") }
+        var activeProviderName = effectiveProvider
         val agentJob = launch(Dispatchers.IO) {
             try {
                 // Insert user message once
@@ -1581,22 +1612,9 @@ class AgentEngine(private val context: Context) {
                     return@launch
                 }
 
-                // Build fallback provider chain: primary first, then all other providers
+                // Strict provider routing: always communicate using the requested/selected provider only
                 val primaryProvider = resolveProviderAndModel(effectiveProvider, effectiveModel)
-                val fallbackProviders = if (noFallback || effectiveProvider != null) {
-                    linkedSetOf(primaryProvider)
-                } else {
-                    val allProviders = AIProviderFactory.providers
-                    linkedSetOf<Pair<AIProvider, String>>().apply {
-                        add(primaryProvider)
-                        for (p in allProviders) {
-                            val m = p.models.firstOrNull()?.id ?: continue
-                            if (none { it.first.name == p.name }) {
-                                add(Pair(p, m))
-                            }
-                        }
-                    }
-                }
+                val fallbackProviders = linkedSetOf(primaryProvider)
 
                 var delivered = false
                 var lastError: Throwable? = null
@@ -1618,12 +1636,30 @@ class AgentEngine(private val context: Context) {
                         fallbackModels.add("gemini-2.5-flash")
                     }
                     val entries = mutableListOf<FallbackCandidate>()
+                    val storageKeysToCheck = mutableListOf(storageId)
+                    if (storageId.contains("-")) {
+                        storageKeysToCheck.add(storageId.replace("-", ""))
+                    }
+                    if (storageId == "cerebras") storageKeysToCheck.add("cerebrus")
+                    if (storageId == "cerebrus") storageKeysToCheck.add("cerebras")
+                    if (storageId == "gemini") storageKeysToCheck.add("google gemini")
+                    if (storageId == "gmi") storageKeysToCheck.add("gmi-cloud")
+                    if (storageId == "gmi-cloud") storageKeysToCheck.add("gmi")
+                    if (storageId == "aimlapi") storageKeysToCheck.add("aiml-api")
+                    if (storageId == "nebius") storageKeysToCheck.add("nebius-ai")
+                    if (storageId == "friendliai") storageKeysToCheck.add("friendli-ai")
+                    if (storageId == "together") storageKeysToCheck.add("together-ai")
+                    if (storageId == "fireworks") storageKeysToCheck.add("fireworks-ai")
+                    if (storageId == "nvidia") storageKeysToCheck.add("nvidia-nim")
+
                     // Add all configured slots 1..6
-                    for (slot in 1..EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER) {
-                        val key = securePrefs.getApiKeySlot(storageId, slot)
-                        if (key.isNotEmpty()) {
-                            for (fm in fallbackModels) {
-                                entries.add(FallbackCandidate(provider, fm, key, slot))
+                    for (sk in storageKeysToCheck) {
+                        for (slot in 1..EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER) {
+                            val key = securePrefs.getApiKeySlot(sk, slot)
+                            if (key.isNotEmpty() && entries.none { it.apiKey == key }) {
+                                for (fm in fallbackModels) {
+                                    entries.add(FallbackCandidate(provider, fm, key, slot))
+                                }
                             }
                         }
                     }
@@ -1631,7 +1667,7 @@ class AgentEngine(private val context: Context) {
                     if (entries.isEmpty()) {
                         val legacyKey = getApiKeyForProvider(provider)
                         val slot = if (legacyKey.isNotEmpty()) ai.deepcode.android.data.remote.ApiKeyRotator.findSlotForKey(securePrefs, storageId, legacyKey) else 1
-                        if (legacyKey.isNotEmpty() || provider.name.startsWith("Zen")) {
+                        if (legacyKey.isNotEmpty() || provider.isFree || provider.name.startsWith("Zen")) {
                             for (fm in fallbackModels) {
                                 entries.add(FallbackCandidate(provider, fm, legacyKey, slot))
                             }
@@ -1639,7 +1675,7 @@ class AgentEngine(private val context: Context) {
                     }
                     entries
                 }.filter { candidate ->
-                    if (candidate.provider.name.startsWith("Zen")) {
+                    if (candidate.provider.isFree || candidate.provider.name.startsWith("Zen")) {
                         true
                     } else {
                         candidate.apiKey.isNotEmpty()
@@ -1676,7 +1712,15 @@ class AgentEngine(private val context: Context) {
 
                         while (loopCount < maxLoops && !hasCompleted && !delivered) {
                             loopCount++
-                            val rawHistory = sessionCompactor.getEffectiveHistory(sessionId)
+                            val rawHistory = sessionCompactor.getEffectiveHistory(sessionId).filter { msg ->
+                                !(msg.role == "assistant" && (
+                                    msg.content.startsWith("Error:") ||
+                                    msg.content.contains("API Error") ||
+                                    msg.content.contains("Rate limit exceeded") ||
+                                    msg.content.contains("couldn't reach the AI service") ||
+                                    msg.content.contains("trouble reaching the AI")
+                                ))
+                            }
                             val maxTurns = securePrefs.getSetting("max_history_turns", "8").toIntOrNull() ?: 8
                             val history = if (maxTurns > 0) ai.deepcode.android.util.TokenSaver.trimHistory(rawHistory, maxTurns) else rawHistory
                             val finalHistory = history.toMutableList()
@@ -2083,36 +2127,8 @@ class AgentEngine(private val context: Context) {
                 close()
             } catch (e: Exception) {
                 AppLogger.e("AgentEngine", "Error in agent loop", e)
-                val isRateLimit = ai.deepcode.android.data.remote.ApiKeyRotator.isRotatableError(e, null, e.message)
-
-                val reply = if (sessionId.startsWith("telegram_")) {
-                    if (isRateLimit) {
-                        ai.deepcode.android.service.telegram.TelegramBridgeService.getRateLimitReply(activeProviderName)
-                    } else if (e is IllegalStateException && e.message?.contains("API key configured") == true) {
-                        "⚠️ " + (e.message ?: "API key required for $activeProviderName")
-                    } else {
-                        getLocalBasicReply(userPrompt, e)
-                    }
-                } else {
-                    if (isRateLimit) {
-                        "Rate limit exceeded for $activeProviderName. Please try again later or switch providers."
-                    } else if (e is IllegalStateException && e.message?.contains("API key configured") == true) {
-                        "⚠️ " + (e.message ?: "API key required for $activeProviderName")
-                    } else {
-                        getLocalBasicReply(userPrompt, e)
-                    }
-                }
-                try {
-                    repository.insertMessage(Message(
-                        id = UUID.randomUUID().toString(),
-                        sessionId = sessionId,
-                        role = "assistant",
-                        content = reply,
-                        timestamp = System.currentTimeMillis()
-                    ))
-                } catch (dbEx: Exception) {
-                    AppLogger.e("AgentEngine", "Failed to save offline reply to DB", dbEx)
-                }
+                val rawError = e.message?.ifBlank { null } ?: e.cause?.message?.ifBlank { null } ?: e.toString()
+                val reply = if (rawError.isNotBlank()) rawError else "Error: ${e.javaClass.simpleName}"
                 trySend(reply)
                 close()
             }

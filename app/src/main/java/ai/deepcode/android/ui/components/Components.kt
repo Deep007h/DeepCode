@@ -174,11 +174,11 @@ fun OutlinedAppButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(24.dp))
             .background(bg)
-            .border(1.dp, if (enabled) color else color.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+            .border(1.dp, if (enabled) color else color.copy(alpha = 0.4f), RoundedCornerShape(24.dp))
             .clickable(interactionSource = interactionSource, indication = null, enabled = enabled, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
@@ -221,15 +221,15 @@ fun FilledAppButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(24.dp))
             .background(if (enabled) bg else backgroundColor.copy(alpha = 0.4f))
             .clickable(interactionSource = interactionSource, indication = null, enabled = enabled, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
         if (icon != null) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(14.dp))
+            Icon(icon, null, tint = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.4f), modifier = Modifier.size(14.dp))
             Spacer(modifier = Modifier.width(6.dp))
         }
         Text(text, color = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.4f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -792,18 +792,18 @@ fun CodeBlock(code: String, language: String, modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
-            .border(1.dp, Color(0xFF2E2E2E), RoundedCornerShape(12.dp)),
+            .border(1.dp, Color(0xFF2E2E36), RoundedCornerShape(18.dp)),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF1E1E1E)
+            containerColor = Color(0xFF1B1B20)
         ),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(18.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF2D2D2D))
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                    .background(Color(0xFF25252C))
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -816,7 +816,8 @@ fun CodeBlock(code: String, language: String, modifier: Modifier = Modifier) {
                 )
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF32323C))
                         .clickable {
                             try {
                                 (context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
@@ -824,14 +825,14 @@ fun CodeBlock(code: String, language: String, modifier: Modifier = Modifier) {
                                 Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
                             } catch (_: Exception) {}
                         }
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.ContentCopy,
                         contentDescription = "Copy code",
                         tint = Color(0xFFD1D5DB),
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(13.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(

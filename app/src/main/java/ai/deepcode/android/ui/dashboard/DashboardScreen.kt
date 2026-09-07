@@ -76,10 +76,11 @@ fun DashboardScreen(
 
     val dailyGreeting by ai.deepcode.android.util.DailyGreetingManager.greetingState.collectAsStateWithLifecycle()
 
+    // Show the real message count; fall back to 0 when there are none.
+    // Previously fabricated an estimate (sessions.size * 3) that was
+    // presented as an authoritative synced count.
     val messagesSynced = if (messageCount > 0) {
         if (messageCount >= 1000) "${messageCount / 1000}k+" else messageCount.toString()
-    } else if (sessions.isNotEmpty()) {
-        "${sessions.size * 3}+"
     } else "0"
 
     val recentSessions = remember(sessions) { sessions.sortedByDescending { it.createdAt }.take(5) }
@@ -380,7 +381,10 @@ fun DashboardScreen(
 
             val inputPercent = if (totalTokens > 0) ((totalInput.toDouble() / totalTokens) * 100).toInt() else 60
             val outputPercent = if (totalTokens > 0) ((totalOutput.toDouble() / totalTokens) * 100).toInt() else 35
-            val reasoningPercent = (100 - inputPercent - outputPercent).coerceAtLeast(0)
+            // Only render a reasoning slice when reasoning tokens actually exist.
+            // Truncating input/output percents leaves a residue that would
+            // otherwise draw a phantom purple "Reason" slice with no legend entry.
+            val reasoningPercent = if (totalReasoning > 0) (100 - inputPercent - outputPercent).coerceAtLeast(0) else 0
 
             AppCard(
                 modifier = Modifier.fillMaxWidth(),
