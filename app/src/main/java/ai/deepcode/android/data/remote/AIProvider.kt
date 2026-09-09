@@ -927,8 +927,17 @@ class ZenProvider : AIProvider {
             val estimatedInput = ((accumulatedReasoning.length + accumulatedContent.length) / 4 + 120).coerceAtLeast(10)
             try { onUsage.invoke(TurnTokenUsage(estimatedInput, estimatedOutput, estimatedReasoning)) } catch (_: Exception) {}
         }
-        // Thinking stripped entirely — complete with answer only, never reasoning.
-        onComplete(accumulatedContent.toString())
+        val finalAnswer = if (accumulatedContent.isNotEmpty()) {
+            accumulatedContent.toString()
+        } else if (accumulatedReasoning.isNotEmpty()) {
+            accumulatedReasoning.toString()
+        } else {
+            ""
+        }
+        if (accumulatedContent.isEmpty() && finalAnswer.isNotEmpty()) {
+            try { onToken(finalAnswer) } catch (_: Exception) {}
+        }
+        onComplete(finalAnswer)
     }
 }
 
