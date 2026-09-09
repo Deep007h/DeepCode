@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -112,9 +113,7 @@ fun SettingsScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(AppCard)
-                    .border(1.dp, AppDivider, RoundedCornerShape(16.dp))
+                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 3.dp, isDark = true)
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -165,12 +164,17 @@ fun SettingsScreen(
                     }
                 }
 
-                // Edit Profile Button (Orange outline)
+                // Edit Profile Button (Orange depth pill)
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(1.dp, AppPrimary, RoundedCornerShape(8.dp))
-                        .clickable {
+                        .depthPill(
+                            shape = RoundedCornerShape(10.dp),
+                            elevation = 2.dp,
+                            isDark = true,
+                            customGradient = listOf(AppPrimary.copy(alpha = 0.22f), AppPrimary.copy(alpha = 0.08f)),
+                            customBorderColor = AppPrimary.copy(alpha = 0.6f)
+                        )
+                        .bouncyClickable(provideHaptic = true) {
                             refreshProfileFromManager()
                             showEditProfileDialog = true
                         }
@@ -196,9 +200,7 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(AppCard)
-                    .border(1.dp, AppDivider, RoundedCornerShape(16.dp))
+                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = true)
             ) {
                 SettingsNavRow(
                     icon = Icons.Default.Palette,
@@ -214,9 +216,7 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(AppCard)
-                    .border(1.dp, AppDivider, RoundedCornerShape(16.dp))
+                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = true)
             ) {
                 // Manage Agents Row
                 SettingsNavRow(
@@ -307,9 +307,7 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(AppCard)
-                    .border(1.dp, AppDivider, RoundedCornerShape(16.dp))
+                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = true)
             ) {
                 SettingsSubscreenRow(
                     icon = Icons.Default.Shield,
@@ -364,9 +362,7 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(AppCard)
-                    .border(1.dp, AppDivider, RoundedCornerShape(16.dp))
+                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = true)
             ) {
                 SettingsSubscreenRow(
                     icon = Icons.Default.Info,
@@ -386,8 +382,13 @@ fun SettingsScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .border(1.dp, Color(0xFFE53935), RoundedCornerShape(12.dp))
+                    .depthPill(
+                        shape = RoundedCornerShape(14.dp),
+                        elevation = 2.5.dp,
+                        isDark = true,
+                        customGradient = listOf(Color(0xFFE53935).copy(alpha = 0.22f), Color(0xFFE53935).copy(alpha = 0.08f)),
+                        customBorderColor = Color(0xFFE53935).copy(alpha = 0.6f)
+                    )
                     .bouncyClickable(provideHaptic = true) { showDeleteAccountDialog = true }
                     .padding(vertical = 12.dp),
                 contentAlignment = Alignment.Center

@@ -137,7 +137,7 @@ fun AppCard(
 
     Column(
         modifier = mod
-            .depthCard(shape = shape, elevation = 3.5.dp, isDark = isDarkThemeActive)
+            .depthCard(shape = shape, elevation = 2.dp, isDark = isDarkThemeActive)
             .padding(16.dp),
         content = content
     )
@@ -826,21 +826,27 @@ private fun formatJsonPretty(jsonStr: String): String {
 @Composable
 fun CodeBlock(code: String, language: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    Card(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
-            .border(1.dp, Color(0xFF2E2E36), RoundedCornerShape(18.dp)),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF1B1B20)
-        ),
-        shape = RoundedCornerShape(18.dp)
+            .depthCard(
+                shape = RoundedCornerShape(18.dp),
+                elevation = 2.dp,
+                isDark = true,
+                customGradient = listOf(Color(0xFF141418), Color(0xFF0C0C0F)),
+                customBorderColor = Color.White.copy(alpha = 0.08f)
+            )
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF25252C))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0xFF1A1A20), Color(0xFF131317))
+                        )
+                    )
                     .padding(horizontal = 16.dp, vertical = 9.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -854,9 +860,14 @@ fun CodeBlock(code: String, language: String, modifier: Modifier = Modifier) {
                 )
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF32323C))
-                        .clickable {
+                        .depthPill(
+                            shape = RoundedCornerShape(12.dp),
+                            elevation = 1.dp,
+                            isDark = true,
+                            customGradient = listOf(Color(0xFF222228), Color(0xFF16161C)),
+                            customBorderColor = Color.White.copy(alpha = 0.10f)
+                        )
+                        .bouncyClickable(provideHaptic = true) {
                             try {
                                 (context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
                                     .setPrimaryClip(android.content.ClipData.newPlainText("Copied Code", code))
@@ -2044,8 +2055,7 @@ fun FileCard(filePath: String) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .background(AppDivider, RoundedCornerShape(10.dp))
-            .border(1.dp, AppBorder, RoundedCornerShape(10.dp))
+            .depthCard(shape = RoundedCornerShape(12.dp), elevation = 2.dp)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -2158,15 +2168,11 @@ fun LayoutSelectorCard(onSelect: (String) -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 rowItems.forEach { layout ->
-                    Card(
+                    Box(
                         modifier = Modifier
                             .weight(1f)
-                            .clickable { onSelect(layout.name) },
-                        colors = CardDefaults.cardColors(
-                            containerColor = AppDivider
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, AppBorder)
+                            .depthCard(shape = RoundedCornerShape(12.dp), elevation = 2.dp)
+                            .bouncyClickable(provideHaptic = true) { onSelect(layout.name) }
                     ) {
                         Column(
                             modifier = Modifier.padding(10.dp),

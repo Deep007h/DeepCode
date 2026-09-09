@@ -104,10 +104,8 @@ fun ThemesAndWallpapersScreen(
                 Box(
                     modifier = Modifier
                         .size(40.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(AppCard)
-                        .border(1.dp, AppBorder, RoundedCornerShape(10.dp))
-                        .clickable { onBack() },
+                        .depthPill(shape = RoundedCornerShape(12.dp), elevation = 2.dp)
+                        .bouncyClickable(provideHaptic = true) { onBack() },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = AppWhite, modifier = Modifier.size(20.dp))
@@ -139,8 +137,7 @@ fun ThemesAndWallpapersScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(180.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .border(1.dp, AppBorder, RoundedCornerShape(20.dp))
+                        .depthCard(shape = RoundedCornerShape(20.dp), elevation = 3.dp)
                 ) {
                     // Wallpaper background preview
                     val customFile = remember(customWallpaperPath, refreshKey) {
@@ -220,10 +217,15 @@ fun ThemesAndWallpapersScreen(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (isSelected) AppPrimary.copy(alpha = 0.15f) else AppCard)
-                                .border(1.dp, if (isSelected) AppPrimary else AppBorder, RoundedCornerShape(12.dp))
-                                .clickable {
+                                .depthPill(
+                                    shape = RoundedCornerShape(14.dp),
+                                    elevation = if (isSelected) 3.dp else 1.5.dp,
+                                    customGradient = if (isSelected) listOf(
+                                        AppPrimary.copy(alpha = 0.35f), AppPrimary.copy(alpha = 0.18f)
+                                    ) else null,
+                                    customBorderColor = if (isSelected) AppPrimary else null
+                                )
+                                .bouncyClickable(provideHaptic = true) {
                                     themeMode = valKey
                                     securePrefs.saveSetting("theme", valKey)
                                 }
@@ -329,10 +331,15 @@ fun ThemesAndWallpapersScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(if (isSelected) AppPrimary.copy(alpha = 0.12f) else AppCard)
-                                    .border(1.dp, if (isSelected) AppPrimary else AppBorder, RoundedCornerShape(14.dp))
-                                    .clickable {
+                                    .depthCard(
+                                        shape = RoundedCornerShape(14.dp),
+                                        elevation = if (isSelected) 3.dp else 1.5.dp,
+                                        customGradient = if (isSelected) listOf(
+                                            AppPrimary.copy(alpha = 0.22f), AppPrimary.copy(alpha = 0.10f)
+                                        ) else null,
+                                        customBorderColor = if (isSelected) AppPrimary else null
+                                    )
+                                    .bouncyClickable(provideHaptic = true) {
                                         selectedWallpaper = wp.id
                                         securePrefs.saveSetting("chat_wallpaper", wp.id)
                                     }
@@ -365,10 +372,15 @@ fun ThemesAndWallpapersScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(if (isSelected) AppPrimary.copy(alpha = 0.12f) else AppCard)
-                                    .border(1.dp, if (isSelected) AppPrimary else AppBorder, RoundedCornerShape(14.dp))
-                                    .clickable {
+                                    .depthCard(
+                                        shape = RoundedCornerShape(14.dp),
+                                        elevation = if (isSelected) 3.dp else 1.5.dp,
+                                        customGradient = if (isSelected) listOf(
+                                            AppPrimary.copy(alpha = 0.22f), AppPrimary.copy(alpha = 0.10f)
+                                        ) else null,
+                                        customBorderColor = if (isSelected) AppPrimary else null
+                                    )
+                                    .bouncyClickable(provideHaptic = true) {
                                         selectedWallpaper = "custom"
                                         securePrefs.saveSetting("chat_wallpaper", "custom")
                                     }

@@ -1646,10 +1646,15 @@ private fun UserBubble(
         cleanedContent.length > 250 || cleanedContent.lines().size > 6
     }
 
-    val bubbleBg = if (isDarkThemeActive) {
-        AppPrimary.copy(alpha = 0.32f).compositeOver(Color(0xFF0D0D0D))
+    val topColor = if (isDarkThemeActive) {
+        AppPrimary.copy(alpha = 0.32f).compositeOver(Color(0xFF16161A))
     } else {
-        AppPrimary.copy(alpha = 0.15f).compositeOver(Color.White)
+        AppPrimary.copy(alpha = 0.22f).compositeOver(Color(0xFFF6F6F9))
+    }
+    val bottomColor = if (isDarkThemeActive) {
+        AppPrimary.copy(alpha = 0.18f).compositeOver(Color(0xFF0C0C0F))
+    } else {
+        AppPrimary.copy(alpha = 0.12f).compositeOver(Color(0xFFE9E9EE))
     }
 
     val userBubbleShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 24.dp, bottomEnd = 6.dp)
@@ -1657,9 +1662,13 @@ private fun UserBubble(
     Box(
         modifier = Modifier
             .widthIn(min = 48.dp, max = 330.dp)
-            .clip(userBubbleShape)
-            .background(bubbleBg)
-            .border(1.dp, AppPrimary.copy(alpha = 0.28f), userBubbleShape)
+            .depthCard(
+                shape = userBubbleShape,
+                elevation = 2.dp,
+                isDark = isDarkThemeActive,
+                customGradient = listOf(topColor, bottomColor),
+                customBorderColor = if (isDarkThemeActive) Color.White.copy(alpha = 0.09f) else Color.White.copy(alpha = 0.40f)
+            )
             .padding(horizontal = 18.dp, vertical = 13.dp)
             .pointerInput(Unit) {
                 detectTapGestures(onLongPress = { offset ->
@@ -2068,8 +2077,13 @@ private fun AudioPlayer(part: MessageContentPart.Audio) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .background(Color(0xFF26282E), RoundedCornerShape(22.dp))
-            .border(1.dp, Color(0xFF353942), RoundedCornerShape(22.dp))
+            .depthCard(
+                shape = RoundedCornerShape(22.dp),
+                elevation = 2.dp,
+                isDark = true,
+                customGradient = listOf(Color(0xFF17181C), Color(0xFF0E0F12)),
+                customBorderColor = Color.White.copy(alpha = 0.08f)
+            )
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -2077,14 +2091,19 @@ private fun AudioPlayer(part: MessageContentPart.Audio) {
         Box(
             modifier = Modifier
                 .size(48.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF383528))
-                .clickable {
+                .depthPill(
+                    shape = CircleShape,
+                    elevation = 2.dp,
+                    isDark = true,
+                    customGradient = listOf(Color(0xFF332D1E), Color(0xFF201B0F)),
+                    customBorderColor = Color(0xFFEAA315).copy(alpha = 0.35f)
+                )
+                .bouncyClickable(provideHaptic = true) {
                     if (!audioFile.exists()) {
                         Toast.makeText(context, "Audio file not ready", Toast.LENGTH_SHORT).show()
-                        return@clickable
+                        return@bouncyClickable
                     }
-                    val mp = mediaPlayer ?: return@clickable
+                    val mp = mediaPlayer ?: return@bouncyClickable
                     try {
                         if (isPlaying.value) {
                             mp.pause()
@@ -2093,7 +2112,7 @@ private fun AudioPlayer(part: MessageContentPart.Audio) {
                         } else {
                             if (!isPrepared.value) {
                                 Toast.makeText(context, "Loading audio...", Toast.LENGTH_SHORT).show()
-                                return@clickable
+                                return@bouncyClickable
                             }
                             GlobalAudioPlaybackManager.play(mp) {
                                 isPlaying.value = false
@@ -2209,10 +2228,14 @@ private fun AudioPlayer(part: MessageContentPart.Audio) {
         // 3. Speed Pill
         Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFF1B1D22))
-                .border(1.dp, Color(0xFF2E313A), RoundedCornerShape(16.dp))
-                .clickable {
+                .depthPill(
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = 1.5.dp,
+                    isDark = true,
+                    customGradient = listOf(Color(0xFF1B1C20), Color(0xFF101114)),
+                    customBorderColor = Color.White.copy(alpha = 0.08f)
+                )
+                .bouncyClickable(provideHaptic = true) {
                     val nextIdx = (speedIndex.value + 1) % speedList.size
                     speedIndex.value = nextIdx
                     applySpeed(mediaPlayer, speedList[nextIdx])
@@ -3130,9 +3153,16 @@ fun ModelSelectionOverlay(
 
     val scrollState = rememberScrollState()
 
-    Column(modifier = Modifier.width(280.dp).heightIn(max = 480.dp).clip(RoundedCornerShape(22.dp))
-        .background(AppCard).border(1.dp, AppDivider, RoundedCornerShape(22.dp))
-        .verticalScroll(scrollState).padding(10.dp),
+    Column(modifier = Modifier
+        .width(280.dp)
+        .heightIn(max = 480.dp)
+        .depthCard(
+            shape = RoundedCornerShape(22.dp),
+            elevation = 6.dp,
+            isDark = isDarkThemeActive
+        )
+        .verticalScroll(scrollState)
+        .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (configuredProviders.isEmpty()) {
             Column(
@@ -3144,8 +3174,12 @@ fun ModelSelectionOverlay(
                 Box(
                     modifier = Modifier
                         .size(48.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFF59E0B).copy(alpha = 0.15f)),
+                        .depthPill(
+                            shape = CircleShape,
+                            elevation = 2.dp,
+                            customGradient = listOf(Color(0xFFF59E0B).copy(alpha = 0.25f), Color(0xFFF59E0B).copy(alpha = 0.10f)),
+                            customBorderColor = Color(0xFFF59E0B).copy(alpha = 0.5f)
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -3172,9 +3206,13 @@ fun ModelSelectionOverlay(
                 Spacer(Modifier.height(14.dp))
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFFF59E0B))
-                        .clickable { onOpenApiKeys() }
+                        .depthPill(
+                            shape = RoundedCornerShape(12.dp),
+                            elevation = 2.5.dp,
+                            customGradient = listOf(Color(0xFFFBBF24), Color(0xFFD97706)),
+                            customBorderColor = Color.White.copy(alpha = 0.35f)
+                        )
+                        .bouncyClickable(provideHaptic = true) { onOpenApiKeys() }
                         .padding(horizontal = 14.dp, vertical = 8.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -3240,8 +3278,14 @@ fun ModelSelectionOverlay(
                     "Omniroute" -> Color(0xFF10B981); else -> Color(0xFF8B5CF6)
                 }
 
-                Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                    .background(AppField).border(1.dp, AppDivider, RoundedCornerShape(16.dp)).padding(10.dp)) {
+                Column(modifier = Modifier
+                    .fillMaxWidth()
+                    .depthCard(
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = 1.5.dp,
+                        isDark = isDarkThemeActive
+                    )
+                    .padding(10.dp)) {
                     Row(
                         Modifier
                             .fillMaxWidth()
@@ -3329,13 +3373,28 @@ fun ModelSelectionOverlay(
                             finalModels.forEach { model ->
                                 val isSelected = activeModel.id == model.id
                                 val rowModifier = if (isSelected) {
-                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                                        .background(Color(0xFF8B5CF6).copy(alpha = 0.12f))
-                                        .border(1.dp, Color(0xFF8B5CF6), RoundedCornerShape(14.dp))
-                                } else Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                                Row(Modifier.then(rowModifier).clickable { onModelSelected(model) }
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .depthPill(
+                                            shape = RoundedCornerShape(14.dp),
+                                            elevation = 1.5.dp,
+                                            isDark = isDarkThemeActive,
+                                            customGradient = listOf(Color(0xFF8B5CF6).copy(alpha = 0.25f), Color(0xFF8B5CF6).copy(alpha = 0.12f)),
+                                            customBorderColor = Color(0xFF8B5CF6).copy(alpha = 0.6f)
+                                        )
+                                } else {
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(14.dp))
+                                }
+                                Row(
+                                    Modifier
+                                        .then(rowModifier)
+                                        .bouncyClickable(provideHaptic = true) { onModelSelected(model) }
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
                                     Text(model.name, color = AppWhite, fontSize = 12.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
                                     if (isSelected) Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF8B5CF6), modifier = Modifier.size(16.dp))

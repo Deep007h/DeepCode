@@ -35,6 +35,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -389,9 +390,7 @@ fun ConnectionsScreen(
                     modifier = Modifier
                         .animateItem()
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(AppCard)
-                        .border(1.dp, AppDivider, RoundedCornerShape(16.dp))
+                        .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.5.dp, isDark = true)
                         .clickable(enabled = connection.appId == "chatgpt") {
                             showChatGPTDialog = true
                         }
@@ -404,8 +403,13 @@ fun ConnectionsScreen(
                         Box(
                             modifier = Modifier
                                 .size(44.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(getBrandColor(connection.appId).copy(alpha = 0.15f)),
+                                .depthPill(
+                                    shape = RoundedCornerShape(12.dp),
+                                    elevation = 1.5.dp,
+                                    isDark = true,
+                                    customGradient = listOf(getBrandColor(connection.appId).copy(alpha = 0.25f), getBrandColor(connection.appId).copy(alpha = 0.10f)),
+                                    customBorderColor = getBrandColor(connection.appId).copy(alpha = 0.4f)
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -500,9 +504,7 @@ fun ConnectionsScreen(
                 modifier = Modifier
                     .animateItem()
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(AppCard)
-                    .border(1.dp, AppDivider, RoundedCornerShape(16.dp))
+                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = true)
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -515,8 +517,13 @@ fun ConnectionsScreen(
                     Box(
                         modifier = Modifier
                             .size(44.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(brandColor.copy(alpha = 0.15f)),
+                            .depthPill(
+                                shape = RoundedCornerShape(12.dp),
+                                elevation = 1.5.dp,
+                                isDark = true,
+                                customGradient = listOf(brandColor.copy(alpha = 0.25f), brandColor.copy(alpha = 0.10f)),
+                                customBorderColor = brandColor.copy(alpha = 0.4f)
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -548,9 +555,13 @@ fun ConnectionsScreen(
                 // Connect outline button
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(brandColor.copy(alpha = 0.08f))
-                        .border(1.dp, brandColor.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .depthPill(
+                            shape = RoundedCornerShape(10.dp),
+                            elevation = 2.dp,
+                            isDark = true,
+                            customGradient = listOf(brandColor.copy(alpha = 0.25f), brandColor.copy(alpha = 0.10f)),
+                            customBorderColor = brandColor.copy(alpha = 0.6f)
+                        )
                         .bouncyClickable(provideHaptic = true) {
                             when (item.appId) {
                                 "whatsapp" -> {

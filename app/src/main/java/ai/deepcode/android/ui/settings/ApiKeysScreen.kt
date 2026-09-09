@@ -23,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -483,10 +484,8 @@ fun ApiKeysScreen(
             Box(
                 modifier = Modifier
                     .size(36.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(AppSurface)
-                    .border(1.dp, AppDarkGray, RoundedCornerShape(10.dp))
-                    .clickable { onBack() },
+                    .depthPill(shape = RoundedCornerShape(10.dp), elevation = 2.dp, isDark = true)
+                    .bouncyClickable(provideHaptic = true) { onBack() },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -515,10 +514,8 @@ fun ApiKeysScreen(
             Spacer(modifier = Modifier.weight(1f))
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(AppSurface)
-                    .border(1.dp, AppDarkGray, RoundedCornerShape(8.dp))
-                    .clickable { filePickerLauncher.launch("text/plain") }
+                    .depthPill(shape = RoundedCornerShape(10.dp), elevation = 2.dp, isDark = true)
+                    .bouncyClickable(provideHaptic = true) { filePickerLauncher.launch("text/plain") }
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -586,18 +583,16 @@ fun ApiKeysScreen(
                 val chipColor = CATEGORY_COLORS[category] ?: AppPrimary
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(
-                            if (isSelected) chipColor.copy(alpha = 0.15f)
-                            else AppSurface
+                        .depthPill(
+                            shape = RoundedCornerShape(10.dp),
+                            elevation = if (isSelected) 2.dp else 1.dp,
+                            isDark = true,
+                            customGradient = if (isSelected) listOf(
+                                chipColor.copy(alpha = 0.28f), chipColor.copy(alpha = 0.12f)
+                            ) else null,
+                            customBorderColor = if (isSelected) chipColor.copy(alpha = 0.7f) else null
                         )
-                        .border(
-                            1.dp,
-                            if (isSelected) chipColor.copy(alpha = 0.5f)
-                            else AppDarkGray,
-                            RoundedCornerShape(8.dp)
-                        )
-                        .clickable { selectedCategory = category }
+                        .bouncyClickable(provideHaptic = true) { selectedCategory = category }
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Text(
@@ -2106,12 +2101,11 @@ private fun ProviderCardFrame(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFF141416))
-            .border(
-                1.dp,
-                if (isExpanded) categoryColor.copy(alpha = 0.45f) else Color(0xFF27272A),
-                RoundedCornerShape(14.dp)
+            .depthCard(
+                shape = RoundedCornerShape(14.dp),
+                elevation = if (isExpanded) 3.5.dp else 1.5.dp,
+                isDark = true,
+                customBorderColor = if (isExpanded) categoryColor.copy(alpha = 0.55f) else null
             )
             .animateContentSize()
     ) {
@@ -2282,10 +2276,14 @@ private fun ApiKeyField(
                 Box(
                     modifier = Modifier
                         .size(40.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFFE53935).copy(alpha = 0.1f))
-                        .border(1.dp, Color(0xFFE53935).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                        .clickable(onClick = onClear),
+                        .depthPill(
+                            shape = RoundedCornerShape(8.dp),
+                            elevation = 1.5.dp,
+                            isDark = true,
+                            customGradient = listOf(Color(0xFFE53935).copy(alpha = 0.25f), Color(0xFFE53935).copy(alpha = 0.10f)),
+                            customBorderColor = Color(0xFFE53935).copy(alpha = 0.5f)
+                        )
+                        .bouncyClickable(provideHaptic = true, onClick = onClear),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -2317,9 +2315,16 @@ private fun ModelFilterRow(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(if (isSelected) categoryColor else AppDivider)
-                        .clickable { onSelect(value) }
+                        .depthPill(
+                            shape = RoundedCornerShape(8.dp),
+                            elevation = if (isSelected) 2.dp else 1.dp,
+                            isDark = true,
+                            customGradient = if (isSelected) listOf(
+                                categoryColor.copy(alpha = 0.9f), categoryColor.copy(alpha = 0.65f)
+                            ) else null,
+                            customBorderColor = if (isSelected) categoryColor else null
+                        )
+                        .bouncyClickable(provideHaptic = true) { onSelect(value) }
                         .padding(vertical = 6.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -2357,20 +2362,48 @@ private fun ActionRow(
             Text(text = "Encrypted at rest", fontSize = 9.sp, color = AppMuted)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            OutlinedButton(
-                onClick = onCancel,
-                enabled = hasChanged,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = AppWhite),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                shape = RoundedCornerShape(8.dp)
-            ) { Text("Cancel", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
-            Button(
-                onClick = onSave,
-                colors = ButtonDefaults.buttonColors(containerColor = AppPrimary, contentColor = AppScreenBg),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                shape = RoundedCornerShape(8.dp),
-                enabled = hasChanged
-            ) { Text("Save", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+            Box(
+                modifier = Modifier
+                    .depthPill(
+                        shape = RoundedCornerShape(8.dp),
+                        elevation = if (hasChanged) 1.5.dp else 0.dp,
+                        isDark = true
+                    )
+                    .bouncyClickable(enabled = hasChanged, provideHaptic = true, onClick = onCancel)
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "Cancel",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (hasChanged) AppWhite else AppMuted
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .depthPill(
+                        shape = RoundedCornerShape(8.dp),
+                        elevation = if (hasChanged) 2.5.dp else 0.dp,
+                        isDark = true,
+                        customGradient = if (hasChanged) listOf(
+                            AppPrimary, AppPrimary.copy(alpha = 0.8f)
+                        ) else listOf(
+                            AppMuted.copy(alpha = 0.25f), AppMuted.copy(alpha = 0.12f)
+                        ),
+                        customBorderColor = if (hasChanged) Color.White.copy(alpha = 0.4f) else null
+                    )
+                    .bouncyClickable(enabled = hasChanged, provideHaptic = true, onClick = onSave)
+                    .padding(horizontal = 16.dp, vertical = 7.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "Save",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (hasChanged) Color.Black else AppMuted
+                )
+            }
         }
     }
 }

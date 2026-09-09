@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -68,15 +69,21 @@ fun TokenUsageScreen(
                 .padding(horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onClose) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .depthPill(shape = CircleShape, elevation = 2.dp, isDark = true)
+                    .bouncyClickable(provideHaptic = true) { onClose() },
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Close",
                     tint = AppWhite,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(10.dp))
             Text(
                 text = "Token Usage",
                 fontWeight = FontWeight.Bold,
@@ -94,10 +101,10 @@ fun TokenUsageScreen(
         ) {
             lifetimeTotals?.let { totals ->
                 item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = AppSurface),
-                        shape = RoundedCornerShape(12.dp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .depthCard(shape = RoundedCornerShape(16.dp), elevation = 3.dp, isDark = true)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("Lifetime Usage", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = AppWhite)
@@ -165,10 +172,10 @@ private fun SessionUsageCard(session: TokenUsageEntity) {
         )
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = AppSurface),
-        shape = RoundedCornerShape(10.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .depthCard(shape = RoundedCornerShape(12.dp), elevation = 2.dp, isDark = true)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

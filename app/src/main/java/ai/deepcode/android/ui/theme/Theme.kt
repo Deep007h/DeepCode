@@ -94,23 +94,23 @@ val AppBackgroundLight = Color(0xFFFAFAF5)
 //  Each getter evaluates the active theme so Compose tracks it.
 // ─────────────────────────────────────────────────────────────
 val AppBackground: Color get() = if (isDarkThemeActive) Color(0xFF0D0D0D) else Color(0xFFFAFAF5)
-val AppSurface: Color get() = if (isDarkThemeActive) Color(0xFF1A1A1A) else Color.White
-val AppSurfaceVariant: Color get() = if (isDarkThemeActive) Color(0xFF3A3A3A) else Color(0xFFE8E8E3)
+val AppSurface: Color get() = if (isDarkThemeActive) Color(0xFF131316) else Color.White
+val AppSurfaceVariant: Color get() = if (isDarkThemeActive) Color(0xFF222226) else Color(0xFFE8E8E3)
 val AppMuted: Color get() = if (isDarkThemeActive) Color(0xFF9E9E9E) else Color(0xFF6B7280)
 val AppWhite: Color get() = if (isDarkThemeActive) Color.White else Color(0xFF1C1C1E)
-val AppDarkGray: Color get() = if (isDarkThemeActive) Color(0xFF3A3A3A) else Color(0xFFD4D4D0)
+val AppDarkGray: Color get() = if (isDarkThemeActive) Color(0xFF26262A) else Color(0xFFD4D4D0)
 
 /** Full-screen background (screens that use their own darker canvas). */
 val AppScreenBg: Color get() = if (isDarkThemeActive) Color(0xFF0D0D0D) else Color(0xFFFAFAF5)
 
 /** Card / grouped-surface background. */
-val AppCard: Color get() = if (isDarkThemeActive) Color(0xFF1A1A1A) else Color.White
+val AppCard: Color get() = if (isDarkThemeActive) Color(0xFF131316) else Color.White
 
 /** Subtle divider line color. */
-val AppDivider: Color get() = if (isDarkThemeActive) Color(0xFF2E2E2E) else Color(0xFFE8E8E3)
+val AppDivider: Color get() = if (isDarkThemeActive) Color(0xFF1C1C1F) else Color(0xFFE8E8E3)
 
 /** Border / outline color. */
-val AppBorder: Color get() = if (isDarkThemeActive) Color(0xFF3A3A3A) else Color(0xFFD4D4D0)
+val AppBorder: Color get() = if (isDarkThemeActive) Color(0xFF232326) else Color(0xFFD4D4D0)
 
 /** Input / field background color. */
 val AppField: Color get() = if (isDarkThemeActive) Color(0xFF0D0D0D) else Color(0xFFF5F5F0)
@@ -131,14 +131,14 @@ fun appDarkColorScheme(accent: AccentTheme) = darkColorScheme(
     onSecondary = Color.White,
     background = Color(0xFF0D0D0D),
     onBackground = Color.White,
-    surface = Color(0xFF1A1A1A),
+    surface = Color(0xFF131316),
     onSurface = Color.White,
-    surfaceVariant = Color(0xFF3A3A3A),
+    surfaceVariant = Color(0xFF222226),
     onSurfaceVariant = Color(0xFF9E9E9E),
     error = AppDestructive,
     onError = Color.White,
-    outline = Color(0xFF3A3A3A),
-    outlineVariant = Color(0xFF9E9E9E).copy(alpha = 0.3f),
+    outline = Color(0xFF26262A),
+    outlineVariant = Color(0xFF9E9E9E).copy(alpha = 0.2f),
     tertiary = AppSuccess,
     onTertiary = Color.White
 )

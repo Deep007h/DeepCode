@@ -41,6 +41,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -168,9 +169,11 @@ fun AutomationsScreen(
                     Box(
                         modifier = Modifier
                             .size(40.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF1E2028))
-                            .border(1.dp, Color(0xFF2E323D), CircleShape)
+                            .depthPill(
+                                shape = CircleShape,
+                                elevation = 2.dp,
+                                isDark = true
+                            )
                             .bouncyClickable(provideHaptic = true) { onBack() },
                         contentAlignment = Alignment.Center
                     ) {
@@ -258,9 +261,11 @@ fun AutomationsScreen(
                 )
                 Box(
                     modifier = Modifier
-                        .clip(CircleShape)
-                        .background(Color(0xFF1E2028))
-                        .border(1.dp, Color(0xFF2E323D), CircleShape)
+                        .depthPill(
+                            shape = CircleShape,
+                            elevation = 1.dp,
+                            isDark = true
+                        )
                         .padding(horizontal = 7.dp, vertical = 2.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -279,9 +284,11 @@ fun AutomationsScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(Color(0xFF12141A))
-                        .border(1.dp, Color(0xFF242731), RoundedCornerShape(20.dp))
+                        .depthCard(
+                            shape = RoundedCornerShape(20.dp),
+                            elevation = 2.dp,
+                            isDark = true
+                        )
                         .padding(vertical = 32.dp, horizontal = 24.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -292,9 +299,11 @@ fun AutomationsScreen(
                         Box(
                             modifier = Modifier
                                 .size(64.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color(0xFF1E2028))
-                                .border(1.dp, Color(0xFF2E323D), RoundedCornerShape(16.dp)),
+                                .depthPill(
+                                    shape = RoundedCornerShape(16.dp),
+                                    elevation = 1.dp,
+                                    isDark = true
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -378,9 +387,7 @@ fun AutomationsScreen(
                     modifier = Modifier
                         .animateItem()
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFF12141A))
-                        .border(1.dp, Color(0xFF242731), RoundedCornerShape(16.dp))
+                        .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.5.dp, isDark = true)
                         .padding(14.dp)
                 ) {
                     Column {
@@ -398,26 +405,24 @@ fun AutomationsScreen(
                                 Box(
                                     modifier = Modifier
                                         .size(44.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(
-                                            when {
-                                                isGpt -> Color(0xFF0D3327)
-                                                rule.name.contains("morning", ignoreCase = true) || rule.name.contains("weather", ignoreCase = true) || rule.name.contains("briefing", ignoreCase = true) -> Color(0xFF3B2A11)
-                                                rule.category.equals("MESSAGING", ignoreCase = true) || rule.name.contains("responder", ignoreCase = true) -> Color(0xFF2C1D4D)
-                                                rule.category.equals("EMAIL", ignoreCase = true) || rule.name.contains("email", ignoreCase = true) -> Color(0xFF132338)
-                                                else -> Color(0xFF1E2028)
-                                            }
-                                        )
-                                        .border(
-                                            1.dp,
-                                            when {
+                                        .depthPill(
+                                            shape = RoundedCornerShape(12.dp),
+                                            elevation = 1.5.dp,
+                                            isDark = true,
+                                            customGradient = when {
+                                                isGpt -> listOf(Color(0xFF144D3B), Color(0xFF0A261D))
+                                                rule.name.contains("morning", ignoreCase = true) || rule.name.contains("weather", ignoreCase = true) || rule.name.contains("briefing", ignoreCase = true) -> listOf(Color(0xFF553D19), Color(0xFF2E200C))
+                                                rule.category.equals("MESSAGING", ignoreCase = true) || rule.name.contains("responder", ignoreCase = true) -> listOf(Color(0xFF402B6F), Color(0xFF22173B))
+                                                rule.category.equals("EMAIL", ignoreCase = true) || rule.name.contains("email", ignoreCase = true) -> listOf(Color(0xFF1D3757), Color(0xFF0F1C2C))
+                                                else -> listOf(Color(0xFF2B2D38), Color(0xFF181A20))
+                                            },
+                                            customBorderColor = when {
                                                 isGpt -> Color(0xFF155E3E)
                                                 rule.name.contains("morning", ignoreCase = true) || rule.name.contains("weather", ignoreCase = true) || rule.name.contains("briefing", ignoreCase = true) -> Color(0xFF5A411B)
                                                 rule.category.equals("MESSAGING", ignoreCase = true) || rule.name.contains("responder", ignoreCase = true) -> Color(0xFF452E75)
                                                 rule.category.equals("EMAIL", ignoreCase = true) || rule.name.contains("email", ignoreCase = true) -> Color(0xFF1E3A5F)
                                                 else -> Color(0xFF2E323D)
-                                            },
-                                            RoundedCornerShape(12.dp)
+                                            }
                                         ),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -508,8 +513,8 @@ fun AutomationsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF0C0E13))
-                                .border(1.dp, Color(0xFF1E212A), RoundedCornerShape(10.dp))
+                                .background(Color(0xFF0A0A0D))
+                                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(10.dp))
                                 .padding(horizontal = 12.dp, vertical = 9.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -589,11 +594,14 @@ fun AutomationsScreen(
                                     val isGpt = isChatGptAutomation(rule)
                                     Box(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(Color(0xFF1A1C23))
-                                            .border(1.dp, if (isGpt) Color(0xFF10A37F).copy(alpha = 0.5f) else Color(0xFF2A2D38), RoundedCornerShape(8.dp))
+                                            .depthPill(
+                                                shape = RoundedCornerShape(8.dp),
+                                                elevation = 1.dp,
+                                                isDark = true,
+                                                customBorderColor = if (isGpt) Color(0xFF10A37F).copy(alpha = 0.4f) else null
+                                            )
                                             .bouncyClickable(provideHaptic = true) { onOpenChat(chatId, isGpt, rule.name) }
-                                            .padding(horizontal = 7.dp, vertical = 4.dp)
+                                            .padding(horizontal = 8.dp, vertical = 5.dp)
                                     ) {
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
@@ -617,12 +625,14 @@ fun AutomationsScreen(
 
                                 Box(
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(Color(0xFF1A1C23))
-                                        .border(1.dp, Color(0xFF2A2D38), RoundedCornerShape(8.dp))
+                                        .depthPill(
+                                            shape = RoundedCornerShape(8.dp),
+                                            elevation = 1.dp,
+                                            isDark = true
+                                        )
                                         .bouncyClickable(provideHaptic = true) {
                                             editingRuleId = rule.id
-                                            newRuleName = rule.name
+                                             newRuleName = rule.name
                                             newRuleDesc = rule.description
                                             newRuleCategory = rule.category
                                             newRuleActionPrompt = rule.getEffectiveActionPrompt() ?: ""
@@ -636,7 +646,7 @@ fun AutomationsScreen(
                                             }
                                             showAddRuleBottomSheet = true
                                         }
-                                        .padding(horizontal = 7.dp, vertical = 4.dp)
+                                        .padding(horizontal = 8.dp, vertical = 5.dp)
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -649,14 +659,18 @@ fun AutomationsScreen(
 
                                 Box(
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(Color(0xFF0F2D20))
-                                        .border(1.dp, Color(0xFF155E3E), RoundedCornerShape(8.dp))
+                                        .depthPill(
+                                            shape = RoundedCornerShape(8.dp),
+                                            elevation = 1.dp,
+                                            isDark = true,
+                                            customGradient = listOf(Color(0xFF0D281C), Color(0xFF081811)),
+                                            customBorderColor = Color(0xFF10A37F).copy(alpha = 0.35f)
+                                        )
                                         .bouncyClickable(provideHaptic = true) {
                                             viewModel.runAutomationNow(rule.id)
                                             Toast.makeText(context, "Running '${rule.name}'...", Toast.LENGTH_SHORT).show()
                                         }
-                                        .padding(horizontal = 7.dp, vertical = 4.dp)
+                                        .padding(horizontal = 8.dp, vertical = 5.dp)
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -671,9 +685,13 @@ fun AutomationsScreen(
                                 Box(
                                     modifier = Modifier
                                         .size(26.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(Color(0xFF321417))
-                                        .border(1.dp, Color(0xFF591C22), RoundedCornerShape(8.dp))
+                                        .depthPill(
+                                            shape = RoundedCornerShape(8.dp),
+                                            elevation = 1.dp,
+                                            isDark = true,
+                                            customGradient = listOf(Color(0xFF240E10), Color(0xFF160809)),
+                                            customBorderColor = Color(0xFFE53935).copy(alpha = 0.35f)
+                                        )
                                         .bouncyClickable(provideHaptic = true) { ruleToDelete = rule },
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -812,9 +830,11 @@ fun AutomationsScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF12141A))
-                    .border(1.dp, Color(0xFF242731), RoundedCornerShape(16.dp))
+                    .depthCard(
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = 2.dp,
+                        isDark = true
+                    )
                     .clickable {
                         editingRuleId = null
                         newRuleName = ""
@@ -863,7 +883,7 @@ fun AutomationsScreen(
                 editingRuleId = null
             },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = Color(0xFF16181F),
+            containerColor = Color(0xFF111114),
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
         ) {
             Column(
@@ -1011,9 +1031,11 @@ fun AutomationsScreen(
                         chips.forEach { tag ->
                             Box(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Color(0xFF1E2028))
-                                    .border(1.dp, Color(0xFF2E323D), RoundedCornerShape(6.dp))
+                                    .depthPill(
+                                        shape = RoundedCornerShape(6.dp),
+                                        elevation = 1.dp,
+                                        isDark = true
+                                    )
                                     .clickable {
                                         newRuleActionPrompt = if (newRuleActionPrompt.isBlank()) tag else "$newRuleActionPrompt $tag"
                                     }
@@ -1093,8 +1115,8 @@ fun AutomationsScreen(
                             showAddRuleBottomSheet = false
                             editingRuleId = null
                         },
-                        backgroundColor = Color(0xFF1E2028),
-                        borderColor = Color(0xFF2E323D),
+                        backgroundColor = Color(0xFF141418),
+                        borderColor = Color.White.copy(alpha = 0.08f),
                         shadowColor = Color.Transparent,
                         borderWidth = 1.dp,
                         shadowOffset = 0.dp,
@@ -1112,8 +1134,8 @@ fun AutomationsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFF321417))
-                            .border(1.dp, Color(0xFF591C22), RoundedCornerShape(12.dp))
+                            .background(Color(0xFF220C0E))
+                            .border(1.dp, Color(0xFF4A141A), RoundedCornerShape(12.dp))
                             .clickable {
                                 val target = activeRules.firstOrNull { it.id == editId }
                                 showAddRuleBottomSheet = false
@@ -1185,9 +1207,11 @@ private fun TemplateItemCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF12141A))
-            .border(1.dp, Color(0xFF242731), RoundedCornerShape(16.dp))
+            .depthCard(
+                shape = RoundedCornerShape(16.dp),
+                elevation = 2.dp,
+                isDark = true
+            )
             .clickable { onEdit() }
             .padding(14.dp)
     ) {
@@ -1253,9 +1277,11 @@ private fun TemplateItemCard(
                 // Edit / Customize button
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF1A1C23))
-                        .border(1.dp, Color(0xFF2A2D38), RoundedCornerShape(8.dp))
+                        .depthPill(
+                            shape = RoundedCornerShape(8.dp),
+                            elevation = 1.dp,
+                            isDark = true
+                        )
                         .clickable { onEdit() }
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                     contentAlignment = Alignment.Center
@@ -1283,9 +1309,13 @@ private fun TemplateItemCard(
                 Box(
                     modifier = Modifier
                         .size(32.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF0F2D20))
-                        .border(1.dp, Color(0xFF155E3E), RoundedCornerShape(8.dp))
+                        .depthPill(
+                            shape = RoundedCornerShape(8.dp),
+                            elevation = 1.dp,
+                            isDark = true,
+                            customGradient = listOf(Color(0xFF0D281C), Color(0xFF081811)),
+                            customBorderColor = Color(0xFF10A37F).copy(alpha = 0.35f)
+                        )
                         .clickable { onAdd() },
                     contentAlignment = Alignment.Center
                 ) {

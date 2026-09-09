@@ -54,7 +54,9 @@ fun Modifier.bouncyClickable(
 
     LaunchedEffect(isPressed) {
         if (isPressed && provideHaptic) {
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            try {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            } catch (_: Exception) {}
         }
     }
 
