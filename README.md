@@ -12,14 +12,14 @@
 
 <br/>
 
-[![Latest Release](https://img.shields.io/badge/Release-v1.1-22c55e?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Deep007h/DeepCode/releases)
+[![Latest Release](https://img.shields.io/badge/Release-v1.2-22c55e?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Deep007h/DeepCode/releases)
 [![Platform](https://img.shields.io/badge/Android-API%2026%2B%20(8.0--15)-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0%2B-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/UI-Jetpack%20Compose%20M3-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![License](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
 <p align="center">
-  <a href="#-whats-new-in-v11"><b>What's New</b></a> •
+  <a href="#-whats-new-in-v12"><b>What's New</b></a> •
   <a href="#-key-features"><b>Features</b></a> •
   <a href="#-ai-providers--model-matrix"><b>AI Providers</b></a> •
   <a href="#-architecture--agent-loop"><b>Architecture</b></a> •
@@ -40,10 +40,33 @@ Whether you need to generate codebases, audit repositories, run complex multi-tu
 
 ---
 
-## ⚡ What's New in v1.1
+## ⚡ What's New in v1.2
 
 <details open>
-<summary><b>✨ Highlights of Release 1.1</b></summary>
+<summary><b>✨ Highlights of Release 1.2</b></summary>
+<br/>
+
+- ⚡ **Multi-Provider & Multi-Key Ring Expansion**:
+  - Full support for **70+ AI providers** (Nebius AI, AIML API, Scaleway, Lambda Labs, Friendli AI, MiniMax, Qwen, Baichuan, Yi, and more).
+  - Storage ID normalization and multi-slot API key rotation (slots 1..6) with instant HTTP 429 / quota failover.
+- 💬 **Instant Chat Responsiveness & Smooth Motion**:
+  - Zero-latency optimistic in-memory message rendering before SQLite persistence.
+  - Natural top-to-bottom scroll physics with precise `isNearBottom` viewport detection and jitter-free streaming follow (~7 fps).
+- 🛡️ **Session Health & Error Isolation**:
+  - Transient API connection drops and rate-limit errors are automatically filtered out of compacted conversation history to prevent poisoned context windows.
+  - Comprehensive HTTP status code mapping (401 Unauthorized, 402 Credits/Quota, 429 Rate Limits, 403 Forbidden).
+- 🎙️ **Microsoft Edge Neural Voice Synthesis**:
+  - Dynamic client token generation and robust audio synthesis fallback for voice interactions.
+- 📱 **Sora Editor & Dashboard Metrics Polish**:
+  - Resolved asynchronous file loading race conditions in `EditorScreen.kt`.
+  - Authoritative message sync counts and conditional reasoning chart slices.
+- 🤖 **Telegram Bridge Upgrades**:
+  - Proactive key validation before chat runs and dynamic model-to-provider inference across both static and OpenAI catalog models.
+
+</details>
+
+<details>
+<summary><b>📜 Highlights of Release 1.1</b></summary>
 <br/>
 
 - 🌐 **ChatGPT Integration for Image and Docs Creation**: Connect your ChatGPT account in **Connections** for zero-API-cost inference, persistent single-session context preservation, high-precision document generation, and inline **DALL-E 3** image rendering.

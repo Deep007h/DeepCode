@@ -128,10 +128,9 @@ fun DashboardScreen(
                     Box {
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(MaterialTheme.colorScheme.surface)
-                                .clickable { vpnMenuExpanded = true },
+                                .size(38.dp)
+                                .depthPill(shape = RoundedCornerShape(12.dp), elevation = 2.5.dp, isDark = isDarkThemeActive)
+                                .bouncyClickable(provideHaptic = true) { vpnMenuExpanded = true },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -224,10 +223,9 @@ fun DashboardScreen(
 
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(MaterialTheme.colorScheme.surface)
-                            .clickable { Toast.makeText(context, "Notifications synced", Toast.LENGTH_SHORT).show() },
+                            .size(38.dp)
+                            .depthPill(shape = RoundedCornerShape(12.dp), elevation = 2.5.dp, isDark = isDarkThemeActive)
+                            .bouncyClickable(provideHaptic = true) { Toast.makeText(context, "Notifications synced", Toast.LENGTH_SHORT).show() },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -530,9 +528,11 @@ fun DashboardScreen(
                     Column(
                         modifier = Modifier
                             .width(84.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(MaterialTheme.colorScheme.surface)
-                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                            .depthCard(
+                                shape = RoundedCornerShape(18.dp),
+                                elevation = 3.dp,
+                                isDark = isDarkThemeActive
+                            )
                             .bouncyClickable(provideHaptic = true) { onTabSelect(3) }
                             .padding(vertical = 12.dp, horizontal = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
@@ -558,9 +558,11 @@ fun DashboardScreen(
                     Column(
                         modifier = Modifier
                             .width(84.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(MaterialTheme.colorScheme.surface)
-                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                            .depthCard(
+                                shape = RoundedCornerShape(18.dp),
+                                elevation = 3.dp,
+                                isDark = isDarkThemeActive
+                            )
                             .bouncyClickable(provideHaptic = true) { onTabSelect(3) }
                             .padding(vertical = 12.dp, horizontal = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
@@ -568,8 +570,11 @@ fun DashboardScreen(
                         Box(
                             modifier = Modifier
                                 .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                                .depthPill(
+                                    shape = RoundedCornerShape(10.dp),
+                                    elevation = 1.5.dp,
+                                    isDark = isDarkThemeActive
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -680,9 +685,14 @@ fun DashboardScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Box(
                                         modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(iconColor.copy(alpha = 0.12f)),
+                                            .size(38.dp)
+                                            .depthPill(
+                                                shape = RoundedCornerShape(12.dp),
+                                                elevation = 1.5.dp,
+                                                customGradient = listOf(iconColor.copy(alpha = 0.24f), iconColor.copy(alpha = 0.08f)),
+                                                highlightAlpha = 0.30f,
+                                                isDark = isDarkThemeActive
+                                            ),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         if (isGptSession) {

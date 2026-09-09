@@ -52,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -113,7 +114,7 @@ fun AppCard(
     val isPressed by interactionSource.collectIsPressedAsState()
 
     val scale by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1.0f,
+        targetValue = if (isPressed && onClick != null) 0.96f else 1.0f,
         animationSpec = androidx.compose.animation.core.spring(
             dampingRatio = 0.75f,
             stiffness = 350f
@@ -136,8 +137,7 @@ fun AppCard(
 
     Column(
         modifier = mod
-            .background(MaterialTheme.colorScheme.surface, shape)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), shape)
+            .depthCard(shape = shape, elevation = 3.5.dp, isDark = isDarkThemeActive)
             .padding(16.dp),
         content = content
     )
@@ -157,26 +157,37 @@ fun OutlinedAppButton(
 
     val scale by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (isPressed && enabled) 0.94f else 1.0f,
-        animationSpec = androidx.compose.animation.core.spring(
-            dampingRatio = 0.75f,
-            stiffness = 350f
-        ),
+        animationSpec = MotionTokens.SnappySpring,
         label = "btnScale"
     )
 
-    val bg by animateColorAsState(
-        targetValue = if (isPressed && enabled) color.copy(alpha = 0.15f) else Color.Transparent,
-        label = "bg"
-    )
+    val shape = RoundedCornerShape(24.dp)
+    val isPrimary = color == MaterialTheme.colorScheme.primary
+    val gradient = if (isDarkThemeActive) {
+        if (isPrimary) listOf(Color(0xFF35302A), Color(0xFF1F1C18))
+        else listOf(DepthTokens.PillGradientTopDark, DepthTokens.PillGradientBottomDark)
+    } else {
+        listOf(DepthTokens.PillGradientTopLight, DepthTokens.PillGradientBottomLight)
+    }
+    val topBorder = if (isPrimary) color.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.22f)
+    val bottomBorder = if (isPrimary) color.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.04f)
+
     Row(
         modifier = modifier
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(24.dp))
-            .background(bg)
-            .border(1.dp, if (enabled) color else color.copy(alpha = 0.4f), RoundedCornerShape(24.dp))
+            .shadow(
+                elevation = 2.5.dp,
+                shape = shape,
+                clip = false,
+                spotColor = Color(0x66000000),
+                ambientColor = Color(0x33000000)
+            )
+            .clip(shape)
+            .background(Brush.verticalGradient(gradient))
+            .border(1.dp, Brush.verticalGradient(listOf(topBorder, bottomBorder)), shape)
             .clickable(interactionSource = interactionSource, indication = null, enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -204,25 +215,40 @@ fun FilledAppButton(
 
     val scale by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (isPressed && enabled) 0.94f else 1.0f,
-        animationSpec = androidx.compose.animation.core.spring(
-            dampingRatio = 0.75f,
-            stiffness = 350f
-        ),
+        animationSpec = MotionTokens.SnappySpring,
         label = "btnScale"
     )
 
-    val bg by animateColorAsState(
-        targetValue = if (isPressed && enabled) backgroundColor.copy(alpha = 0.8f) else backgroundColor,
-        label = "bg"
-    )
+    val shape = RoundedCornerShape(24.dp)
+    val gradient = if (backgroundColor == MaterialTheme.colorScheme.primary) {
+        listOf(AppPrimary, AppPrimaryGradientEnd)
+    } else {
+        listOf(backgroundColor, backgroundColor.copy(alpha = 0.85f))
+    }
+
     Row(
         modifier = modifier
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(24.dp))
-            .background(if (enabled) bg else backgroundColor.copy(alpha = 0.4f))
+            .shadow(
+                elevation = 4.dp,
+                shape = shape,
+                clip = false,
+                spotColor = Color(0x80000000),
+                ambientColor = Color(0x40000000)
+            )
+            .clip(shape)
+            .background(
+                if (enabled) Brush.verticalGradient(gradient)
+                else Brush.verticalGradient(listOf(backgroundColor.copy(alpha = 0.4f), backgroundColor.copy(alpha = 0.3f)))
+            )
+            .border(
+                1.dp,
+                Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.35f), Color.White.copy(alpha = 0.06f))),
+                shape
+            )
             .clickable(interactionSource = interactionSource, indication = null, enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -449,9 +475,18 @@ fun BottomNavBar(
                         // activating a tab doesn't shift icon position by 28dp.
                         Box(
                             modifier = Modifier
-                                .size(width = 44.dp, height = 28.dp)
+                                .size(width = 46.dp, height = 28.dp)
                                 .graphicsLayer { alpha = pillAlpha }
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
+                                .depthPill(
+                                    shape = RoundedCornerShape(14.dp),
+                                    elevation = 2.dp,
+                                    customGradient = listOf(
+                                        AppPrimary.copy(alpha = 0.28f),
+                                        AppPrimary.copy(alpha = 0.10f)
+                                    ),
+                                    highlightAlpha = 0.35f,
+                                    isDark = isDarkThemeActive
+                                )
                         )
 
                         Icon(
@@ -489,13 +524,12 @@ fun NeoBrutalistCard(
     shadowColor: Color = MaterialTheme.colorScheme.outline.copy(alpha = 0.9f),
     borderWidth: Dp = 1.dp,
     shadowOffset: Dp = 0.dp,
-    shape: RoundedCornerShape = RoundedCornerShape(12.dp),
+    shape: RoundedCornerShape = RoundedCornerShape(16.dp),
     content: @Composable BoxScope.() -> Unit
 ) {
     Box(
         modifier = modifier
-            .background(backgroundColor, shape)
-            .border(borderWidth, borderColor, shape),
+            .depthCard(shape = shape, elevation = 3.dp, isDark = isDarkThemeActive),
         content = content
     )
 }
@@ -509,7 +543,7 @@ fun NeoBrutalistButton(
     shadowColor: Color = MaterialTheme.colorScheme.outline.copy(alpha = 0.9f),
     borderWidth: Dp = 1.dp,
     shadowOffset: Dp = 0.dp,
-    shape: RoundedCornerShape = RoundedCornerShape(12.dp),
+    shape: RoundedCornerShape = RoundedCornerShape(20.dp),
     contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
     enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit
@@ -518,12 +552,16 @@ fun NeoBrutalistButton(
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (isPressed && enabled) 0.94f else 1.0f,
-        animationSpec = androidx.compose.animation.core.spring(
-            dampingRatio = 0.75f,
-            stiffness = 350f
-        ),
+        animationSpec = MotionTokens.SnappySpring,
         label = "neoBtnScale"
     )
+
+    val isPrimary = backgroundColor == MaterialTheme.colorScheme.primary
+    val customGradient = if (isPrimary) {
+        listOf(AppPrimary, AppPrimaryGradientEnd)
+    } else {
+        listOf(backgroundColor, backgroundColor.copy(alpha = 0.85f))
+    }
 
     Box(
         modifier = modifier
@@ -531,9 +569,13 @@ fun NeoBrutalistButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(shape)
-            .background(if (enabled) backgroundColor else backgroundColor.copy(alpha = 0.5f))
-            .border(borderWidth, if (enabled) borderColor else borderColor.copy(alpha = 0.5f), shape)
+            .depthPill(
+                shape = shape,
+                elevation = 3.dp,
+                customGradient = if (enabled) customGradient else listOf(backgroundColor.copy(alpha = 0.4f), backgroundColor.copy(alpha = 0.3f)),
+                highlightAlpha = if (isPrimary) 0.35f else 0.22f,
+                isDark = isDarkThemeActive
+            )
             .clickable(enabled = enabled, interactionSource = interactionSource, indication = null, onClick = onClick)
             .padding(contentPadding),
         contentAlignment = Alignment.Center
@@ -571,13 +613,11 @@ fun ToolCallCard(
 
     val title = remember(toolName, argsJson) { formatToolCallTitle(toolName, argsJson) }
 
-    Surface(
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        shape = RoundedCornerShape(8.dp),
-        color = AppCard,
-        border = androidx.compose.foundation.BorderStroke(0.8.dp, AppBorder)
+            .padding(vertical = 2.dp)
+            .depthCard(shape = RoundedCornerShape(12.dp), elevation = 2.dp, isDark = isDarkThemeActive)
     ) {
         Column(
             modifier = Modifier
@@ -661,13 +701,11 @@ fun GroupedToolCallCard(
         }
     }
 
-    Surface(
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        shape = RoundedCornerShape(8.dp),
-        color = AppCard,
-        border = androidx.compose.foundation.BorderStroke(0.8.dp, AppBorder)
+            .padding(vertical = 2.dp)
+            .depthCard(shape = RoundedCornerShape(12.dp), elevation = 2.dp, isDark = isDarkThemeActive)
     ) {
         Column(
             modifier = Modifier
@@ -1904,23 +1942,24 @@ fun QuickActionChip(
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (isPressed) 0.94f else 1f,
+        animationSpec = MotionTokens.SnappySpring,
         label = "chipScale"
     )
 
-    Surface(
+    val shape = RoundedCornerShape(22.dp)
+    Box(
         modifier = modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 2.dp,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-        )
+            .depthPill(
+                shape = shape,
+                elevation = 3.dp,
+                isDark = isDarkThemeActive
+            )
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -1950,19 +1989,25 @@ fun VoiceInputButton(
 
     val scale by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (isPressed) 0.9f else 1f,
+        animationSpec = MotionTokens.SnappySpring,
         label = "voiceScale"
     )
-    val bgColor by animateColorAsState(
-        targetValue = if (isPressed) Color(0xFFEF4444) else MaterialTheme.colorScheme.surface,
-        label = "voiceBg"
-    )
+    val customGradient = if (isPressed) {
+        listOf(Color(0xFFEF4444), Color(0xFFDC2626))
+    } else {
+        null
+    }
 
     Box(
         modifier = modifier
-            .size(36.dp)
+            .size(38.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clip(CircleShape)
-            .background(bgColor)
+            .depthPill(
+                shape = CircleShape,
+                elevation = 2.5.dp,
+                customGradient = customGradient,
+                isDark = isDarkThemeActive
+            )
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -1973,8 +2018,8 @@ fun VoiceInputButton(
         Icon(
             imageVector = if (isPressed) Icons.Default.MicOff else Icons.Default.Mic,
             contentDescription = "Voice input",
-            tint = if (isPressed) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(18.dp)
+            tint = if (isPressed) Color.White else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(19.dp)
         )
     }
 }
@@ -2907,14 +2952,16 @@ fun FullScreenImageActionPill(
     onResize: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = Color(0xEB1C1C1E),
-        border = BorderStroke(0.75.dp, Color.White.copy(alpha = 0.22f)),
+    Box(
         modifier = modifier
+            .depthPill(
+                shape = RoundedCornerShape(24.dp),
+                elevation = 4.dp,
+                isDark = true
+            )
+            .padding(horizontal = 10.dp, vertical = 5.dp)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -2954,8 +3001,8 @@ private fun PillActionButton(
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 4.dp, vertical = 3.dp),
+            .bouncyClickable(provideHaptic = true, onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp)
     ) {

@@ -201,8 +201,13 @@ fun AutomationsScreen(
                 // + Add Rule Pill Button
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(Color(0xFFF59E0B))
+                        .depthPill(
+                            shape = RoundedCornerShape(24.dp),
+                            elevation = 4.dp,
+                            customGradient = listOf(Color(0xFFF59E0B), Color(0xFFD97706)),
+                            highlightAlpha = 0.40f,
+                            isDark = true
+                        )
                         .bouncyClickable(provideHaptic = true) {
                             editingRuleId = null
                             newRuleName = ""

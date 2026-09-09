@@ -4,6 +4,31 @@ All notable changes and milestones for **DeepCode for Android** are documented b
 
 ---
 
+## [1.2.0] - 2026-09-09
+
+### Added
+- **Multi-Provider Key Resolution & Model Expansion**:
+  - Full catalog expansion for 70+ AI providers (Nebius AI, AIML API, Scaleway, Lambda Labs, Friendli AI, MiniMax, Qwen, Baichuan, Yi, and more).
+  - Storage ID normalization and multi-slot API key rotation (slots 1..6) with instant HTTP 429 / quota failover across AgentEngine, SimpleAutomationRunner, and AiBridgeRunner.
+- **Session Health & Error Isolation**:
+  - Transient API connection drops and rate-limit errors are automatically filtered out of compacted conversation history to prevent poisoned context windows.
+  - Comprehensive HTTP status code error mapping (401 Unauthorized, 402 Credits/Quota exhausted, 429 Rate Limits, 403 Forbidden).
+- **Microsoft Edge Neural Voice Synthesis**:
+  - Dynamic client token generation and robust audio synthesis fallback for voice interactions.
+- **Telegram Bridge Upgrades**:
+  - Proactive key validation before chat runs and dynamic model-to-provider inference across both static and OpenAI catalog models.
+
+### Fixed & Improved
+- **Chat Motion & Rendering**:
+  - Instant optimistic in-memory message rendering before SQLite persistence.
+  - Natural top-to-bottom scroll physics with precise `isNearBottom` viewport detection and jitter-free streaming follow (~7 fps).
+  - Refined Material 3 shape geometry (22dp, 24dp, 14dp) and enhanced CodeBlock dark contrast (`#1B1B20`).
+- **CodeEditor & Dashboard Metrics**:
+  - Resolved asynchronous file loading race condition in `EditorScreen.kt`.
+  - Authoritative message sync counts and conditional reasoning chart slices in `DashboardScreen.kt`.
+
+---
+
 ## [1.1.0] - 2026-09-04
 
 ### Added

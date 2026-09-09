@@ -212,15 +212,17 @@ fun PlaceholderFeatureCard(
         label = "cardScale"
     )
 
-    Card(
+    Box(
         modifier = modifier
             .width(168.dp)
             .height(160.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF16181D)),
-        border = BorderStroke(1.dp, Color(0xFF282B34))
+            .depthCard(
+                shape = RoundedCornerShape(22.dp),
+                elevation = 3.5.dp,
+                isDark = true
+            )
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
     ) {
         Column(
             modifier = Modifier
@@ -1006,9 +1008,7 @@ fun ChatScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(Color(0xFF13151A))
-                            .border(1.dp, Color(0xFF262933), RoundedCornerShape(24.dp))
+                            .depthCard(shape = RoundedCornerShape(24.dp), elevation = 3.dp, isDark = true)
                             .padding(vertical = 12.dp, horizontal = 18.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -1207,33 +1207,31 @@ fun ChatScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Input capsule pill
+                // Input capsule pill with tactile depth
                 Row(
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 52.dp)
-                        .clip(RoundedCornerShape(32.dp))
-                        .background(Color(0xFF1E1E22))
-                        .border(1.dp, Color(0xFF2E2E36), RoundedCornerShape(32.dp))
-                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                        .depthInputBar(shape = RoundedCornerShape(32.dp), elevation = 6.dp, isDark = true)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .clickable { filePickerLauncher.launch("*/*") },
+                            .size(38.dp)
+                            .depthPill(shape = CircleShape, elevation = 2.dp, isDark = true)
+                            .bouncyClickable(provideHaptic = true) { filePickerLauncher.launch("*/*") },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Attach",
-                            tint = Color(0xFFCCCCCC),
-                            modifier = Modifier.size(24.dp)
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(10.dp))
 
                     BasicTextField(
                         value = inputMsg,
@@ -1249,7 +1247,7 @@ fun ChatScreen(
                                 if (inputMsg.isEmpty()) {
                                     Text(
                                         "Ask anything...",
-                                        color = Color(0xFF8E8E93),
+                                        color = Color(0xFF9E9EA5),
                                         fontSize = 15.sp
                                     )
                                 }
@@ -1266,13 +1264,13 @@ fun ChatScreen(
                         })
                     )
 
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(8.dp))
 
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .clickable {
+                            .size(38.dp)
+                            .depthPill(shape = CircleShape, elevation = 2.dp, isDark = true)
+                            .bouncyClickable(provideHaptic = true) {
                                 Toast.makeText(context, "Voice input...", Toast.LENGTH_SHORT).show()
                             },
                         contentAlignment = Alignment.Center
@@ -1280,8 +1278,8 @@ fun ChatScreen(
                         Icon(
                             imageVector = Icons.Default.Mic,
                             contentDescription = "Voice",
-                            tint = Color(0xFFCCCCCC),
-                            modifier = Modifier.size(22.dp)
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
@@ -1311,16 +1309,21 @@ fun ChatScreen(
                     if (sendActive) {
                         Box(
                             modifier = Modifier
-                                .size(50.dp)
+                                .size(52.dp)
                                 .graphicsLayer {
                                     if (isStreaming) {
                                         scaleX = pulseScale
                                         scaleY = pulseScale
                                     }
                                 }
-                                .clip(CircleShape)
-                                .background(if (isStreaming) Color(0xFFDC2626) else Color.White)
-                                .border(1.dp, if (isStreaming) Color(0xFFEF4444).copy(alpha = 0.6f) else Color.White.copy(alpha = 0.3f), CircleShape)
+                                .depthPill(
+                                    shape = CircleShape,
+                                    elevation = 5.dp,
+                                    customGradient = if (isStreaming) listOf(Color(0xFFEF4444), Color(0xFFDC2626))
+                                                     else listOf(Color(0xFFFFFFFF), Color(0xFFEDEDED)),
+                                    highlightAlpha = if (isStreaming) 0.35f else 0.45f,
+                                    isDark = isStreaming
+                                )
                                 .bouncyClickable(provideHaptic = true) {
                                     if (isStreaming) {
                                         viewModel.cancelActiveChat()
@@ -1337,15 +1340,20 @@ fun ChatScreen(
                                 imageVector = if (isStreaming) Icons.Rounded.Stop else Icons.AutoMirrored.Rounded.Send,
                                 contentDescription = if (isStreaming) "Stop" else "Send",
                                 tint = if (isStreaming) Color.White else Color.Black,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     } else {
                         Box(
                             modifier = Modifier
-                                .size(50.dp)
-                                .clip(CircleShape)
-                                .background(Brush.linearGradient(listOf(AppPrimary, AppPrimaryGradientEnd)))
+                                .size(52.dp)
+                                .depthPill(
+                                    shape = CircleShape,
+                                    elevation = 5.dp,
+                                    customGradient = listOf(AppPrimary, AppPrimaryGradientEnd),
+                                    highlightAlpha = 0.40f,
+                                    isDark = true
+                                )
                                 .bouncyClickable(provideHaptic = true) {
                                     Toast.makeText(context, "Voice mode activated", Toast.LENGTH_SHORT).show()
                                 },
@@ -1409,10 +1417,12 @@ private fun BoxScope.ScrollToBottomButton(visible: Boolean, lazyListState: LazyL
         val scope = rememberCoroutineScope()
         Box(
             modifier = Modifier
-                .size(42.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF1E1E1E).copy(alpha = 0.94f))
-                .border(1.dp, Color(0xFF383838), CircleShape)
+                .size(44.dp)
+                .depthPill(
+                    shape = CircleShape,
+                    elevation = 4.dp,
+                    isDark = true
+                )
                 .bouncyClickable(provideHaptic = true) {
                     scope.launch {
                         val total = lazyListState.layoutInfo.totalItemsCount
@@ -1493,9 +1503,8 @@ private fun TopBar(
         Box(
             modifier = Modifier
                 .size(44.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF1E1E1E))
-                .clickable { onMenuClick() },
+                .depthPill(shape = CircleShape, elevation = 3.dp, isDark = true)
+                .bouncyClickable(provideHaptic = true) { onMenuClick() },
             contentAlignment = Alignment.Center
         ) {
             MenuTwoBarsIcon(color = Color.White)
@@ -1509,10 +1518,14 @@ private fun TopBar(
             val modelDisplayName = if (isGpt) "chatgpt" else activeModel.name.lowercase().ifEmpty { "deepseek v4 flash" }
             Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(if (isGpt) Color(0xFF10A37F).copy(alpha = 0.15f) else Color(0xFF1E1E1E))
-                    .border(1.dp, if (isGpt) Color(0xFF10A37F).copy(alpha = 0.5f) else Color.Transparent, RoundedCornerShape(24.dp))
-                    .clickable { expandedSelectorDropdown = !expandedSelectorDropdown }
+                    .depthPill(
+                        shape = RoundedCornerShape(24.dp),
+                        elevation = 3.dp,
+                        customGradient = if (isGpt) listOf(Color(0xFF1B3D34), Color(0xFF0F2620)) else null,
+                        highlightAlpha = if (isGpt) 0.35f else 0.22f,
+                        isDark = true
+                    )
+                    .bouncyClickable(provideHaptic = true) { expandedSelectorDropdown = !expandedSelectorDropdown }
                     .padding(horizontal = 16.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {

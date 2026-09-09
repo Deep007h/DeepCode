@@ -287,16 +287,25 @@ private fun ProfilePickerContent(
 
         Spacer(Modifier.height(16.dp))
 
-        OutlinedButton(
-            onClick = onAddNew,
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, AppPrimary.copy(alpha = 0.5f)),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = AppPrimary),
-            modifier = Modifier.fillMaxWidth().height(54.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(54.dp)
+                .depthPill(
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = 2.5.dp,
+                    customGradient = if (isDarkThemeActive) listOf(DepthTokens.PillGradientTopDark, DepthTokens.PillGradientBottomDark) else null,
+                    highlightAlpha = 0.25f,
+                    isDark = isDarkThemeActive
+                )
+                .bouncyClickable(provideHaptic = true, onClick = onAddNew),
+            contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.Add, null)
-            Spacer(Modifier.width(8.dp))
-            Text("Create New Profile", fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Add, null, tint = AppPrimary)
+                Spacer(Modifier.width(8.dp))
+                Text("Create New Profile", fontWeight = FontWeight.Bold, color = AppPrimary)
+            }
         }
 
         Spacer(Modifier.height(32.dp))
@@ -564,18 +573,29 @@ private fun OnboardingFlow(
             }
 
             Spacer(Modifier.height(28.dp))
-            Button(
-                onClick = { next() },
-                enabled = step != 0 || name.isNotBlank() || isFirstRun,
-                colors = ButtonDefaults.buttonColors(containerColor = ActiveAccent.primary),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth().height(54.dp)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp)
+                    .depthPill(
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = 4.dp,
+                        customGradient = listOf(ActiveAccent.primary, ActiveAccent.primaryGradientEnd),
+                        highlightAlpha = 0.40f,
+                        isDark = true
+                    )
+                    .bouncyClickable(
+                        enabled = step != 0 || name.isNotBlank() || isFirstRun,
+                        provideHaptic = true
+                    ) { next() },
+                contentAlignment = Alignment.Center
             ) {
                 Text(
                     if (step < 2) "Continue"
                     else if (!pinEnabled) "Create profile"
                     else "Secure & create",
-                    fontWeight = FontWeight.Bold, fontSize = 15.sp
+                    fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                    color = Color.White
                 )
             }
             Spacer(Modifier.height(24.dp))
