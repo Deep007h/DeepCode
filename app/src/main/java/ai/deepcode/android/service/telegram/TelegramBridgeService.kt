@@ -419,7 +419,7 @@ class TelegramBridgeService : Service() {
     }
 
     private fun hasProviderCredentials(storageKey: String, isFree: Boolean): Boolean {
-        if (isFree || storageKey == "zen") return true
+        if (storageKey == "ollama") return true
         val prefs = repository.securePrefs
         val keysToCheck = mutableListOf(storageKey)
         if (storageKey.contains("-")) {
@@ -634,9 +634,8 @@ class TelegramBridgeService : Service() {
                 badge = if (effectiveProvider.contains("Zen", ignoreCase = true)) "Free" else "Paid"
             )
 
-        val isProviderFree = AIProviderFactory.providers.firstOrNull { it.name.equals(effectiveProvider, ignoreCase = true) }?.isFree == true ||
-            effectiveProvider.contains("Zen", ignoreCase = true)
         val storageKey = providerStorageId(effectiveProvider)
+        val isProviderFree = storageKey == "ollama"
 
         val processingText = detectProcessingMessage(text)
         val processingMsgId = sendMessage(token, chatId, processingText)
@@ -1738,12 +1737,8 @@ class TelegramBridgeService : Service() {
                     messageId = json.getAsJsonObject("result")?.get("message_id")?.asLong
                 } else {
                     AppLogger.e(TAG, "sendMessage failed: $body")
-                    if (body != null) {
-                        val json = try { gson.fromJson(body, JsonObject::class.java) } catch (_: Exception) { null }
-                        val desc = json?.get("description")?.asString ?: ""
-                        if (desc.contains("can't parse entities", ignoreCase = true) || desc.contains("parse_mode", ignoreCase = true)) {
-                            shouldRetry = true
-                        }
+                    if (targetParseMode.isNotEmpty()) {
+                        shouldRetry = true
                     }
                 }
             }
@@ -1821,12 +1816,8 @@ class TelegramBridgeService : Service() {
                 if (!response.isSuccessful) {
                     val body = response.body?.string()
                     AppLogger.e(TAG, "editMessage failed (code $code): $body")
-                    if (body != null) {
-                        val json = try { gson.fromJson(body, JsonObject::class.java) } catch (_: Exception) { null }
-                        val desc = json?.get("description")?.asString ?: ""
-                        if (desc.contains("can't parse entities", ignoreCase = true) || desc.contains("parse_mode", ignoreCase = true)) {
-                            shouldRetry = true
-                        }
+                    if (targetParseMode.isNotEmpty()) {
+                        shouldRetry = true
                     }
                 } else {
                     AppLogger.d(TAG, "editMessage succeeded.")

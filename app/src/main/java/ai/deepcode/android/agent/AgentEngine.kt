@@ -1635,6 +1635,10 @@ class AgentEngine(private val context: Context) {
                     if (provider.name == "Google Gemini" && baseModel == "gemini-2.5-pro") {
                         fallbackModels.add("gemini-2.5-flash")
                     }
+                    if (provider.name.contains("Zen", ignoreCase = true)) {
+                        fallbackModels.add(ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE)
+                        fallbackModels.addAll(ai.deepcode.android.data.remote.ZenModels.KNOWN_FREE_IDS)
+                    }
                     val entries = mutableListOf<FallbackCandidate>()
                     val storageKeysToCheck = mutableListOf(storageId)
                     if (storageId.contains("-")) {
@@ -1667,7 +1671,7 @@ class AgentEngine(private val context: Context) {
                     if (entries.isEmpty()) {
                         val legacyKey = getApiKeyForProvider(provider)
                         val slot = if (legacyKey.isNotEmpty()) ai.deepcode.android.data.remote.ApiKeyRotator.findSlotForKey(securePrefs, storageId, legacyKey) else 1
-                        if (legacyKey.isNotEmpty() || provider.isFree || provider.name.startsWith("Zen")) {
+                        if (legacyKey.isNotEmpty() || (provider.isFree && !provider.name.contains("Zen", ignoreCase = true))) {
                             for (fm in fallbackModels) {
                                 entries.add(FallbackCandidate(provider, fm, legacyKey, slot))
                             }
@@ -1675,7 +1679,7 @@ class AgentEngine(private val context: Context) {
                     }
                     entries
                 }.filter { candidate ->
-                    if (candidate.provider.isFree || candidate.provider.name.startsWith("Zen")) {
+                    if (candidate.provider.isFree && !candidate.provider.name.contains("Zen", ignoreCase = true)) {
                         true
                     } else {
                         candidate.apiKey.isNotEmpty()
@@ -1910,7 +1914,11 @@ class AgentEngine(private val context: Context) {
 
                             val reasoning = withTimeout(90_000L) { done.await() }
 
-                            val rawText = stripThoughts(textAccumulator.toString())
+                            val rawText = stripThoughts(textAccumulator.toString()).ifBlank {
+                                textAccumulator.toString().trim()
+                            }.ifBlank {
+                                stripThoughts(reasoning).ifBlank { reasoning.trim() }
+                            }
 
                             // If provider didn't fire onToolCall, check for <tool_call> embedded in text
                             if (toolCalls.isEmpty()) {
@@ -1924,9 +1932,15 @@ class AgentEngine(private val context: Context) {
                                 val dsmlPfx = """(?:\|{1,2}\s*DSML\s*\|{1,2}\s*)?"""
                                 var finalResultText = truncateContent(rawText).replace(Regex("""<${dsmlPfx}tool_calls?${dsmlPfx}[^>]*>.*?<${dsmlPfx}/${dsmlPfx}tool_calls?${dsmlPfx}>|<${dsmlPfx}invoke${dsmlPfx}[^>]*>.*?<${dsmlPfx}/${dsmlPfx}invoke${dsmlPfx}>|<${dsmlPfx}parameter${dsmlPfx}[^>]*>.*?<${dsmlPfx}/${dsmlPfx}parameter${dsmlPfx}>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "").trim()
                                 if (finalResultText.isEmpty()) finalResultText = truncateContent(rawText).trim()
+                                if (finalResultText.isEmpty() && reasoning.isNotBlank()) {
+                                    finalResultText = truncateContent(stripThoughts(reasoning).ifBlank { reasoning }).trim()
+                                }
                                 val markersToAppend = mediaMarkers.filter { !finalResultText.contains(it) }
                                 if (markersToAppend.isNotEmpty()) {
                                     finalResultText = finalResultText.trimEnd() + "\n\n" + markersToAppend.joinToString("\n")
+                                }
+                                if (finalResultText.isBlank()) {
+                                    finalResultText = "I've completed the requested actions."
                                 }
                                 if (finalResultText.isNotBlank() && !isLimitMessage(finalResultText)) {
                                     repository.insertMessage(Message(

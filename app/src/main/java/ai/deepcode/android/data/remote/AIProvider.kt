@@ -502,10 +502,8 @@ class ZenProvider : AIProvider {
             }
 
             val errStr2 = lastException?.message ?: errStr
-            val isNotFound = errStr2.contains("404") || errStr2.contains("model_not_found", ignoreCase = true)
-            if (isNotFound) {
-                continue // Try next candidate model
-            }
+            ai.deepcode.android.util.AppLogger.w("ZenProvider", "Candidate $candidate failed ($errStr2), trying next available candidate model...")
+            continue // Try next candidate model
         }
 
         val errMsg = "Zen API error: ${lastException?.message ?: "All transports failed"}"
@@ -2472,7 +2470,17 @@ private suspend fun streamOpenAiCompatible(
                     onUsage?.invoke(TurnTokenUsage(estimatedInput, estimatedOutput, 0))
                 }
             }
-            onComplete(accumulatedContent.toString())
+            val finalAnswer = if (accumulatedContent.isNotEmpty()) {
+                accumulatedContent.toString()
+            } else if (accumulatedReasoning.isNotEmpty()) {
+                accumulatedReasoning.toString()
+            } else {
+                ""
+            }
+            if (accumulatedContent.isEmpty() && finalAnswer.isNotEmpty()) {
+                try { onToken(finalAnswer) } catch (_: Exception) {}
+            }
+            onComplete(finalAnswer)
         } catch (e: Throwable) {
             ai.deepcode.android.util.AppLogger.e("AIProvider", "streamOpenAiCompatible failed", e)
             onError(e)

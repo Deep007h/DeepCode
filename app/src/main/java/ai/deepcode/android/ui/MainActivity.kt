@@ -941,6 +941,12 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
             containerColor = AppScreenBg
         ) { padding ->
             val layoutDirection = LocalLayoutDirection.current
+            var cachedBottomBarHeight by remember { mutableStateOf(72.dp) }
+            val currentBottomPadding = padding.calculateBottomPadding()
+            if (currentBottomPadding > 0.dp) {
+                cachedBottomBarHeight = currentBottomPadding
+            }
+            val contentBottomPadding = if (selectedTab == 1) 0.dp else currentBottomPadding
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -949,7 +955,7 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                         start = padding.calculateStartPadding(layoutDirection),
                         top = padding.calculateTopPadding(),
                         end = padding.calculateEndPadding(layoutDirection),
-                        bottom = padding.calculateBottomPadding()
+                        bottom = contentBottomPadding
                     )
             ) {
                 androidx.compose.animation.AnimatedContent(
@@ -1002,7 +1008,8 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                             sessionTitle = activeSessionName,
                             onMenuClick = { scope.launch { drawerState.open() } },
                             onOpenApiKeys = { appState.setShowApiKeys(true) },
-                            onSessionChanged = { activeSessionId = it }
+                            onSessionChanged = { activeSessionId = it },
+                            bottomBarHeight = cachedBottomBarHeight
                         )
                         2 -> AutomationsScreen(
                             onBack = { appState.selectTab(0) },

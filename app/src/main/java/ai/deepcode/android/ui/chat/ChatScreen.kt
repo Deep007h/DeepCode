@@ -287,7 +287,8 @@ fun ChatScreen(
     onMenuClick: () -> Unit = {},
     onOpenApiKeys: () -> Unit = {},
     onSessionChanged: (String) -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    bottomBarHeight: Dp = 72.dp
 ) {
     val viewModel: ChatViewModel = viewModel { ChatViewModel(repository) }
     val messages by viewModel.messages.collectAsStateWithLifecycle()
@@ -454,13 +455,10 @@ fun ChatScreen(
 
     LaunchedEffect(isImeVisible) {
         if (isImeVisible && isNearBottom) {
-            kotlinx.coroutines.delay(80L)
             val total = lazyListState.layoutInfo.totalItemsCount
             if (total > 0 && !lazyListState.isScrollInProgress) {
                 try {
-                    val lastItem = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()
-                    val scrollOffset = if (lastItem != null && lastItem.index == total - 1) lastItem.size else 0
-                    lazyListState.scrollToItem(total - 1, scrollOffset)
+                    lazyListState.animateScrollToItem(total - 1)
                 } catch (_: Exception) {}
             }
         }
@@ -1153,12 +1151,15 @@ fun ChatScreen(
             }
         }
 
+        val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+        val effectiveBottomPadding = maxOf(bottomBarHeight, imeBottom)
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp)
                 .padding(top = 8.dp)
-                .imePadding()
+                .padding(bottom = effectiveBottomPadding)
         ) {
             if (attachedFiles.isNotEmpty()) {
                 Row(
