@@ -149,7 +149,7 @@ class AgentRuntime(private val context: Context) {
         if (providers.isEmpty()) throw IllegalStateException("No AI providers configured")
 
         val configuredProviderName = prefs.getSetting("agent_provider", "Zen AI")
-        val configuredModel = prefs.getSetting("agent_model", "deepseek-v4-flash-free")
+        val configuredModel = prefs.getSetting("agent_model", ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE)
 
         fun resolveModelAndKey(provider: ai.deepcode.android.data.remote.AIProvider): Pair<String, String> {
             // Prefer the user's configured model if it supports tool-calling

@@ -381,7 +381,7 @@ class AgentEngine(private val context: Context) {
             if (defaultModel.isNotEmpty() && (provider.models.any { it.id == defaultModel } || dynamicModels.any { it.id == defaultModel })) {
                 defaultModel
             } else {
-                provider.models.firstOrNull()?.id ?: dynamicModels.firstOrNull()?.id ?: (if (provider.name.contains("Zen", ignoreCase = true)) "deepseek-v4-flash-free" else (modelOverride ?: ""))
+                provider.models.firstOrNull()?.id ?: dynamicModels.firstOrNull()?.id ?: (if (provider.name.contains("Zen", ignoreCase = true)) ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE else (modelOverride ?: ""))
             }
         }
         return Pair(provider, finalModel)

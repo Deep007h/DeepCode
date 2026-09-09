@@ -247,16 +247,20 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
                 JsonObject().apply { addProperty("role", "user"); addProperty("content", prompt) }
             )
             val body = JsonObject().apply {
-                addProperty("model", "deepseek-v4-flash-free")
+                addProperty("model", ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE)
                 add("messages", gson.toJsonTree(messages))
                 addProperty("temperature", 0.3)
                 addProperty("max_tokens", 512)
             }
+            val sessionId = ai.deepcode.android.data.remote.ZenModels.generateSessionId()
             val request = okhttp3.Request.Builder()
-                .url("https://opencode.ai/zen/v1/chat/completions")
+                .url("${ai.deepcode.android.data.remote.ZenModels.BASE_URL}/chat/completions")
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer $zenApiKey")
-                .header("X-OpenCode-Client", "android/1.0.0")
+                .header("User-Agent", ai.deepcode.android.data.remote.ZenModels.USER_AGENT)
+                .header(ai.deepcode.android.data.remote.ZenModels.CLIENT_HEADER_NAME, ai.deepcode.android.data.remote.ZenModels.CLIENT_HEADER_VALUE)
+                .header(ai.deepcode.android.data.remote.ZenModels.HEADER_SESSION_ID, sessionId)
+                .header(ai.deepcode.android.data.remote.ZenModels.HEADER_SESSION_AFFINITY, sessionId)
                 .post(body.toString().toRequestBody("application/json".toMediaType()))
                 .build()
             val response = httpClient.newBuilder()
@@ -414,7 +418,7 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
         val providers = AIProviderFactory.providers
         if (providers.isEmpty()) throw IllegalStateException("No AI providers configured")
         val configuredName = prefs.getSetting("agent_provider", "Zen AI")
-        val configuredModel = prefs.getSetting("agent_model", "deepseek-v4-flash-free")
+        val configuredModel = prefs.getSetting("agent_model", ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE)
         
         val sortedProviders = providers.filter { isCompatibleProvider(it.name) }.sortedByDescending {
             when {
@@ -427,7 +431,7 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
         return sortedProviders.map { provider ->
             val baseUrl = getCompatibleBaseUrl(provider.name)
             val apiKey = getApiKeyForProvider(provider.name)
-            val modelId = if (provider.name == configuredName && provider.models.any { it.id == configuredModel }) configuredModel else provider.models.firstOrNull { it.isFree }?.id ?: provider.models.firstOrNull()?.id ?: "deepseek-v4-flash-free"
+            val modelId = if (provider.name == configuredName && provider.models.any { it.id == configuredModel }) configuredModel else provider.models.firstOrNull { it.isFree }?.id ?: provider.models.firstOrNull()?.id ?: ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE
             Triple(baseUrl, modelId, apiKey)
         }
     }

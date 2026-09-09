@@ -103,6 +103,11 @@ object ApiKeyRotator {
             }
         }.lowercase()
 
+        // Missing session headers or console usage restrictions are NOT rate limits / key exhaustion
+        if (textToInspect.contains("missingsessionid") || textToInspect.contains("can only be used in opencode")) {
+            return false
+        }
+
         return textToInspect.contains("429") ||
                 textToInspect.contains("401") ||
                 textToInspect.contains("402") ||
@@ -114,10 +119,13 @@ object ApiKeyRotator {
                 textToInspect.contains("too_many_requests") ||
                 textToInspect.contains("quota") ||
                 textToInspect.contains("freeusagelimiterror") ||
-                textToInspect.contains("free usage") ||
-                textToInspect.contains("free tier") ||
-                textToInspect.contains("free_tier") ||
-                textToInspect.contains("freetier") ||
+                textToInspect.contains("free usage limit") ||
+                textToInspect.contains("free tier limit") ||
+                textToInspect.contains("free_tier_limit") ||
+                textToInspect.contains("free tier quota") ||
+                textToInspect.contains("free tier exhausted") ||
+                textToInspect.contains("free tier balance") ||
+                textToInspect.contains("freetierlimit") ||
                 textToInspect.contains("limit reached") ||
                 textToInspect.contains("limit exceeded") ||
                 textToInspect.contains("limit_exceeded") ||

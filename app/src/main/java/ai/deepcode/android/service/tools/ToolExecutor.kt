@@ -1387,7 +1387,7 @@ class ToolExecutor(private val context: Context? = null) {
 
             // 2. Generate clean narration script using active AI provider
             val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
-            val savedModel = prefs.getSetting("agent_model", "deepseek-v4-flash-free")
+            val savedModel = prefs.getSetting("agent_model", ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE)
             val savedProviderName = prefs.getSetting("agent_provider", "Zen AI")
             val provider = ai.deepcode.android.data.remote.AIProviderFactory.providers.firstOrNull { it.name == savedProviderName }
                 ?: ai.deepcode.android.data.remote.AIProviderFactory.providers.firstOrNull { it.name == "Zen AI" }

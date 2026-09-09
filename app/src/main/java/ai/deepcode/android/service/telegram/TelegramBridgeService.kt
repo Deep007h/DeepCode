@@ -617,7 +617,7 @@ class TelegramBridgeService : Service() {
             } else {
                 allProviderModels.firstOrNull { it.isFree }?.id
                     ?: allProviderModels.firstOrNull()?.id
-                    ?: (if (effectiveProvider.contains("Zen", ignoreCase = true)) "deepseek-v4-flash-free" else effectiveModelId)
+                    ?: (if (effectiveProvider.contains("Zen", ignoreCase = true)) ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE else effectiveModelId)
             }
             if (effectiveModelId.isNotEmpty()) {
                 saveModelForChat(chatId, effectiveModelId, effectiveProvider)
@@ -1456,7 +1456,7 @@ class TelegramBridgeService : Service() {
                 } else {
                     allProviderModels.firstOrNull { it.isFree }?.id
                         ?: allProviderModels.firstOrNull()?.id
-                        ?: (if (providerName.contains("Zen", ignoreCase = true)) "deepseek-v4-flash-free" else "")
+                        ?: (if (providerName.contains("Zen", ignoreCase = true)) ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE else "")
                 }
                 repository.securePrefs.saveSetting("tg_provider_$chatId", providerName)
                 repository.securePrefs.saveSetting("agent_provider", providerName)

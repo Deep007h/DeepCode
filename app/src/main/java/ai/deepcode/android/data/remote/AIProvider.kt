@@ -373,30 +373,35 @@ class ZenProvider : AIProvider {
     override val name = "Zen AI"
     override val isFree = true
     override val models = listOf(
-        AIModel("deepseek-v4-flash-free", "DeepSeek V4 Flash (Free)", "Zen AI", true, "1M tokens", "Free"),
-        AIModel("muse-spark-1.3-contributor-free", "Muse Spark 1.3 (Free)", "Zen AI", true, "1M tokens", "Free"),
-        AIModel("muse-spark-1.2-contributor-free", "Muse Spark 1.2 (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("mimo-v2.5-free", "Mimo V2.5 (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("ling-3.0-flash-fin-free", "Ling 3.0 Flash Fin (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("nemotron-3-ultra-free", "Nemotron 3 Ultra (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("nemotron-3.5-lightning-free", "Nemotron 3.5 Lightning (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("deepseek-v4-flash-free", "DeepSeek V4 Flash (Free)", "Zen AI", true, "1M tokens", "Free"),
+        AIModel("muse-spark-1.3-contributor-free", "Muse Spark 1.3 (Free)", "Zen AI", true, "1M tokens", "Free"),
+        AIModel("muse-spark-1.2-contributor-free", "Muse Spark 1.2 (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("laguna-s-2.1-free", "Laguna S 2.1 (Free)", "Zen AI", true, "128k tokens", "Free"),
-        AIModel("claude-fable-5.1", "Claude Fable 5.1", "Zen AI", false, "1M tokens", "Paid"),
+        AIModel("claude-fable-5-1", "Claude Fable 5.1", "Zen AI", false, "1M tokens", "Paid"),
+        AIModel("gemini-3.8-flash", "Gemini 3.8 Flash", "Zen AI", false, "1M tokens", "Paid"),
+        AIModel("gemini-3.7-flash", "Gemini 3.7 Flash", "Zen AI", false, "1M tokens", "Paid"),
+        AIModel("gpt-6-astra", "GPT 6 Astra", "Zen AI", false, "128k tokens", "Paid"),
+        AIModel("grok-4.6", "Grok 4.6", "Zen AI", false, "128k tokens", "Paid"),
+        AIModel("glm-5.3-flash", "GLM 5.3 Flash", "Zen AI", false, "128k tokens", "Paid"),
+        AIModel("glm-5.3", "GLM 5.3", "Zen AI", false, "128k tokens", "Paid"),
+        AIModel("muse-spark-1.3", "Muse Spark 1.3", "Zen AI", false, "1M tokens", "Paid"),
+        AIModel("muse-spark-1.2", "Muse Spark 1.2", "Zen AI", false, "128k tokens", "Paid"),
+        AIModel("deepseek-v4-flash-vision-exp", "DeepSeek V4 Flash Vision Exp", "Zen AI", false, "1M tokens", "Paid"),
+        AIModel("deepseek-v4-flash", "DeepSeek V4 Flash", "Zen AI", false, "1M tokens", "Paid"),
+        AIModel("deepseek-v4-pro", "DeepSeek V4 Pro", "Zen AI", false, "1M tokens", "Paid"),
         AIModel("claude-fable-5", "Claude Fable 5", "Zen AI", false, "200k tokens", "Paid"),
         AIModel("claude-opus-5", "Claude Opus 5", "Zen AI", false, "200k tokens", "Paid"),
         AIModel("claude-sonnet-5", "Claude Sonnet 5", "Zen AI", false, "200k tokens", "Paid"),
         AIModel("claude-sonnet-4-6", "Claude Sonnet 4.6", "Zen AI", false, "200k tokens", "Paid"),
-        AIModel("gemini-3.8-flash", "Gemini 3.8 Flash", "Zen AI", false, "1M tokens", "Paid"),
-        AIModel("gemini-3.7-flash", "Gemini 3.7 Flash", "Zen AI", false, "1M tokens", "Paid"),
         AIModel("gemini-3.6-flash", "Gemini 3.6 Flash", "Zen AI", false, "1M tokens", "Paid"),
         AIModel("gemini-3.5-flash", "Gemini 3.5 Flash", "Zen AI", false, "1M tokens", "Paid"),
-        AIModel("gpt-6-astra", "GPT 6 Astra", "Zen AI", false, "128k tokens", "Paid"),
         AIModel("gpt-5.6-sol", "GPT 5.6 Sol", "Zen AI", false, "128k tokens", "Paid"),
         AIModel("gpt-5.5", "GPT 5.5", "Zen AI", false, "128k tokens", "Paid"),
         AIModel("gpt-5.4", "GPT 5.4", "Zen AI", false, "128k tokens", "Paid"),
-        AIModel("grok-4.6", "Grok 4.6", "Zen AI", false, "128k tokens", "Paid"),
-        AIModel("deepseek-v4-flash", "DeepSeek V4 Flash", "Zen AI", false, "1M tokens", "Paid"),
-        AIModel("deepseek-v4-pro", "DeepSeek V4 Pro", "Zen AI", false, "1M tokens", "Paid"),
         AIModel("glm-5.2", "GLM 5.2", "Zen AI", false, "128k tokens", "Paid"),
         AIModel("minimax-m3", "MiniMax M3", "Zen AI", false, "128k tokens", "Paid"),
         AIModel("kimi-k3", "Kimi K3", "Zen AI", false, "128k tokens", "Paid"),
@@ -551,6 +556,7 @@ class ZenProvider : AIProvider {
         onUsage: ((TurnTokenUsage) -> Unit)?
     ) {
         withContext(Dispatchers.IO) {
+            val sessionId = ZenModels.generateSessionId()
             val url = java.net.URL("$baseUrl/chat/completions")
             val conn = url.openConnection() as java.net.HttpURLConnection
             try {
@@ -560,7 +566,10 @@ class ZenProvider : AIProvider {
                 conn.setRequestProperty("Accept", "text/event-stream")
                 conn.setRequestProperty("Cache-Control", "no-cache")
                 conn.setRequestProperty("Authorization", "Bearer $token")
-                conn.setRequestProperty("X-OpenCode-Client", "android/1.0.0")
+                conn.setRequestProperty("User-Agent", ZenModels.USER_AGENT)
+                conn.setRequestProperty(ZenModels.CLIENT_HEADER_NAME, ZenModels.CLIENT_HEADER_VALUE)
+                conn.setRequestProperty(ZenModels.HEADER_SESSION_ID, sessionId)
+                conn.setRequestProperty(ZenModels.HEADER_SESSION_AFFINITY, sessionId)
                 conn.connectTimeout = 10000
                 conn.readTimeout = 60000
 
@@ -605,6 +614,7 @@ class ZenProvider : AIProvider {
         onUsage: ((TurnTokenUsage) -> Unit)?
     ) {
         withContext(Dispatchers.IO) {
+            val sessionId = ZenModels.generateSessionId()
             val request = Request.Builder()
                 .url("$baseUrl/chat/completions")
                 .post(payloadJson.toRequestBody("application/json".toMediaType()))
@@ -612,7 +622,10 @@ class ZenProvider : AIProvider {
                 .addHeader("Accept", "text/event-stream")
                 .addHeader("Cache-Control", "no-cache")
                 .addHeader("Authorization", "Bearer $token")
-                .addHeader("X-OpenCode-Client", "android/1.0.0")
+                .addHeader("User-Agent", ZenModels.USER_AGENT)
+                .addHeader(ZenModels.CLIENT_HEADER_NAME, ZenModels.CLIENT_HEADER_VALUE)
+                .addHeader(ZenModels.HEADER_SESSION_ID, sessionId)
+                .addHeader(ZenModels.HEADER_SESSION_AFFINITY, sessionId)
                 .build()
 
             val call = httpClient.newCall(request)
@@ -654,6 +667,7 @@ class ZenProvider : AIProvider {
             nonStreamPayload.addProperty("stream", false)
             val body = gson.toJson(nonStreamPayload)
 
+            val sessionId = ZenModels.generateSessionId()
             val url = java.net.URL("$baseUrl/chat/completions")
             val conn = url.openConnection() as java.net.HttpURLConnection
             try {
@@ -661,7 +675,10 @@ class ZenProvider : AIProvider {
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("Authorization", "Bearer $token")
-                conn.setRequestProperty("X-OpenCode-Client", "android/1.0.0")
+                conn.setRequestProperty("User-Agent", ZenModels.USER_AGENT)
+                conn.setRequestProperty(ZenModels.CLIENT_HEADER_NAME, ZenModels.CLIENT_HEADER_VALUE)
+                conn.setRequestProperty(ZenModels.HEADER_SESSION_ID, sessionId)
+                conn.setRequestProperty(ZenModels.HEADER_SESSION_AFFINITY, sessionId)
                 conn.connectTimeout = 15000
                 conn.readTimeout = 90000
 
@@ -672,6 +689,9 @@ class ZenProvider : AIProvider {
 
                 if (conn.responseCode != 200) {
                     val errBody = try { conn.errorStream?.bufferedReader()?.readText()?.take(500) ?: "" } catch (_: Exception) { "" }
+                    if (ApiKeyRotator.isRotatableError(null, conn.responseCode, errBody)) {
+                        throw RateLimitException("Zen AI", conn.responseCode, "Zen API Error ${conn.responseCode}: $errBody")
+                    }
                     throw Exception("Zen API Error ${conn.responseCode}: $errBody")
                 }
 
@@ -3074,8 +3094,20 @@ suspend fun fetchModels(apiKey: String, baseUrl: String, providerName: String): 
                 baseUrl.trimEnd('/') + "/models"
             }
 
-            val ua = if (providerName.contains("Agent Router", ignoreCase = true) || url.contains("agentrouter", ignoreCase = true)) "codex_cli_rs/0.1.0" else "opencode/1.0"
+            val ua = if (isZen) {
+                ZenModels.USER_AGENT
+            } else if (providerName.contains("Agent Router", ignoreCase = true) || url.contains("agentrouter", ignoreCase = true)) {
+                "codex_cli_rs/0.1.0"
+            } else {
+                "opencode/1.0"
+            }
             val reqBuilder = Request.Builder().url(url).header("User-Agent", ua)
+            if (isZen) {
+                val sId = ZenModels.generateSessionId()
+                reqBuilder.addHeader(ZenModels.CLIENT_HEADER_NAME, ZenModels.CLIENT_HEADER_VALUE)
+                reqBuilder.addHeader(ZenModels.HEADER_SESSION_ID, sId)
+                reqBuilder.addHeader(ZenModels.HEADER_SESSION_AFFINITY, sId)
+            }
             if (!isGemini && (!isZen || (apiKey.isNotBlank() && apiKey != "zen-free"))) {
                 reqBuilder.addHeader("Authorization", "Bearer $apiKey")
             }

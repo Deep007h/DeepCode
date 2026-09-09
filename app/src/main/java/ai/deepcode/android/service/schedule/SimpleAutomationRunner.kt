@@ -824,7 +824,7 @@ class SimpleAutomationRunner(private val context: Context) {
     private data class Resolved(val provider: AIProvider, val modelId: String)
 
     private fun resolveProvider(): Resolved {
-        val modelSetting = securePrefs.getSetting("agent_model", "deepseek-v4-flash-free")
+        val modelSetting = securePrefs.getSetting("agent_model", ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE)
         val providerSetting = securePrefs.getSetting("agent_provider", "Zen AI")
         val isZenChosen = providerSetting.contains("Zen", ignoreCase = true)
 

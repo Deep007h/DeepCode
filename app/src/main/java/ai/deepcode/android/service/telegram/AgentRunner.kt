@@ -308,9 +308,9 @@ $telegramRules"""
         val fallback = AIProviderFactory.providers.firstOrNull()
             ?: return ResolvedProvider(
                 ai.deepcode.android.data.remote.ZenProvider(), "Zen AI",
-                "deepseek-v4-flash-free", "", null
+                ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE, "", null
             )
-        val fallbackModelId = fallback.models.firstOrNull()?.id ?: "deepseek-v4-flash-free"
+        val fallbackModelId = fallback.models.firstOrNull()?.id ?: ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE
         return ResolvedProvider(fallback, fallback.name, fallbackModelId, "", null)
     }
 
