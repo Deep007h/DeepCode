@@ -13,6 +13,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,12 +44,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -62,16 +66,20 @@ fun AutomationSwitch(
 ) {
     val trackColor by animateColorAsState(
         targetValue = if (checked) Color(0xFFF59E0B) else Color(0xFF333640),
+        animationSpec = tween(durationMillis = 180),
         label = "switchTrackColor"
     )
-    val thumbOffset by animateDpAsState(
-        targetValue = if (checked) 20.dp else 0.dp,
+    val thumbOffsetFraction by animateFloatAsState(
+        targetValue = if (checked) 1f else 0f,
         animationSpec = spring(
-            dampingRatio = 0.75f,
-            stiffness = 350f
+            dampingRatio = 0.8f,
+            stiffness = 400f
         ),
         label = "switchThumbOffset"
     )
+    val density = LocalDensity.current
+    val maxOffsetPx = remember(density) { with(density) { 20.dp.toPx() } }
+
     Box(
         modifier = modifier
             .width(44.dp)
@@ -89,11 +97,44 @@ fun AutomationSwitch(
     ) {
         Box(
             modifier = Modifier
-                .offset(x = thumbOffset)
+                .offset { IntOffset((maxOffsetPx * thumbOffsetFraction).toInt(), 0) }
                 .size(20.dp)
                 .clip(CircleShape)
                 .background(Color.White)
         )
+    }
+}
+
+@Composable
+private fun PulsingStatusDot(
+    modifier: Modifier = Modifier,
+    color: Color = Color(0xFF34D399)
+) {
+    val infiniteGlow = rememberInfiniteTransition(label = "pulsingDotGlow")
+    val glowAlpha by infiniteGlow.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulsingDotAlpha"
+    )
+    Box(
+        modifier = modifier
+            .size(7.dp)
+            .graphicsLayer { alpha = glowAlpha }
+            .clip(CircleShape)
+            .background(color)
+    )
+}
+
+private val lastRunDateFormatter = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
+
+private fun formatLastRun(timestamp: Long): String {
+    if (timestamp <= 0L) return "never"
+    return synchronized(lastRunDateFormatter) {
+        lastRunDateFormatter.format(java.util.Date(timestamp))
     }
 }
 
@@ -129,124 +170,136 @@ fun AutomationsScreen(
     var customCronInput by remember { mutableStateOf("0 * * * *") }
     var newRuleActionPrompt by remember { mutableStateOf("") }
 
-    val categories = listOf("MESSAGING", "CONTENT", "CHATGPT", "SYSTEM", "DEVELOPER")
-    val presets = listOf(
-        "Every hour" to "0 * * * *",
-        "Every 6h" to "0 */6 * * *",
-        "Daily 7AM" to "0 7 * * *",
-        "Daily 8AM" to "0 8 * * *",
-        "Weekly Monday" to "0 9 * * 1",
-        "Custom" to "*/30 * * * *"
-    )
+    val categories = remember { listOf("MESSAGING", "CONTENT", "CHATGPT", "SYSTEM", "DEVELOPER") }
+    val presets = remember {
+        listOf(
+            "Every hour" to "0 * * * *",
+            "Every 6h" to "0 */6 * * *",
+            "Daily 7AM" to "0 7 * * *",
+            "Daily 8AM" to "0 8 * * *",
+            "Weekly Monday" to "0 9 * * 1",
+            "Custom" to "*/30 * * * *"
+        )
+    }
 
-    val infiniteGlow = rememberInfiniteTransition(label = "activeRuleGlow")
-    val glowAlpha by infiniteGlow.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glowAlpha"
-    )
+    val listState = rememberLazyListState()
 
-    LazyColumn(
+    val openCreateRuleSheet = {
+        editingRuleId = null
+        newRuleName = ""
+        newRuleDesc = ""
+        newRuleCategory = "MESSAGING"
+        newRuleSchedulePreset = "Every hour"
+        customCronInput = "0 * * * *"
+        newRuleActionPrompt = ""
+        showAddRuleBottomSheet = true
+    }
+
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(AppScreenBg)
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(top = 16.dp, bottom = 32.dp)
     ) {
-        // Header Row
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .depthPill(
-                                shape = CircleShape,
-                                elevation = 2.dp,
-                                isDark = true
-                            )
-                            .bouncyClickable(provideHaptic = true) { onBack() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column {
-                        Text(
-                            text = "Automations",
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            fontSize = 20.sp
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Automate your tasks and let AI work for you.",
-                            color = Color(0xFF9CA3AF),
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-
-                // + Add Rule Pill Button
-                Box(
-                    modifier = Modifier
-                        .depthPill(
-                            shape = RoundedCornerShape(24.dp),
-                            elevation = 4.dp,
-                            customGradient = listOf(Color(0xFFF59E0B), Color(0xFFD97706)),
-                            highlightAlpha = 0.40f,
-                            isDark = true
-                        )
-                        .bouncyClickable(provideHaptic = true) {
-                            editingRuleId = null
-                            newRuleName = ""
-                            newRuleDesc = ""
-                            newRuleCategory = "MESSAGING"
-                            newRuleSchedulePreset = "Every hour"
-                            customCronInput = "0 * * * *"
-                            newRuleActionPrompt = ""
-                            showAddRuleBottomSheet = true
-                        }
-                        .padding(horizontal = 16.dp, vertical = 9.dp),
-                    contentAlignment = Alignment.Center
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(top = 16.dp, bottom = 88.dp)
+        ) {
+            // Header Row
+            item(key = "header", contentType = "header") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .padding(end = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = null,
-                            tint = Color.Black,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "Add Rule",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = Color.Black
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .depthPill(
+                                    shape = CircleShape,
+                                    elevation = 2.dp,
+                                    isDark = true
+                                )
+                                .bouncyClickable(provideHaptic = true) { onBack() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f, fill = false)) {
+                            Text(
+                                text = "Automations",
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                fontSize = 20.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Automate your tasks and let AI work for you.",
+                                color = Color(0xFF9CA3AF),
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    // + Add Rule Pill Button (Guaranteed width and click target)
+                    Box(
+                        modifier = Modifier
+                            .wrapContentWidth()
+                            .depthPill(
+                                shape = RoundedCornerShape(24.dp),
+                                elevation = 4.dp,
+                                customGradient = listOf(Color(0xFFF59E0B), Color(0xFFD97706)),
+                                highlightAlpha = 0.40f,
+                                isDark = true
+                            )
+                            .bouncyClickable(provideHaptic = true) {
+                                openCreateRuleSheet()
+                            }
+                            .padding(horizontal = 14.dp, vertical = 9.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                tint = Color.Black,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Add Rule",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = Color.Black
+                            )
+                        }
                     }
                 }
             }
-        }
 
         // Section 1: ACTIVE AUTOMATION RULES + Count Badge
-        item {
+        item(key = "section_active", contentType = "section_header") {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -280,7 +333,7 @@ fun AutomationsScreen(
         }
 
         if (activeRules.isEmpty()) {
-            item {
+            item(key = "empty_active_rules", contentType = "empty_state") {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -336,15 +389,8 @@ fun AutomationsScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(12.dp))
-                                .clickable {
-                                    editingRuleId = null
-                                    newRuleName = ""
-                                    newRuleDesc = ""
-                                    newRuleCategory = "MESSAGING"
-                                    newRuleSchedulePreset = "Every hour"
-                                    customCronInput = "0 * * * *"
-                                    newRuleActionPrompt = ""
-                                    showAddRuleBottomSheet = true
+                                .bouncyClickable(provideHaptic = true) {
+                                    openCreateRuleSheet()
                                 }
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
@@ -366,7 +412,7 @@ fun AutomationsScreen(
                 }
             }
         } else {
-            items(activeRules, key = { it.id }) { rule ->
+            items(activeRules, key = { it.id }, contentType = { "active_rule" }) { rule ->
                 val isGpt = isChatGptAutomation(rule)
                 val nextRunText = remember(rule.nextRunAt) {
                     val now = System.currentTimeMillis()
@@ -479,12 +525,7 @@ fun AutomationsScreen(
                                         )
                                         if (rule.isEnabled) {
                                             Spacer(modifier = Modifier.width(6.dp))
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(7.dp)
-                                                    .clip(CircleShape)
-                                                    .background(Color(0xFF34D399).copy(alpha = glowAlpha))
-                                            )
+                                            PulsingStatusDot()
                                         }
                                     }
                                     Spacer(modifier = Modifier.height(2.dp))
@@ -575,7 +616,7 @@ fun AutomationsScreen(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Last run: ${if (rule.lastRunAt > 0L) java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(rule.lastRunAt)) else "never"}",
+                                    text = "Last run: ${formatLastRun(rule.lastRunAt)}",
                                     fontSize = 10.5.sp,
                                     color = Color(0xFF6B7280),
                                     maxLines = 1,
@@ -710,7 +751,7 @@ fun AutomationsScreen(
         }
 
         // Section 2: SUGGESTED TEMPLATES
-        item {
+        item(key = "section_templates", contentType = "section_header") {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -733,7 +774,7 @@ fun AutomationsScreen(
         }
 
         // Template 1: Forward to Email
-        item {
+        item(key = "template_email", contentType = "template_item") {
             TemplateItemCard(
                 title = "Forward to Email",
                 subtitle = "Send chat history to your inbox weekly",
@@ -764,7 +805,7 @@ fun AutomationsScreen(
         }
 
         // Template 2: ChatGPT Daily Assistant
-        item {
+        item(key = "template_chatgpt", contentType = "template_item") {
             TemplateItemCard(
                 title = "ChatGPT Daily Assistant",
                 subtitle = "Generate daily briefs, content & documents with AI",
@@ -795,7 +836,7 @@ fun AutomationsScreen(
         }
 
         // Template 3: Auto-Responder
-        item {
+        item(key = "template_autoresponder", contentType = "template_item") {
             TemplateItemCard(
                 title = "Auto-Responder",
                 subtitle = "Quick reply to common inquiries",
@@ -826,7 +867,7 @@ fun AutomationsScreen(
         }
 
         // Browse More Templates Card
-        item {
+        item(key = "template_browse", contentType = "template_item") {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -835,15 +876,8 @@ fun AutomationsScreen(
                         elevation = 2.dp,
                         isDark = true
                     )
-                    .clickable {
-                        editingRuleId = null
-                        newRuleName = ""
-                        newRuleDesc = ""
-                        newRuleCategory = "MESSAGING"
-                        newRuleSchedulePreset = "Every hour"
-                        customCronInput = "0 * * * *"
-                        newRuleActionPrompt = ""
-                        showAddRuleBottomSheet = true
+                    .bouncyClickable(provideHaptic = true) {
+                        openCreateRuleSheet()
                     }
                     .padding(horizontal = 16.dp, vertical = 14.dp)
             ) {
@@ -876,6 +910,36 @@ fun AutomationsScreen(
         }
     }
 
+    // Floating Action Button - Always easily accessible when scrolling
+    ExtendedFloatingActionButton(
+        onClick = { openCreateRuleSheet() },
+        containerColor = Color(0xFFF59E0B),
+        contentColor = Color.Black,
+        shape = RoundedCornerShape(20.dp),
+        elevation = FloatingActionButtonDefaults.elevation(
+            defaultElevation = 6.dp,
+            pressedElevation = 2.dp
+        ),
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(bottom = 16.dp, end = 16.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.Add,
+            contentDescription = "Add Rule",
+            modifier = Modifier.size(18.dp),
+            tint = Color.Black
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "Add Rule",
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.5.sp,
+            color = Color.Black
+        )
+    }
+}
+
     if (showAddRuleBottomSheet) {
         ModalBottomSheet(
             onDismissRequest = {
@@ -884,14 +948,30 @@ fun AutomationsScreen(
             },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = Color(0xFF111114),
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            dragHandle = {
+                BottomSheetDefaults.DragHandle(color = Color(0xFF374151))
+            }
         ) {
+            val inputBorderColor = Color.White.copy(alpha = 0.12f)
+            val inputFocusedBorderColor = Color(0xFFF59E0B)
+            val textFieldColors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = inputFocusedBorderColor,
+                unfocusedBorderColor = inputBorderColor,
+                focusedLabelColor = inputFocusedBorderColor,
+                unfocusedLabelColor = Color(0xFF9CA3AF),
+                cursorColor = inputFocusedBorderColor,
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White
+            )
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .imePadding()
                     .navigationBarsPadding()
                     .verticalScroll(rememberScrollState())
-                    .padding(24.dp),
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
@@ -910,7 +990,8 @@ fun AutomationsScreen(
                     placeholder = { Text("e.g. Daily Standup Notes") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    colors = textFieldColors
                 )
 
                 OutlinedTextField(
@@ -920,7 +1001,8 @@ fun AutomationsScreen(
                     placeholder = { Text("Brief description of this automation") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    colors = textFieldColors
                 )
 
                 // Category Dropdown
@@ -933,6 +1015,7 @@ fun AutomationsScreen(
                         readOnly = true,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
+                        colors = textFieldColors,
                         trailingIcon = {
                             IconButton(onClick = { categoryExpanded = true }) {
                                 Icon(Icons.Default.ArrowDropDown, "Select Category")
@@ -966,6 +1049,7 @@ fun AutomationsScreen(
                         readOnly = true,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
+                        colors = textFieldColors,
                         trailingIcon = {
                             IconButton(onClick = { presetExpanded = true }) {
                                 Icon(Icons.Default.ArrowDropDown, "Select Schedule")
@@ -1002,7 +1086,8 @@ fun AutomationsScreen(
                         supportingText = { Text("Format: min hour dom month dow (e.g. */30 * * * *)", fontSize = 10.sp, color = Color(0xFF9CA3AF)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = textFieldColors
                     )
                 }
 
@@ -1013,7 +1098,8 @@ fun AutomationsScreen(
                         label = { Text("Action Prompt") },
                         placeholder = { Text("Prompt given to the AI agent on every scheduled run...") },
                         modifier = Modifier.fillMaxWidth().height(110.dp),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = textFieldColors
                     )
 
                     // Dynamic parameter chips
@@ -1212,7 +1298,7 @@ private fun TemplateItemCard(
                 elevation = 2.dp,
                 isDark = true
             )
-            .clickable { onEdit() }
+            .bouncyClickable(provideHaptic = true) { onEdit() }
             .padding(14.dp)
     ) {
         Row(
@@ -1282,7 +1368,7 @@ private fun TemplateItemCard(
                             elevation = 1.dp,
                             isDark = true
                         )
-                        .clickable { onEdit() }
+                        .bouncyClickable(provideHaptic = true) { onEdit() }
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -1308,15 +1394,15 @@ private fun TemplateItemCard(
                 // Quick Add button
                 Box(
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(34.dp)
                         .depthPill(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(10.dp),
                             elevation = 1.dp,
                             isDark = true,
                             customGradient = listOf(Color(0xFF0D281C), Color(0xFF081811)),
                             customBorderColor = Color(0xFF10A37F).copy(alpha = 0.35f)
                         )
-                        .clickable { onAdd() },
+                        .bouncyClickable(provideHaptic = true) { onAdd() },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
