@@ -946,7 +946,6 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
             if (currentBottomPadding > 0.dp) {
                 cachedBottomBarHeight = currentBottomPadding
             }
-            val contentBottomPadding = if (selectedTab == 1) 0.dp else currentBottomPadding
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -955,7 +954,7 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                         start = padding.calculateStartPadding(layoutDirection),
                         top = padding.calculateTopPadding(),
                         end = padding.calculateEndPadding(layoutDirection),
-                        bottom = contentBottomPadding
+                        bottom = 0.dp
                     )
             ) {
                 androidx.compose.animation.AnimatedContent(
@@ -980,28 +979,30 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                             ) + androidx.compose.animation.fadeOut(
                                 animationSpec = androidx.compose.animation.core.tween(160)
                             )
-                        )
+                        ).using(androidx.compose.animation.SizeTransform(clip = false))
                     },
                     label = "mainTabTransition",
                     modifier = Modifier.fillMaxSize().background(AppScreenBg)
                 ) { tab ->
                     when (tab) {
-                        0 -> DashboardScreen(
-                            activeConnections = activeConnections,
-                            integrationsCount = integrations.size,
-                            onTabSelect = { appState.selectTab(it) },
-                            repository = repository,
-                            onShowTokenUsage = { appState.setShowTokenUsage(true) },
-                            onSessionSelect = { sessionId ->
-                                val isChatGpt = repository.securePrefs.getSetting("session_provider_$sessionId", "").equals("ChatGPT", ignoreCase = true)
-                                if (isChatGpt) {
-                                    repository.securePrefs.saveSetting("session_provider_$sessionId", "ChatGPT")
-                                    repository.securePrefs.saveSetting("session_model_$sessionId", "chatgpt-4o")
+                        0 -> Box(Modifier.fillMaxSize().padding(bottom = cachedBottomBarHeight)) {
+                            DashboardScreen(
+                                activeConnections = activeConnections,
+                                integrationsCount = integrations.size,
+                                onTabSelect = { appState.selectTab(it) },
+                                repository = repository,
+                                onShowTokenUsage = { appState.setShowTokenUsage(true) },
+                                onSessionSelect = { sessionId ->
+                                    val isChatGpt = repository.securePrefs.getSetting("session_provider_$sessionId", "").equals("ChatGPT", ignoreCase = true)
+                                    if (isChatGpt) {
+                                        repository.securePrefs.saveSetting("session_provider_$sessionId", "ChatGPT")
+                                        repository.securePrefs.saveSetting("session_model_$sessionId", "chatgpt-4o")
+                                    }
+                                    activeSessionId = sessionId
+                                    appState.selectTab(1)
                                 }
-                                activeSessionId = sessionId
-                                appState.selectTab(1)
-                            }
-                        )
+                            )
+                        }
                         1 -> ChatScreen(
                             repository = repository,
                             activeSessionId = activeSessionId,
@@ -1011,45 +1012,51 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                             onSessionChanged = { activeSessionId = it },
                             bottomBarHeight = cachedBottomBarHeight
                         )
-                        2 -> AutomationsScreen(
-                            onBack = { appState.selectTab(0) },
-                            onOpenChat = { sessionId, isChatGpt, ruleName ->
-                                if (isChatGpt) {
-                                    repository.securePrefs.saveSetting("session_provider_$sessionId", "ChatGPT")
-                                    repository.securePrefs.saveSetting("session_model_$sessionId", "chatgpt-4o")
-                                }
-                                scope.launch(Dispatchers.IO) {
-                                    val existing = repository.getSessionById(sessionId)
-                                    if (existing == null) {
-                                        val title = if (isChatGpt) "🤖 $ruleName (ChatGPT)" else "🤖 $ruleName"
-                                        repository.createSessionWithId(sessionId, title)
-                                    } else if (isChatGpt && !existing.title.contains("ChatGPT", ignoreCase = true)) {
-                                        repository.renameSession(sessionId, "${existing.title} (ChatGPT)")
+                        2 -> Box(Modifier.fillMaxSize().padding(bottom = cachedBottomBarHeight)) {
+                            AutomationsScreen(
+                                onBack = { appState.selectTab(0) },
+                                onOpenChat = { sessionId, isChatGpt, ruleName ->
+                                    if (isChatGpt) {
+                                        repository.securePrefs.saveSetting("session_provider_$sessionId", "ChatGPT")
+                                        repository.securePrefs.saveSetting("session_model_$sessionId", "chatgpt-4o")
                                     }
+                                    scope.launch(Dispatchers.IO) {
+                                        val existing = repository.getSessionById(sessionId)
+                                        if (existing == null) {
+                                            val title = if (isChatGpt) "🤖 $ruleName (ChatGPT)" else "🤖 $ruleName"
+                                            repository.createSessionWithId(sessionId, title)
+                                        } else if (isChatGpt && !existing.title.contains("ChatGPT", ignoreCase = true)) {
+                                            repository.renameSession(sessionId, "${existing.title} (ChatGPT)")
+                                        }
+                                    }
+                                    activeSessionId = sessionId
+                                    appState.selectTab(1)
                                 }
-                                activeSessionId = sessionId
-                                appState.selectTab(1)
-                            }
-                        )
-                        3 -> ConnectionsScreen(
-                            repository = repository,
-                            onBack = { appState.selectTab(0) },
-                            onNavigateToSettings = { appState.selectTab(4) }
-                        )
-                        4 -> SettingsScreen(
-                            repository = repository,
-                            profileManager = profileManager,
-                            onMenuClick = { scope.launch { drawerState.open() } },
-                            onViewLogs = { appState.setShowLogViewer(true) },
-                            onViewAgents = { appState.setShowAgents(true) },
-                            onManagePersonas = { appState.setShowPersonas(true) },
-                            onManageTemplates = { appState.setShowManageTemplates(true) },
-                            onNavigateToVpn = { appState.setShowVpnSettings(true) },
-                            onNavigateToApiKeys = { appState.setShowApiKeys(true) },
-                            onNavigateToCloudflare = { appState.setShowCloudflare(true) },
-                            onNavigateToPlugins = { appState.setShowPlugins(true) },
-                            onNavigateToThemesAndWallpapers = { appState.setShowThemesAndWallpapers(true) }
-                        )
+                            )
+                        }
+                        3 -> Box(Modifier.fillMaxSize().padding(bottom = cachedBottomBarHeight)) {
+                            ConnectionsScreen(
+                                repository = repository,
+                                onBack = { appState.selectTab(0) },
+                                onNavigateToSettings = { appState.selectTab(4) }
+                            )
+                        }
+                        4 -> Box(Modifier.fillMaxSize().padding(bottom = cachedBottomBarHeight)) {
+                            SettingsScreen(
+                                repository = repository,
+                                profileManager = profileManager,
+                                onMenuClick = { scope.launch { drawerState.open() } },
+                                onViewLogs = { appState.setShowLogViewer(true) },
+                                onViewAgents = { appState.setShowAgents(true) },
+                                onManagePersonas = { appState.setShowPersonas(true) },
+                                onManageTemplates = { appState.setShowManageTemplates(true) },
+                                onNavigateToVpn = { appState.setShowVpnSettings(true) },
+                                onNavigateToApiKeys = { appState.setShowApiKeys(true) },
+                                onNavigateToCloudflare = { appState.setShowCloudflare(true) },
+                                onNavigateToPlugins = { appState.setShowPlugins(true) },
+                                onNavigateToThemesAndWallpapers = { appState.setShowThemesAndWallpapers(true) }
+                            )
+                        }
                     }
                 }
 
@@ -1100,7 +1107,7 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                     ) {
                         val overlayKey = activeScreenKey
                         if (overlayKey != null) {
-                        Box(modifier = Modifier.fillMaxSize().background(AppScreenBg)) {
+                        Box(modifier = Modifier.fillMaxSize().background(AppScreenBg).padding(bottom = cachedBottomBarHeight)) {
                             when (overlayKey) {
                                 "themes_wallpapers" -> {
                                     ThemesAndWallpapersScreen(

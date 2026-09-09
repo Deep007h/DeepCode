@@ -675,8 +675,11 @@ fun DashboardScreen(
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(10.dp))
                                     .bouncyClickable(provideHaptic = true) {
-                                        onSessionSelect?.invoke(session.id)
-                                        onTabSelect(1)
+                                        if (onSessionSelect != null) {
+                                            onSessionSelect(session.id)
+                                        } else {
+                                            onTabSelect(1)
+                                        }
                                     }
                                     .padding(vertical = 6.dp, horizontal = 4.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
