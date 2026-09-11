@@ -639,12 +639,9 @@ private fun OnboardNameStep(
                 ),
             contentAlignment = Alignment.Center
         ) {
-            Image(
-                painter = painterResource(id = R.mipmap.ic_launcher),
-                contentDescription = "DeepCode Logo",
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(14.dp))
+            ai.deepcode.android.ui.components.AppLogoImage(
+                size = 52.dp,
+                clipRadius = 14.dp
             )
         }
         Spacer(Modifier.height(12.dp))

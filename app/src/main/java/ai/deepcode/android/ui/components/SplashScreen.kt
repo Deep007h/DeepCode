@@ -1,5 +1,7 @@
 package ai.deepcode.android.ui.components
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -15,15 +17,78 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import ai.deepcode.android.R
 import ai.deepcode.android.ui.theme.ActiveAccent
 import ai.deepcode.android.ui.theme.AppScreenBg
 import ai.deepcode.android.ui.theme.AppWhite
 import kotlinx.coroutines.delay
+
+/**
+ * Safely loads the application launcher icon as an [ImageBitmap] by rendering
+ * the system [android.graphics.drawable.Drawable] (including AdaptiveIconDrawable)
+ * to an in-memory bitmap. This avoids Compose's painterResource limitation which
+ * only supports VectorDrawables and rasterized images (PNG/JPG).
+ */
+@Composable
+fun rememberAppIconBitmap(): ImageBitmap? {
+    val context = LocalContext.current
+    return remember(context) {
+        try {
+            val drawable = ContextCompat.getDrawable(context, R.mipmap.ic_launcher)
+                ?: ContextCompat.getDrawable(context, R.mipmap.ic_launcher_round)
+            if (drawable != null) {
+                val size = 256
+                val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bitmap)
+                drawable.setBounds(0, 0, size, size)
+                drawable.draw(canvas)
+                bitmap.asImageBitmap()
+            } else {
+                null
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+}
+
+/**
+ * Renders the DeepCode app logo safely across all Android versions.
+ */
+@Composable
+fun AppLogoImage(
+    modifier: Modifier = Modifier,
+    size: Dp = 64.dp,
+    clipRadius: Dp = 16.dp
+) {
+    val iconBitmap = rememberAppIconBitmap()
+    if (iconBitmap != null) {
+        Image(
+            bitmap = iconBitmap,
+            contentDescription = "DeepCode Logo",
+            modifier = modifier
+                .size(size)
+                .clip(RoundedCornerShape(clipRadius))
+        )
+    } else {
+        Image(
+            painter = painterResource(id = R.mipmap.ic_launcher_foreground),
+            contentDescription = "DeepCode Logo",
+            modifier = modifier
+                .size(size)
+                .clip(RoundedCornerShape(clipRadius))
+        )
+    }
+}
 
 @Composable
 fun SplashScreen(
@@ -94,13 +159,10 @@ fun SplashScreen(
                         )
                 )
 
-                // App Icon
-                Image(
-                    painter = painterResource(id = R.mipmap.ic_launcher),
-                    contentDescription = "DeepCode Logo",
-                    modifier = Modifier
-                        .size(84.dp)
-                        .clip(RoundedCornerShape(22.dp))
+                // App Icon safely rendered
+                AppLogoImage(
+                    size = 84.dp,
+                    clipRadius = 22.dp
                 )
             }
 
