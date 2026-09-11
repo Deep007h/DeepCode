@@ -59,6 +59,9 @@ class AppState : ViewModel() {
     private val _showThemesAndWallpapers = MutableStateFlow(false)
     val showThemesAndWallpapers = _showThemesAndWallpapers.asStateFlow()
 
+    private val _showMemorySettings = MutableStateFlow(false)
+    val showMemorySettings = _showMemorySettings.asStateFlow()
+
     fun setShowThemesAndWallpapers(show: Boolean) {
         _showThemesAndWallpapers.value = show
     }
@@ -70,6 +73,7 @@ class AppState : ViewModel() {
         _showVpnSettings.value = false
         _showApiKeys.value = false
         _showCloudflare.value = false
+        _showMemorySettings.value = false
         _showPersonas.value = false
         _selectedPersona.value = null
         _showManageTemplates.value = false
@@ -136,6 +140,10 @@ class AppState : ViewModel() {
 
     fun setShowCloudflare(show: Boolean) {
         _showCloudflare.value = show
+    }
+
+    fun setShowMemorySettings(show: Boolean) {
+        _showMemorySettings.value = show
     }
 
     fun setShowPlugins(show: Boolean) {

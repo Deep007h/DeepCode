@@ -64,23 +64,14 @@ class AgentRepository(context: Context) {
         return integrationDao.getIntegrationByAppId(appId)
     }
 
+    private val memoryManager = ai.deepcode.android.memory.MemoryManager(context)
+
     suspend fun searchMemory(query: String): List<MemoryChunk> {
-        val cleaned = query.trim()
-        if (cleaned.isEmpty()) return emptyList()
-        val sanitized = cleaned
-            .replace("'", "''")
-            .split("\\s+".toRegex())
-            .filter { it.isNotBlank() }
-            .joinToString(" AND ")
-        return try {
-            memoryDao.searchMemory(sanitized)
-        } catch (e: Exception) {
-            emptyList()
-        }
+        return memoryManager.searchMemory(query)
     }
 
     suspend fun insertMemoryChunk(chunk: MemoryChunk) {
-        memoryDao.insertMemoryChunk(chunk)
+        memoryManager.insertMemoryChunk(chunk)
     }
 
     suspend fun getAllAutomations(): List<AutomationEntity> {

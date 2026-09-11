@@ -56,6 +56,7 @@ import ai.deepcode.android.ui.settings.TemplateDetailPage
 import ai.deepcode.android.ui.settings.VpnSettingsScreen
 import ai.deepcode.android.ui.settings.ApiKeysScreen
 import ai.deepcode.android.ui.settings.CloudflareSettingsScreen
+import ai.deepcode.android.ui.settings.MemorySettingsScreen
 import ai.deepcode.android.ui.settings.ThemesAndWallpapersScreen
 import ai.deepcode.android.ui.connections.ConnectionsScreen
 import ai.deepcode.android.ui.connections.ConnectionsViewModel
@@ -368,6 +369,7 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
     val showVpnSettings by appState.showVpnSettings.collectAsStateWithLifecycle()
     val showApiKeys by appState.showApiKeys.collectAsStateWithLifecycle()
     val showCloudflare by appState.showCloudflare.collectAsStateWithLifecycle()
+    val showMemorySettings by appState.showMemorySettings.collectAsStateWithLifecycle()
     val showPlugins by appState.showPlugins.collectAsStateWithLifecycle()
     val showThemesAndWallpapers by appState.showThemesAndWallpapers.collectAsStateWithLifecycle()
 
@@ -380,13 +382,14 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
         showAgents || selectedAgentId.isNotEmpty() ||
         showPersonas || selectedPersona != null ||
         showManageTemplates || selectedTemplateId.isNotEmpty() ||
-        showVpnSettings || showApiKeys || showCloudflare ||
+        showVpnSettings || showApiKeys || showCloudflare || showMemorySettings ||
         showPlugins || showThemesAndWallpapers
 
     BackHandler(enabled = isOverlayOpen) {
         when {
             showThemesAndWallpapers -> appState.setShowThemesAndWallpapers(false)
             showPlugins -> appState.setShowPlugins(false)
+            showMemorySettings -> appState.setShowMemorySettings(false)
             selectedPersona != null -> appState.setSelectedPersona(null)
             showPersonas -> appState.setShowPersonas(false)
             selectedTemplateId.isNotEmpty() -> appState.setSelectedTemplateId("")
@@ -932,6 +935,7 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                             appState.setShowVpnSettings(false)
                             appState.setShowApiKeys(false)
                             appState.setShowCloudflare(false)
+                            appState.setShowMemorySettings(false)
                             appState.setShowPlugins(false)
                             appState.selectTab(index)
                         }
@@ -1053,6 +1057,7 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                                 onNavigateToVpn = { appState.setShowVpnSettings(true) },
                                 onNavigateToApiKeys = { appState.setShowApiKeys(true) },
                                 onNavigateToCloudflare = { appState.setShowCloudflare(true) },
+                                onNavigateToMemory = { appState.setShowMemorySettings(true) },
                                 onNavigateToPlugins = { appState.setShowPlugins(true) },
                                 onNavigateToThemesAndWallpapers = { appState.setShowThemesAndWallpapers(true) }
                             )
@@ -1068,6 +1073,7 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                                 showPlugins -> "plugins"
                                 showVpnSettings -> "vpn"
                                 showCloudflare -> "cloudflare"
+                                showMemorySettings -> "memory_settings"
                                 showApiKeys -> "api_keys"
                                 showPersonas && selectedPersona != null -> "persona_detail"
                                 showPersonas -> "personas"
@@ -1136,6 +1142,12 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                                 CloudflareSettingsScreen(
                                     repository = repository,
                                     onBack = { appState.setShowCloudflare(false) }
+                                )
+                            }
+                            "memory_settings" -> {
+                                MemorySettingsScreen(
+                                    repository = repository,
+                                    onBack = { appState.setShowMemorySettings(false) }
                                 )
                             }
                             "api_keys" -> {

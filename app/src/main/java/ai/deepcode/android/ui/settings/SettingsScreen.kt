@@ -50,6 +50,7 @@ fun SettingsScreen(
     onNavigateToVpn: () -> Unit = {},
     onNavigateToApiKeys: () -> Unit = {},
     onNavigateToCloudflare: () -> Unit = {},
+    onNavigateToMemory: () -> Unit = {},
     onNavigateToPlugins: () -> Unit = {},
     onNavigateToThemesAndWallpapers: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -342,6 +343,13 @@ fun SettingsScreen(
                     title = "Cloudflare Settings",
                     subtitle = "Configure Cloudflare for image generation.",
                     onClick = onNavigateToCloudflare
+                )
+                HorizontalDivider(color = AppDivider, thickness = 1.dp)
+                SettingsSubscreenRow(
+                    icon = Icons.Default.Psychology,
+                    title = "Cross-Chat Memory",
+                    subtitle = "Manage shared long-term memory between in-app and Telegram chats.",
+                    onClick = onNavigateToMemory
                 )
                 HorizontalDivider(color = AppDivider, thickness = 1.dp)
                 SettingsSubscreenRow(

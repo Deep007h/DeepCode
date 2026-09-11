@@ -4499,8 +4499,9 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         }
         val baseUrl = providerDefaultBaseUrl(model.provider)
         val history = repository.getMessagesListForSession(activeSessionId)
+        val lastUserText = history.lastOrNull { it.role == "user" }?.content ?: ""
         val systemMsg = Message(id = "system", sessionId = activeSessionId, role = "system",
-            content = buildSystemPrompt(), timestamp = 0L)
+            content = buildSystemPrompt(lastUserText), timestamp = 0L)
 
         // If the AI has called web_search 2+ times in a row, inject a strong correction message
         val correctionMsg: Message? = if (consecutiveWebSearches >= 2) {
@@ -4837,7 +4838,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         val history = repository.getMessagesListForSession(sessionId)
         val systemMsg = Message(
             id = "system", sessionId = sessionId, role = "system",
-            content = buildSystemPrompt(), timestamp = 0L
+            content = buildSystemPrompt(newUserText), timestamp = 0L
         )
         val userMsg = Message(
             id = UUID.randomUUID().toString(), sessionId = sessionId,
@@ -4889,7 +4890,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         return result
     }
 
-    private fun buildSystemPrompt(): String {
+    private suspend fun buildSystemPrompt(userText: String = ""): String {
         val prefs = repository.securePrefs
         val personaEnabled = prefs.getSetting("persona_enabled", "false") == "true"
         val persona = if (personaEnabled) {
@@ -4897,6 +4898,10 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         } else {
             "You are DeepCode, an AI coding assistant."
         }
+
+        val memoryBlock = try {
+            repository.memoryManager.getFormattedMemoriesForPrompt(userText)
+        } catch (_: Exception) { "" }
 
         val isGitHubConnected = try {
             val t = prefs.getSetting("github_token", "").trim()
@@ -4929,9 +4934,11 @@ Available tools: github_get_user, github_list_repos, github_get_repo, github_cre
             "- GitHub Integration: Not connected. If the user asks for GitHub data, instruct them to connect GitHub in the Connections screen."
         }
 
+        val memoryPart = if (memoryBlock.isNotBlank()) "\n$memoryBlock\n" else ""
+
         return """
 $persona
-
+$memoryPart
 CRITICAL INSTRUCTIONS:
 - Be fast, helpful, and concise. Respond immediately and directly to the user without preamble.
 - NEVER output thinking, reasoning, chain-of-thought, internal monologue, audit rules, <think> tags, or thinking boxes. Output ONLY the clean final response.
@@ -5014,6 +5021,15 @@ $githubSection
             if (current.none { it.id == msg.id }) current + msg else current
         }
         repository.insertMessage(msg)
+
+        // Asynchronously extract and save important memory from this in-app exchange
+        try {
+            val userMsg = repository.getMessagesListForSession(targetSessionId).lastOrNull { it.role == "user" }
+            if (userMsg != null && userMsg.content.isNotBlank()) {
+                val extractor = ai.deepcode.android.memory.MemoryExtractor(repository.appContext)
+                extractor.extractAndSave(userMsg.content, finalContent, source = "inapp")
+            }
+        } catch (_: Exception) {}
     }
 
     private fun parseToolCallsFromText(rawText: String): List<ToolCall> {

@@ -845,6 +845,14 @@ class TelegramBridgeService : Service() {
                 .replace(Regex("""\[video:[^\]]+\]"""), "").trim()
                 .replace(Regex("""\[file:[^\]]+\]"""), "").trim()
 
+            // Asynchronously extract and save important memory from this Telegram exchange
+            try {
+                CoroutineScope(Dispatchers.IO).launch {
+                    ai.deepcode.android.memory.MemoryExtractor(applicationContext)
+                        .extractAndSave(text, cleanResponse.ifEmpty { finalResponse }, source = "telegram")
+                }
+            } catch (_: Exception) {}
+
             // Send media files first
             if (audioMatch != null) {
                 val audioPath = audioMatch.groupValues[1]

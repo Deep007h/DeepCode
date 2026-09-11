@@ -1757,10 +1757,18 @@ class AgentEngine(private val context: Context) {
                             } else {
                                 "You are DeepCode, an intelligent, fast, and helpful AI assistant. Respond directly, clearly, and concisely to the user without preamble. Format tables using standard markdown pipe syntax when comparing data."
                             }
-                            val finalSystemPrompt = if (personaEnabled && customPersona.isNotEmpty()) {
-                                "$basePrompt\n\nCUSTOM PERSONA:\nYou must adhere to the following persona rules:\n$customPersona"
+                            val memoryBlock = try {
+                                ai.deepcode.android.memory.MemoryManager(context).getFormattedMemoriesForPrompt(userPrompt)
+                            } catch (_: Exception) { "" }
+                            val promptWithMemory = if (memoryBlock.isNotBlank()) {
+                                "$basePrompt\n\n$memoryBlock"
                             } else {
                                 basePrompt
+                            }
+                            val finalSystemPrompt = if (personaEnabled && customPersona.isNotEmpty()) {
+                                "$promptWithMemory\n\nCUSTOM PERSONA:\nYou must adhere to the following persona rules:\n$customPersona"
+                            } else {
+                                promptWithMemory
                             }
                             val baseSystemMsg = Message(
                                 id = UUID.randomUUID().toString(),

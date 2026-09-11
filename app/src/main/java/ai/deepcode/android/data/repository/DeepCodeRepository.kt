@@ -39,6 +39,7 @@ class DeepCodeRepository(context: Context) {
         database.tokenUsageDao(),
         database.tokenEventDao()
     )
+    val memoryManager = ai.deepcode.android.memory.MemoryManager(appContext)
     private val toolExecutor = ToolExecutor(appContext).also {
         it.telegramDrive = telegramDrive
         val notionToken = securePrefs.getSetting("notion_token", "")
