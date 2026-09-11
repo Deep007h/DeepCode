@@ -38,10 +38,15 @@
 
 <div align="center">
 
-<img src="screenshots/chat_screen.png" width="340" style="border-radius: 24px; box-shadow: 0 12px 40px rgba(0,0,0,0.6); border: 2px solid rgba(255,255,255,0.08);" alt="DeepCode Autonomous Chat Screen" />
+| 🚀 Welcome & Quick Actions | 💬 Live Streaming & Memory Recall |
+|:---:|:---:|
+| <img src="screenshots/empty_chat_screen.png" width="310" style="border-radius: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); border: 2px solid rgba(255,255,255,0.08);" alt="DeepCode Chat Welcome Screen" /> | <img src="screenshots/chat_screen.png" width="310" style="border-radius: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); border: 2px solid rgba(255,255,255,0.08);" alt="DeepCode Autonomous Chat Screen" /> |
+| *Starter cards, quick prompts & neural voice entry* | *Real-time SSE streaming with Cross-Chat memory recall* |
+
+<br/>
 
 <p align="center">
-  <sub><b>DeepCode Autonomous Chat in Action</b>: Real-time SSE streaming with cross-chat long-term memory recall, dynamic model switching (Muse Spark 1.3 Free / Gemini 3.8 Flash), neural voice interaction, and buttery-smooth spring input transitions.</sub>
+  <sub><b>Left</b>: Fresh session with prompt starter cards, quick coding actions, and voice waveform mode. <b>Right</b>: Active autonomous agent conversation demonstrating continuous bi-directional Cross-Chat Long-Term Memory recall in real-time.</sub>
 </p>
 
 </div>
