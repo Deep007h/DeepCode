@@ -909,40 +909,28 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
             }
         }
         ) {
-        val isImeVisible = WindowInsets.isImeVisible
         Scaffold(
             bottomBar = {
-                // Animate instead of if(!isImeVisible) remove: hard-removing
-                // the bar changes Scaffold bottom padding instantly, which
-                // jumps the whole content (esp. Chat input with imePadding).
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = !isImeVisible,
-                    enter = androidx.compose.animation.slideInVertically { it } +
-                        androidx.compose.animation.fadeIn(),
-                    exit = androidx.compose.animation.slideOutVertically { it } +
-                        androidx.compose.animation.fadeOut()
-                ) {
-                    BottomNavBar(
-                        activeTab = selectedTab,
-                        onTabSelected = { index ->
-                            appState.setShowAgents(false)
-                            appState.setShowLogViewer(false)
-                            appState.setShowTokenUsage(false)
-                            appState.setSelectedFilePath("")
-                            appState.setShowFileExplorer(false)
-                            appState.setShowPersonas(false)
-                            appState.setSelectedPersona(null)
-                            appState.setShowManageTemplates(false)
-                            appState.setSelectedTemplateId("")
-                            appState.setShowVpnSettings(false)
-                            appState.setShowApiKeys(false)
-                            appState.setShowCloudflare(false)
-                            appState.setShowMemorySettings(false)
-                            appState.setShowPlugins(false)
-                            appState.selectTab(index)
-                        }
-                    )
-                }
+                BottomNavBar(
+                    activeTab = selectedTab,
+                    onTabSelected = { index ->
+                        appState.setShowAgents(false)
+                        appState.setShowLogViewer(false)
+                        appState.setShowTokenUsage(false)
+                        appState.setSelectedFilePath("")
+                        appState.setShowFileExplorer(false)
+                        appState.setShowPersonas(false)
+                        appState.setSelectedPersona(null)
+                        appState.setShowManageTemplates(false)
+                        appState.setSelectedTemplateId("")
+                        appState.setShowVpnSettings(false)
+                        appState.setShowApiKeys(false)
+                        appState.setShowCloudflare(false)
+                        appState.setShowMemorySettings(false)
+                        appState.setShowPlugins(false)
+                        appState.selectTab(index)
+                    }
+                )
             },
             containerColor = AppScreenBg
         ) { padding ->

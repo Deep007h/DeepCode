@@ -94,6 +94,7 @@ fun MemorySettingsScreen(
             .background(AppScreenBg)
     ) {
         TopAppBar(
+            windowInsets = WindowInsets(0.dp),
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -103,12 +104,12 @@ fun MemorySettingsScreen(
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text("Cross-Chat Memory", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("Cross-Chat Memory", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = AppWhite)
                 }
             },
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = AppWhite)
                 }
             },
             actions = {
@@ -123,7 +124,7 @@ fun MemorySettingsScreen(
             },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent,
-                titleContentColor = MaterialTheme.colorScheme.onBackground
+                titleContentColor = AppWhite
             )
         )
 

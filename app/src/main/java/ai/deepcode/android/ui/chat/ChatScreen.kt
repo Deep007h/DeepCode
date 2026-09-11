@@ -1152,14 +1152,22 @@ fun ChatScreen(
         }
 
         val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-        val effectiveBottomPadding = maxOf(bottomBarHeight, imeBottom)
+        val targetBottomPadding = maxOf(bottomBarHeight, imeBottom)
+        val animatedBottomPadding by animateDpAsState(
+            targetValue = targetBottomPadding,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMedium
+            ),
+            label = "inputBarBottomPadding"
+        )
 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp)
                 .padding(top = 8.dp)
-                .padding(bottom = effectiveBottomPadding)
+                .padding(bottom = animatedBottomPadding)
         ) {
             if (attachedFiles.isNotEmpty()) {
                 Row(
