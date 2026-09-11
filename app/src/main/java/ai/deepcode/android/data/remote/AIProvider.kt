@@ -38,14 +38,26 @@ import java.io.File
 
 fun shouldIncludeTools(messages: List<Message>, tools: List<Tool>?): Boolean {
     if (tools.isNullOrEmpty()) return false
+    // Active multi-turn tool loops must keep tools enabled
+    if (messages.any { it.role == "tool" || it.isToolCall }) return true
+
     val lastUserMsg = messages.lastOrNull { it.role == "user" }?.content?.lowercase() ?: ""
+    if (lastUserMsg.isBlank()) return false
+
+    // Explicit tool intents — avoid loose generic words like "read", "write", "run", "list", "task"
     val toolTriggers = listOf(
-        "search", "google", "web", "fetch", "url", "http", "image", "video", "audio", "tts", "speak", "voice",
-        "pdf", "file", "read", "write", "list", "directory", "dir", "grep", "command", "exec", "terminal", "run",
-        "qr", "csv", "zip", "json", "hash", "base64", "calendar", "contact", "vcard",
-        "schedule", "automation", "automate", "cron", "daily", "weekly", "hourly", "recurring", "remind", "reminder", "task", "tasks"
+        "search", "google", "browse", "web", "fetch", "url", "http://", "https://",
+        "image", "picture", "photo", "draw", "video", "veo",
+        "audio", "tts", "speak", "voice", "read aloud",
+        "pdf",
+        "save file", "write file", "create file", "delete file", "read file", "open file", "list files", "directory",
+        "run command", "run script", "execute", "terminal", "shell", "bash",
+        "qr code", "csv", "zip", "hash", "base64",
+        "calendar", "contact", "vcard", "gmail", "email", "youtube", "play song", "play music",
+        "schedule", "automation", "automate", "cron", "daily at", "remind me",
+        "remember this", "save to memory", "what did i say"
     )
-    return toolTriggers.any { lastUserMsg.contains(it) } || messages.any { it.role == "tool" || it.isToolCall }
+    return toolTriggers.any { lastUserMsg.contains(it) }
 }
 interface AIProvider {
     val name: String
@@ -344,7 +356,7 @@ private val client = OkHttpClient.Builder()
     .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
     .connectionPool(okhttp3.ConnectionPool(16, 5, TimeUnit.MINUTES))
     .connectTimeout(15, TimeUnit.SECONDS)
-    .readTimeout(90, TimeUnit.SECONDS)
+    .readTimeout(35, TimeUnit.SECONDS)
     .writeTimeout(30, TimeUnit.SECONDS)
     .proxySelector(object : java.net.ProxySelector() {
         override fun select(uri: java.net.URI?): List<java.net.Proxy> {
@@ -534,9 +546,9 @@ class ZenProvider : AIProvider {
             payload.addProperty("session_id", sessionId)
         }
 
-        if (!tools.isNullOrEmpty()) {
+        if (shouldIncludeTools(messages, tools)) {
             val toolsArray = com.google.gson.JsonArray()
-            for (tool in tools) {
+            for (tool in tools!!) {
                 val tObj = com.google.gson.JsonObject()
                 tObj.addProperty("type", "function")
                 val funcObj = com.google.gson.JsonObject()

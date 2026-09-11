@@ -4096,48 +4096,57 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     val rawBuffer = StringBuilder()
                     val bufferLock = Any()
                     var isStreamComplete = false
-                    val minCharsThreshold = 220
-
                     pacingJob = launch {
                         var currentEmittedLength = 0
                         while (isActive) {
                             val readyToStream = synchronized(bufferLock) {
-                                rawBuffer.length >= minCharsThreshold || isStreamComplete
+                                rawBuffer.isNotEmpty() || isStreamComplete
                             }
                             if (!readyToStream) {
-                                delay(35L)
+                                delay(16L)
                                 continue
                             }
 
-                            val nextWord: String? = synchronized(bufferLock) {
-                                if (currentEmittedLength >= rawBuffer.length) {
-                                    null
+                            val (nextChunk, remainingLen, isDone) = synchronized(bufferLock) {
+                                val remaining = rawBuffer.length - currentEmittedLength
+                                if (remaining <= 0) {
+                                    Triple(null, 0, isStreamComplete)
                                 } else {
                                     val rem = rawBuffer.substring(currentEmittedLength)
-                                    var idx = 0
-                                    while (idx < rem.length && !rem[idx].isWhitespace()) {
-                                        idx++
+                                    val takeCount = when {
+                                        isStreamComplete -> rem.length
+                                        remaining > 120 -> 40.coerceAtMost(rem.length)
+                                        remaining > 50 -> 20.coerceAtMost(rem.length)
+                                        else -> {
+                                            var idx = 0
+                                            while (idx < rem.length && !rem[idx].isWhitespace()) idx++
+                                            while (idx < rem.length && rem[idx].isWhitespace()) idx++
+                                            if (idx == 0) idx = 1.coerceAtMost(rem.length)
+                                            idx
+                                        }
                                     }
-                                    while (idx < rem.length && rem[idx].isWhitespace()) {
-                                        idx++
-                                    }
-                                    if (idx == 0) idx = 1.coerceAtMost(rem.length)
-                                    val wordChunk = rem.substring(0, idx)
-                                    currentEmittedLength += wordChunk.length
-                                    wordChunk
+                                    val chunk = rem.substring(0, takeCount)
+                                    currentEmittedLength += chunk.length
+                                    Triple(chunk, rawBuffer.length - currentEmittedLength, isStreamComplete)
                                 }
                             }
 
-                            if (nextWord != null) {
+                            if (nextChunk != null) {
                                 if (!streamHadAudioTool.get()) {
-                                    _streamedText.update { it + nextWord }
+                                    _streamedText.update { it + nextChunk }
                                 }
-                                val isDone = synchronized(bufferLock) { isStreamComplete }
-                                delay(if (isDone) 12L else 28L)
+                                if (isDone) {
+                                    if (remainingLen > 0) delay(4L)
+                                } else {
+                                    when {
+                                        remainingLen > 80 -> delay(4L)
+                                        remainingLen > 30 -> delay(8L)
+                                        else -> delay(16L)
+                                    }
+                                }
                             } else {
-                                val finished = synchronized(bufferLock) { isStreamComplete && currentEmittedLength >= rawBuffer.length }
-                                if (finished) break
-                                delay(30L)
+                                if (isDone) break
+                                delay(16L)
                             }
                         }
                     }
@@ -4537,48 +4546,57 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 val rawBuffer = StringBuilder()
                 val bufferLock = Any()
                 var isStreamComplete = false
-                val minCharsThreshold = 220
-
                 pacingJob = viewModelScope.launch {
                     var currentEmittedLength = 0
                     while (isActive) {
                         val readyToStream = synchronized(bufferLock) {
-                            rawBuffer.length >= minCharsThreshold || isStreamComplete
+                            rawBuffer.isNotEmpty() || isStreamComplete
                         }
                         if (!readyToStream) {
-                            delay(35L)
+                            delay(16L)
                             continue
                         }
 
-                        val nextWord: String? = synchronized(bufferLock) {
-                            if (currentEmittedLength >= rawBuffer.length) {
-                                null
+                        val (nextChunk, remainingLen, isDone) = synchronized(bufferLock) {
+                            val remaining = rawBuffer.length - currentEmittedLength
+                            if (remaining <= 0) {
+                                Triple(null, 0, isStreamComplete)
                             } else {
                                 val rem = rawBuffer.substring(currentEmittedLength)
-                                var idx = 0
-                                while (idx < rem.length && !rem[idx].isWhitespace()) {
-                                    idx++
+                                val takeCount = when {
+                                    isStreamComplete -> rem.length
+                                    remaining > 120 -> 40.coerceAtMost(rem.length)
+                                    remaining > 50 -> 20.coerceAtMost(rem.length)
+                                    else -> {
+                                        var idx = 0
+                                        while (idx < rem.length && !rem[idx].isWhitespace()) idx++
+                                        while (idx < rem.length && rem[idx].isWhitespace()) idx++
+                                        if (idx == 0) idx = 1.coerceAtMost(rem.length)
+                                        idx
+                                    }
                                 }
-                                while (idx < rem.length && rem[idx].isWhitespace()) {
-                                    idx++
-                                }
-                                if (idx == 0) idx = 1.coerceAtMost(rem.length)
-                                val wordChunk = rem.substring(0, idx)
-                                currentEmittedLength += wordChunk.length
-                                wordChunk
+                                val chunk = rem.substring(0, takeCount)
+                                currentEmittedLength += chunk.length
+                                Triple(chunk, rawBuffer.length - currentEmittedLength, isStreamComplete)
                             }
                         }
 
-                        if (nextWord != null) {
+                        if (nextChunk != null) {
                             if (!nextStreamHadAudioTool.get()) {
-                                _streamedText.update { it + nextWord }
+                                _streamedText.update { it + nextChunk }
                             }
-                            val isDone = synchronized(bufferLock) { isStreamComplete }
-                            delay(if (isDone) 12L else 28L)
+                            if (isDone) {
+                                if (remainingLen > 0) delay(4L)
+                            } else {
+                                when {
+                                    remainingLen > 80 -> delay(4L)
+                                    remainingLen > 30 -> delay(8L)
+                                    else -> delay(16L)
+                                }
+                            }
                         } else {
-                            val finished = synchronized(bufferLock) { isStreamComplete && currentEmittedLength >= rawBuffer.length }
-                            if (finished) break
-                            delay(30L)
+                            if (isDone) break
+                            delay(16L)
                         }
                     }
                 }

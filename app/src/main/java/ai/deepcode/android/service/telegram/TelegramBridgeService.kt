@@ -152,6 +152,8 @@ class TelegramBridgeService : Service() {
     private var configCheckJob: Job? = null
 
     private val client = OkHttpClient.Builder()
+        .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
+        .connectionPool(okhttp3.ConnectionPool(8, 5, TimeUnit.MINUTES))
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(45, TimeUnit.SECONDS)
         .build()
@@ -784,11 +786,14 @@ class TelegramBridgeService : Service() {
                             if (!statusOrText.startsWith("Thinking...\n") && !statusOrText.startsWith("Running tool: ")) {
                                 finalResponse = statusOrText
 
-                                // Live progressive edit to Telegram message (throttled every 1.2s to comply with Telegram rate limits)
+                                // Live progressive edit to Telegram message:
+                                // First chunk is delivered immediately (0s delay); subsequent chunks throttled to 1.2s.
                                 if (processingMsgId != null) {
                                     val now = System.currentTimeMillis()
                                     val cleanSoFar = stripThoughts(statusOrText).trim()
-                                    if (cleanSoFar.isNotEmpty() && cleanSoFar.length > lastEditedText.length + 6 && (now - lastEditTime > 1200)) {
+                                    val isFirstChunk = lastEditedText.isEmpty() && cleanSoFar.isNotEmpty()
+                                    val isSubsequentChunk = cleanSoFar.length > lastEditedText.length + 6 && (now - lastEditTime > 1200)
+                                    if (isFirstChunk || isSubsequentChunk) {
                                         lastEditTime = now
                                         lastEditedText = cleanSoFar
                                         val displayChunk = if (cleanSoFar.length > 3900) cleanSoFar.take(3900) + "..." else "$cleanSoFar ▌"
