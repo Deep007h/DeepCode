@@ -163,13 +163,16 @@ class MainActivity : ComponentActivity() {
         handleNotificationIntent(intent)
         AppLogger.i("MainActivity", "App starting...")
 
-        var repoState by mutableStateOf<DeepCodeRepository?>(null)
+        var repoState by mutableStateOf<DeepCodeRepository?>(DeepCodeRepository.getPrewarmedOrNull())
+        var splashFinished by mutableStateOf(false)
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val repo = DeepCodeRepository.getInstance(applicationContext)
-                withContext(Dispatchers.Main) {
-                    repoState = repo
+                val repo = repoState ?: DeepCodeRepository.getInstance(applicationContext)
+                if (repoState == null) {
+                    withContext(Dispatchers.Main) {
+                        repoState = repo
+                    }
                 }
                 AppLogger.i("MainActivity", "Repository initialized asynchronously")
 
@@ -203,7 +206,7 @@ class MainActivity : ComponentActivity() {
 
                     // Pre-configure dedicated ChatGPT session settings for any existing ChatGPT automations
                     val encPrefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(this@MainActivity)
-                    for (auto in db.automationDao().getAllAutomations()) {
+                    for (auto in autoList) {
                         val isGpt = auto.category.equals("CHATGPT", ignoreCase = true) ||
                                 auto.templateId.contains("chatgpt", ignoreCase = true) ||
                                 auto.configJson.contains("chatgpt", ignoreCase = true)
@@ -221,20 +224,8 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-
-                    val updatedList = db.automationDao().getAllAutomations()
-                    val sessionList = db.sessionDao().getAllSessionsList()
-                    val msgList = db.messageDao().getAllMessagesList()
-                    val dumpObj = mapOf(
-                        "automations" to updatedList,
-                        "sessions" to sessionList,
-                        "messages" to msgList.takeLast(30)
-                    )
-                    val dumpFile = java.io.File(getExternalFilesDir(null), "db_dump.json")
-                    dumpFile.writeText(com.google.gson.Gson().toJson(dumpObj))
-                    AppLogger.i("MainActivity", "Dumped db info to ${dumpFile.absolutePath}")
                 } catch (e: Exception) {
-                    AppLogger.e("MainActivity", "Dump/migration failed", e)
+                    AppLogger.e("MainActivity", "Automation migration failed", e)
                 }
 
                 val botStore = BotConfigStore(this@MainActivity)
@@ -284,6 +275,8 @@ class MainActivity : ComponentActivity() {
                     color = AppScreenBg
                 ) {
                     val activeRepo = repoState
+                    val showSplash = !splashFinished || activeRepo == null
+
                     if (activeRepo != null) {
                         // Sync persisted theme prefs into the global theme state
                         val themeMode by activeRepo.securePrefs.themeFlow.collectAsStateWithLifecycle()
@@ -293,10 +286,19 @@ class MainActivity : ComponentActivity() {
                             ai.deepcode.android.ui.theme.AppAccentId = accentId
                         }
                         AppMainLayout(activeRepo, profileManager)
-                    } else {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 2.5.dp)
-                        }
+                    }
+
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showSplash,
+                        exit = androidx.compose.animation.fadeOut(
+                            animationSpec = androidx.compose.animation.core.tween(250)
+                        )
+                    ) {
+                        ai.deepcode.android.ui.components.SplashScreen(
+                            onAnimationFinished = {
+                                splashFinished = true
+                            }
+                        )
                     }
                 }
             }
@@ -945,10 +947,9 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
             containerColor = AppScreenBg
         ) { padding ->
             val layoutDirection = LocalLayoutDirection.current
-            var cachedBottomBarHeight by remember { mutableStateOf(72.dp) }
-            val currentBottomPadding = padding.calculateBottomPadding()
-            if (currentBottomPadding > 0.dp) {
-                cachedBottomBarHeight = currentBottomPadding
+            val cachedBottomBarHeight = remember(padding) {
+                val b = padding.calculateBottomPadding()
+                if (b > 0.dp) b else 72.dp
             }
             Box(
                 modifier = Modifier
@@ -967,21 +968,21 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                         val direction = if (targetState > initialState) 1 else -1
                         (androidx.compose.animation.slideInHorizontally(
                             animationSpec = androidx.compose.animation.core.tween(
-                                durationMillis = 240,
+                                durationMillis = 150,
                                 easing = androidx.compose.animation.core.FastOutSlowInEasing
                             ),
-                            initialOffsetX = { (it * 0.15f * direction).toInt() }
+                            initialOffsetX = { (it * 0.05f * direction).toInt() }
                         ) + androidx.compose.animation.fadeIn(
-                            animationSpec = androidx.compose.animation.core.tween(200)
+                            animationSpec = androidx.compose.animation.core.tween(130)
                         )).togetherWith(
                             androidx.compose.animation.slideOutHorizontally(
                                 animationSpec = androidx.compose.animation.core.tween(
-                                    durationMillis = 200,
+                                    durationMillis = 120,
                                     easing = androidx.compose.animation.core.FastOutSlowInEasing
                                 ),
-                                targetOffsetX = { (-it * 0.15f * direction).toInt() }
+                                targetOffsetX = { (-it * 0.05f * direction).toInt() }
                             ) + androidx.compose.animation.fadeOut(
-                                animationSpec = androidx.compose.animation.core.tween(160)
+                                animationSpec = androidx.compose.animation.core.tween(100)
                             )
                         ).using(androidx.compose.animation.SizeTransform(clip = false))
                     },

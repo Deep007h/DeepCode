@@ -51,12 +51,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import ai.deepcode.android.R
 import ai.deepcode.android.data.local.Profile
 import ai.deepcode.android.data.local.ProfileManager
 import ai.deepcode.android.ui.theme.*
@@ -612,7 +614,56 @@ private fun OnboardNameStep(
     onRole: (String) -> Unit
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("What should we call you?", color = AppWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        // Branded DeepCode Logo
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            ActiveAccent.primary.copy(alpha = 0.25f),
+                            ActiveAccent.primaryGradientEnd.copy(alpha = 0.10f)
+                        )
+                    )
+                )
+                .border(
+                    width = 1.5.dp,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            ActiveAccent.primary.copy(alpha = 0.6f),
+                            ActiveAccent.primaryGradientEnd.copy(alpha = 0.2f)
+                        )
+                    ),
+                    shape = RoundedCornerShape(20.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = painterResource(id = R.mipmap.ic_launcher),
+                contentDescription = "DeepCode Logo",
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(14.dp))
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = "DeepCode",
+            color = AppWhite,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = (-0.5).sp
+        )
+        Text(
+            text = "AI Coding & Automation Workspace",
+            color = ActiveAccent.primary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(top = 2.dp, bottom = 22.dp)
+        )
+
+        Text("What should we call you?", color = AppWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Text("Pick a handle and a vibe.", color = AppMuted, fontSize = 13.sp,
              modifier = Modifier.padding(top = 4.dp, bottom = 20.dp))
 

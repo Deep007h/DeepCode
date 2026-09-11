@@ -1,12 +1,17 @@
 package ai.deepcode.android.ui.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -27,8 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ai.deepcode.android.data.repository.DeepCodeRepository
 import ai.deepcode.android.memory.MemoryChunk
 import ai.deepcode.android.ui.components.AppCard
-import ai.deepcode.android.ui.theme.AppDivider
-import ai.deepcode.android.ui.theme.AppPrimary
+import ai.deepcode.android.ui.theme.*
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -87,7 +91,7 @@ fun MemorySettingsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(AppScreenBg)
     ) {
         TopAppBar(
             title = {
@@ -208,36 +212,46 @@ fun MemorySettingsScreen(
                 }
             }
 
-            // Stats row
+            // Stats Grid (2x2)
             item {
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    StatBox(
-                        label = "Total",
-                        count = allMemories.size,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.weight(1f)
-                    )
-                    StatBox(
-                        label = "In-App",
-                        count = inAppCount,
-                        color = Color(0xFF4CAF50),
-                        modifier = Modifier.weight(1f)
-                    )
-                    StatBox(
-                        label = "Telegram",
-                        count = telegramCount,
-                        color = Color(0xFF29B6F6),
-                        modifier = Modifier.weight(1f)
-                    )
-                    StatBox(
-                        label = "Manual",
-                        count = manualCount,
-                        color = Color(0xFFFFA726),
-                        modifier = Modifier.weight(1f)
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        StatBox(
+                            label = "Total Memories",
+                            count = allMemories.size,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        StatBox(
+                            label = "In-App Chat",
+                            count = inAppCount,
+                            color = Color(0xFF4CAF50),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        StatBox(
+                            label = "Telegram Bot",
+                            count = telegramCount,
+                            color = Color(0xFF29B6F6),
+                            modifier = Modifier.weight(1f)
+                        )
+                        StatBox(
+                            label = "Manual / Custom",
+                            count = manualCount,
+                            color = Color(0xFFFFA726),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
 
@@ -246,46 +260,73 @@ fun MemorySettingsScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search stored memories...") },
-                    leadingIcon = { Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    placeholder = { Text("Search stored memories...", color = AppMuted) },
+                    leadingIcon = { Icon(Icons.Default.Search, null, tint = AppMuted) },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
                             IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Clear, "Clear search")
+                                Icon(Icons.Default.Clear, "Clear search", tint = AppMuted)
                             }
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = AppWhite,
+                        unfocusedTextColor = AppWhite,
+                        focusedBorderColor = AppPrimary,
+                        unfocusedBorderColor = AppBorder,
+                        focusedContainerColor = AppField,
+                        unfocusedContainerColor = AppField,
+                        cursorColor = AppPrimary
+                    ),
                     shape = RoundedCornerShape(12.dp)
                 )
             }
 
-            // Source Filter Chips
+            // Source Filter Chips (Horizontally scrollable)
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     FilterChip(
                         selected = selectedSourceFilter == "all",
                         onClick = { selectedSourceFilter = "all" },
-                        label = { Text("All (${allMemories.size})") }
+                        label = { Text("All (${allMemories.size})") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = AppPrimary.copy(alpha = 0.2f),
+                            selectedLabelColor = AppPrimary
+                        )
                     )
                     FilterChip(
                         selected = selectedSourceFilter == "inapp",
                         onClick = { selectedSourceFilter = "inapp" },
-                        label = { Text("In-App ($inAppCount)") }
+                        label = { Text("In-App ($inAppCount)") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFF4CAF50).copy(alpha = 0.2f),
+                            selectedLabelColor = Color(0xFF4CAF50)
+                        )
                     )
                     FilterChip(
                         selected = selectedSourceFilter == "telegram",
                         onClick = { selectedSourceFilter = "telegram" },
-                        label = { Text("Telegram ($telegramCount)") }
+                        label = { Text("Telegram ($telegramCount)") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFF29B6F6).copy(alpha = 0.2f),
+                            selectedLabelColor = Color(0xFF29B6F6)
+                        )
                     )
                     FilterChip(
                         selected = selectedSourceFilter == "manual",
                         onClick = { selectedSourceFilter = "manual" },
-                        label = { Text("Manual ($manualCount)") }
+                        label = { Text("Manual ($manualCount)") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFFFFA726).copy(alpha = 0.2f),
+                            selectedLabelColor = Color(0xFFFFA726)
+                        )
                     )
                 }
             }
@@ -465,6 +506,8 @@ private fun MemoryChunkCard(
         else -> "${ageMs / 86_400_000L}d ago"
     }
 
+    val context = LocalContext.current
+
     AppCard {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
@@ -500,12 +543,31 @@ private fun MemoryChunkCard(
                     )
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
                     Text(
                         timeStr,
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    IconButton(
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val clip = ClipData.newPlainText("Memory", "${memory.title}\n${memory.content}")
+                            clipboard.setPrimaryClip(clip)
+                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = "Copy",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                     IconButton(
                         onClick = onDelete,
                         modifier = Modifier.size(28.dp)
@@ -563,6 +625,36 @@ private fun AddMemoryDialog(
         title = { Text("Add Long-Term Memory") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Memory Source", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf("manual" to "Manual", "inapp" to "In-App", "telegram" to "Telegram").forEach { (srcKey, srcLabel) ->
+                        val selected = source == srcKey
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (selected) AppPrimary.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                                .border(
+                                    width = 1.dp,
+                                    color = if (selected) AppPrimary else Color.Transparent,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .clickable { source = srcKey }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                srcLabel,
+                                fontSize = 12.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (selected) AppPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },

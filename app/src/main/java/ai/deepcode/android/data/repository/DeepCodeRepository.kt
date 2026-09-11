@@ -81,6 +81,9 @@ class DeepCodeRepository(context: Context) {
         }
 
         @JvmStatic
+        fun getPrewarmedOrNull(): DeepCodeRepository? = prewarmedRepo.get()
+
+        @JvmStatic
         fun getInstance(context: Context): DeepCodeRepository {
             prewarmedRepo.get()?.let { return it }
             val repo = DeepCodeRepository(context.applicationContext)
