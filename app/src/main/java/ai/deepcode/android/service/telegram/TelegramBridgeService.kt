@@ -436,6 +436,8 @@ class TelegramBridgeService : Service() {
         if (storageKey == "together") keysToCheck.add("together-ai")
         if (storageKey == "fireworks") keysToCheck.add("fireworks-ai")
         if (storageKey == "nvidia") keysToCheck.add("nvidia-nim")
+        if (storageKey == "tokenharbor") keysToCheck.add("token-harbor")
+        if (storageKey == "token-harbor") keysToCheck.add("tokenharbor")
 
         for (k in keysToCheck) {
             val hasKey = prefs.getApiKeys(k).isNotEmpty() ||
@@ -609,15 +611,29 @@ class TelegramBridgeService : Service() {
         val allProviderModels = (dynamicModels + (providerObj?.models ?: emptyList())).associateBy { it.id }.values.toList()
 
         var effectiveModelId = savedModelId ?: ""
+        if (effectiveProvider.contains("Zen", ignoreCase = true)) {
+            effectiveModelId = ai.deepcode.android.data.remote.ZenModels.sanitize(effectiveModelId, allProviderModels)
+            if (effectiveModelId != savedModelId) {
+                saveModelForChat(chatId, effectiveModelId, effectiveProvider)
+            }
+        }
+
         if (effectiveModelId.isEmpty() || (allProviderModels.isNotEmpty() && allProviderModels.none { it.id == effectiveModelId })) {
             val storageId = providerStorageId(effectiveProvider)
             val defaultModelSetting = repository.securePrefs.getSetting("default_model_$storageId", "")
             effectiveModelId = if (defaultModelSetting.isNotEmpty() && allProviderModels.any { it.id == defaultModelSetting }) {
                 defaultModelSetting
             } else {
-                allProviderModels.firstOrNull { it.isFree }?.id
-                    ?: allProviderModels.firstOrNull()?.id
-                    ?: (if (effectiveProvider.contains("Zen", ignoreCase = true)) ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE else effectiveModelId)
+                if (effectiveProvider.contains("Zen", ignoreCase = true)) {
+                    allProviderModels.firstOrNull { it.id == ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE }?.id
+                        ?: allProviderModels.firstOrNull { it.id == "ling-3.0-flash-fin-free" }?.id
+                        ?: allProviderModels.firstOrNull { it.isFree }?.id
+                        ?: ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE
+                } else {
+                    allProviderModels.firstOrNull { it.isFree }?.id
+                        ?: allProviderModels.firstOrNull()?.id
+                        ?: effectiveModelId
+                }
             }
             if (effectiveModelId.isNotEmpty()) {
                 saveModelForChat(chatId, effectiveModelId, effectiveProvider)
@@ -648,7 +664,9 @@ class TelegramBridgeService : Service() {
             val musicMsg = musicHandler.play(text)
             if (musicMsg.isNotEmpty()) {
                 if (processingMsgId != null) {
-                    editMessage(token, chatId, processingMsgId, musicMsg)
+                    if (!editMessage(token, chatId, processingMsgId, musicMsg)) {
+                        sendMessage(token, chatId, musicMsg)
+                    }
                 } else {
                     sendMessage(token, chatId, musicMsg)
                 }
@@ -660,7 +678,9 @@ class TelegramBridgeService : Service() {
             val automationMsg = automationHandler.create(text, chatId.toString())
             if (automationMsg.isNotEmpty()) {
                 if (processingMsgId != null) {
-                    editMessage(token, chatId, processingMsgId, automationMsg)
+                    if (!editMessage(token, chatId, processingMsgId, automationMsg)) {
+                        sendMessage(token, chatId, automationMsg)
+                    }
                 } else {
                     sendMessage(token, chatId, automationMsg)
                 }
@@ -672,7 +692,9 @@ class TelegramBridgeService : Service() {
             val gmailResponse = gmailHandler.fetch(text)
             if (gmailResponse.isNotEmpty()) {
                 if (processingMsgId != null) {
-                    editMessage(token, chatId, processingMsgId, gmailResponse)
+                    if (!editMessage(token, chatId, processingMsgId, gmailResponse)) {
+                        sendMessage(token, chatId, gmailResponse)
+                    }
                 } else {
                     sendMessage(token, chatId, gmailResponse)
                 }
@@ -684,7 +706,9 @@ class TelegramBridgeService : Service() {
             val githubResponse = githubHandler.fetch(text)
             if (githubResponse.isNotEmpty()) {
                 if (processingMsgId != null) {
-                    editMessage(token, chatId, processingMsgId, githubResponse)
+                    if (!editMessage(token, chatId, processingMsgId, githubResponse)) {
+                        sendMessage(token, chatId, githubResponse)
+                    }
                 } else {
                     sendMessage(token, chatId, githubResponse)
                 }
@@ -735,7 +759,9 @@ class TelegramBridgeService : Service() {
                         "Your chat is currently set to use <b>$modelTitle</b> ($effectiveProvider), but no API key is configured.\n\n" +
                         "👉 Please add your key in DeepCode app (<b>Settings → API Keys → $effectiveProvider</b>), or switch to a free model with /models."
                     if (processingMsgId != null) {
-                        editMessage(token, chatId, processingMsgId, missingKeyMsg, parseMode = "HTML")
+                        if (!editMessage(token, chatId, processingMsgId, missingKeyMsg, parseMode = "HTML")) {
+                            sendMessage(token, chatId, missingKeyMsg, parseMode = "HTML")
+                        }
                     } else {
                         sendMessage(token, chatId, missingKeyMsg, parseMode = "HTML")
                     }
@@ -874,7 +900,10 @@ class TelegramBridgeService : Service() {
             val maxLen = 4000
             if (finalResponse.length <= maxLen) {
                 if (processingMsgId != null) {
-                    editMessage(token, chatId, processingMsgId, finalResponse)
+                    val edited = editMessage(token, chatId, processingMsgId, finalResponse)
+                    if (!edited) {
+                        sendMessage(token, chatId, finalResponse)
+                    }
                 } else {
                     sendMessage(token, chatId, finalResponse)
                 }
@@ -891,10 +920,14 @@ class TelegramBridgeService : Service() {
                 }
             }
         } catch (e: TimeoutCancellationException) {
+            val timeoutMsg = "⏱️ Request timed out after 5 minutes. Please try again."
             if (processingMsgId != null) {
-                editMessage(token, chatId, processingMsgId, "⏱️ Request timed out after 5 minutes. Please try again.")
+                val edited = editMessage(token, chatId, processingMsgId, timeoutMsg)
+                if (!edited) {
+                    sendMessage(token, chatId, timeoutMsg)
+                }
             } else {
-                sendMessage(token, chatId, "⏱️ Request timed out after 5 minutes. Please try again.")
+                sendMessage(token, chatId, timeoutMsg)
             }
             AppLogger.e(TAG, "Agent run timed out", e)
         } catch (e: Exception) {
@@ -912,7 +945,10 @@ class TelegramBridgeService : Service() {
                 "Error: ${e.javaClass.simpleName}"
             }
             if (processingMsgId != null) {
-                editMessage(token, chatId, processingMsgId, errorMsg, parseMode = "HTML")
+                val edited = editMessage(token, chatId, processingMsgId, errorMsg, parseMode = "HTML")
+                if (!edited) {
+                    sendMessage(token, chatId, errorMsg, parseMode = "HTML")
+                }
             } else {
                 sendMessage(token, chatId, errorMsg, parseMode = "HTML")
             }
@@ -1017,7 +1053,7 @@ class TelegramBridgeService : Service() {
                 val modelName = savedId?.let { formatModelTitle(it) } ?: "Default Model"
                 append("Current: *$modelName* ($savedProvider)\n\n")
             } else {
-                append("Current: *DeepSeek V4 Flash* (Zen AI - Free)\n\n")
+                append("Current: *Mimo V2.5* (Zen AI - Free)\n\n")
             }
             append("Tap a provider below to choose a model:")
         }
@@ -1060,6 +1096,8 @@ class TelegramBridgeService : Service() {
         if (storageId == "together") aliasKeys.add("together-ai")
         if (storageId == "fireworks") aliasKeys.add("fireworks-ai")
         if (storageId == "nvidia") aliasKeys.add("nvidia-nim")
+        if (storageId == "tokenharbor") aliasKeys.add("token-harbor")
+        if (storageId == "token-harbor") aliasKeys.add("tokenharbor")
 
         var apiKey = ""
         for (k in aliasKeys) {
@@ -1450,12 +1488,22 @@ class TelegramBridgeService : Service() {
                 val allProviderModels = (dynamicModels + (providerObj?.models ?: emptyList())).associateBy { it.id }.values.toList()
                 val storageId = providerStorageId(providerName)
                 val defaultModelSetting = repository.securePrefs.getSetting("default_model_$storageId", "")
-                val defaultModelId = if (defaultModelSetting.isNotEmpty() && allProviderModels.any { it.id == defaultModelSetting }) {
+                var defaultModelId = if (defaultModelSetting.isNotEmpty() && allProviderModels.any { it.id == defaultModelSetting }) {
                     defaultModelSetting
                 } else {
-                    allProviderModels.firstOrNull { it.isFree }?.id
-                        ?: allProviderModels.firstOrNull()?.id
-                        ?: (if (providerName.contains("Zen", ignoreCase = true)) ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE else "")
+                    if (providerName.contains("Zen", ignoreCase = true)) {
+                        allProviderModels.firstOrNull { it.id == ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE }?.id
+                            ?: allProviderModels.firstOrNull { it.id == "ling-3.0-flash-fin-free" }?.id
+                            ?: allProviderModels.firstOrNull { it.isFree }?.id
+                            ?: ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE
+                    } else {
+                        allProviderModels.firstOrNull { it.isFree }?.id
+                            ?: allProviderModels.firstOrNull()?.id
+                            ?: ""
+                    }
+                }
+                if (providerName.contains("Zen", ignoreCase = true)) {
+                    defaultModelId = ai.deepcode.android.data.remote.ZenModels.sanitize(defaultModelId, allProviderModels)
                 }
                 repository.securePrefs.saveSetting("tg_provider_$chatId", providerName)
                 repository.securePrefs.saveSetting("agent_provider", providerName)
@@ -1787,7 +1835,7 @@ class TelegramBridgeService : Service() {
         } catch (_: Exception) {}
     }
 
-    private fun editMessage(token: String, chatId: Long, messageId: Long, text: String, parseMode: String = "Markdown") {
+    private fun editMessage(token: String, chatId: Long, messageId: Long, text: String, parseMode: String = "Markdown"): Boolean {
         AppLogger.d(TAG, "editMessage entry: messageId=$messageId, text.length=${text.length}, parseMode=$parseMode")
         val cleanText = stripThoughts(text)
         val isHtml = parseMode.equals("HTML", ignoreCase = true) || (parseMode.isNotEmpty() && (cleanText.contains("<b>") || cleanText.contains("</b>") || cleanText.contains("<code>")))
@@ -1808,21 +1856,27 @@ class TelegramBridgeService : Service() {
                 .post(gson.toJson(payload).toRequestBody(jsonMediaType))
                 .build()
 
+            var succeeded = false
             var shouldRetry = false
             AppLogger.d(TAG, "Executing editMessage HTTP POST request...")
             client.newCall(request).execute().use { response ->
                 val code = response.code
+                val body = response.body?.string() ?: ""
                 AppLogger.d(TAG, "editMessage HTTP response received: code=$code")
-                if (!response.isSuccessful) {
-                    val body = response.body?.string()
+                if (response.isSuccessful) {
+                    AppLogger.d(TAG, "editMessage succeeded.")
+                    succeeded = true
+                } else {
                     AppLogger.e(TAG, "editMessage failed (code $code): $body")
-                    if (targetParseMode.isNotEmpty()) {
+                    if (code == 400 && body.contains("message is not modified", ignoreCase = true)) {
+                        succeeded = true
+                    } else if (targetParseMode.isNotEmpty()) {
                         shouldRetry = true
                     }
-                } else {
-                    AppLogger.d(TAG, "editMessage succeeded.")
                 }
             }
+
+            if (succeeded) return true
 
             if (shouldRetry && targetParseMode.isNotEmpty()) {
                 AppLogger.d(TAG, "Retrying editMessage without parse_mode for chat $chatId, message $messageId")
@@ -1836,16 +1890,22 @@ class TelegramBridgeService : Service() {
                     .post(gson.toJson(retryPayload).toRequestBody(jsonMediaType))
                     .build()
                 client.newCall(retryRequest).execute().use { response ->
-                    AppLogger.d(TAG, "editMessage retry response: code=${response.code}")
-                    if (!response.isSuccessful) {
-                        AppLogger.e(TAG, "editMessage retry failed: ${response.body?.string()}")
-                    } else {
+                    val code = response.code
+                    val body = response.body?.string() ?: ""
+                    AppLogger.d(TAG, "editMessage retry response: code=$code")
+                    if (response.isSuccessful || (code == 400 && body.contains("message is not modified", ignoreCase = true))) {
                         AppLogger.d(TAG, "editMessage retry succeeded.")
+                        return true
+                    } else {
+                        AppLogger.e(TAG, "editMessage retry failed: $body")
+                        return false
                     }
                 }
             }
+            return false
         } catch (e: Exception) {
             AppLogger.e(TAG, "editMessage error", e)
+            return false
         }
     }
 

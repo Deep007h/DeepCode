@@ -23,12 +23,12 @@ object ZenModels {
     val KNOWN_FREE_IDS = listOf(
         "mimo-v2.5-free",
         "ling-3.0-flash-fin-free",
-        "nemotron-3-ultra-free",
-        "nemotron-3.5-lightning-free",
         "deepseek-v4-flash-free",
         "muse-spark-1.3-contributor-free",
         "muse-spark-1.2-contributor-free",
-        "laguna-s-2.1-free"
+        "laguna-s-2.1-free",
+        "nemotron-3-ultra-free",
+        "nemotron-3.5-lightning-free"
     )
 
     val KNOWN_PAID_IDS = listOf(
@@ -63,12 +63,26 @@ object ZenModels {
     val ALL_KNOWN_IDS: Set<String> = (KNOWN_FREE_IDS + KNOWN_PAID_IDS).toSet()
 
     /**
-     * Map legacy or non-existent model IDs (such as "big-pickle" or "north-mini-code")
+     * Map legacy, non-existent, or currently non-functional model IDs
      * to active, valid Zen model IDs.
      */
     fun sanitize(requested: String?, available: List<AIModel>? = null): String {
         if (requested.isNullOrBlank()) return DEFAULT_FREE
         val clean = requested.trim()
+
+        // Proactively redirect known-broken or hanging models to the working default free model
+        val brokenModels = setOf(
+            "nemotron-3-ultra-free", "nemotron-3-ultra",
+            "nemotron-3.5-lightning-free", "nemotron-3.5-lightning",
+            "deepseek-v4-flash-free",
+            "muse-spark-1.3-contributor-free", "muse-spark-1.3-free",
+            "muse-spark-1.2-contributor-free", "muse-spark-1.2-free",
+            "laguna-s-2.1-free", "laguna-s-2.1",
+            "big-pickle", "north-mini-code", "pickle"
+        )
+        if (clean.lowercase() in brokenModels) {
+            return DEFAULT_FREE
+        }
 
         // Direct match with available or known models (case-insensitive)
         if (available != null && available.any { it.id.equals(clean, ignoreCase = true) }) {
@@ -79,20 +93,13 @@ object ZenModels {
 
         // Legacy & alias mapping
         return when (clean.lowercase()) {
-            "big-pickle", "north-mini-code", "pickle" -> DEFAULT_FREE
             "claude-fable-5.1" -> "claude-fable-5-1"
-            "deepseek-v4-flash" -> "deepseek-v4-flash-free"
             "mimo-v2.5" -> "mimo-v2.5-free"
-            "nemotron-3-ultra" -> "nemotron-3-ultra-free"
-            "nemotron-3.5-lightning" -> "nemotron-3.5-lightning-free"
-            "muse-spark-1.3", "muse-spark-1.3-contributor", "muse-spark-1.3-free" -> "muse-spark-1.3-contributor-free"
-            "muse-spark-1.2" -> "muse-spark-1.2-contributor-free"
-            "ling-3.0-flash" -> "ling-3.0-flash-fin-free"
-            "laguna-s-2.1" -> "laguna-s-2.1-free"
+            "ling-3.0-flash", "ling-3.0" -> "ling-3.0-flash-fin-free"
             else -> {
                 // If it contains "free", return default free
                 if (clean.contains("free", ignoreCase = true)) DEFAULT_FREE
-                else available?.firstOrNull { it.isFree }?.id ?: DEFAULT_FREE
+                else available?.firstOrNull { it.id == DEFAULT_FREE }?.id ?: available?.firstOrNull { it.isFree }?.id ?: DEFAULT_FREE
             }
         }
     }

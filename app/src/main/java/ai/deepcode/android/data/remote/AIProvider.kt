@@ -122,7 +122,8 @@ private fun genProvider(name: String, baseUrl: String, modelIds: List<Pair<Strin
         name = name,
         baseUrl = baseUrl,
         models = modelIds.map { (id, label) ->
-            AIModel(id, label, name, isFree, "", if (isFree) "Free" else "Paid")
+            val modelFree = isFree || id.contains("free", ignoreCase = true) || label.contains("free", ignoreCase = true)
+            AIModel(id, label, name, modelFree, "", if (modelFree) "Free" else "Paid")
         },
         isFree = isFree
     )
@@ -227,6 +228,16 @@ val OPENAI_PROVIDERS = listOf(
         "MiniMax-M3" to "MiniMax M3", "minimax-m3" to "MiniMax M3",
         "MiniMaxAI/MiniMax-M2.7" to "MiniMax M2.7",
         "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16" to "Nemotron 3.5 Lightning"
+    )),
+    genProvider("TokenHarbor", "https://tokenharbor.ai/v1", listOf(
+        "deepseek-v4.1-flash:free" to "DeepSeek V4.1 Flash (Free)",
+        "deepseek-v4.1-flash" to "DeepSeek V4.1 Flash",
+        "deepseek-chat" to "DeepSeek Chat",
+        "deepseek-reasoner" to "DeepSeek Reasoner",
+        "gpt-4o" to "GPT-4o",
+        "gpt-4o-mini" to "GPT-4o Mini",
+        "claude-3-5-sonnet" to "Claude 3.5 Sonnet",
+        "meta-llama/llama-3.3-70b-instruct" to "Llama 3.3 70B"
     )),
 )
 
@@ -415,8 +426,8 @@ class ZenProvider : AIProvider {
                 .connectionPool(okhttp3.ConnectionPool(8, 5, TimeUnit.MINUTES))
                 .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
                 .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .writeTimeout(20, TimeUnit.SECONDS)
+                .readTimeout(12, TimeUnit.SECONDS)
+                .writeTimeout(15, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)
                 .proxySelector(object : java.net.ProxySelector() {
                     override fun select(uri: java.net.URI?): List<java.net.Proxy> {
@@ -464,12 +475,13 @@ class ZenProvider : AIProvider {
         }
 
         for (candidate in candidateModels) {
-            val payload = buildZenPayload(messages, candidate, tools)
+            val sessionId = ZenModels.generateSessionId()
+            val payload = buildZenPayload(messages, candidate, tools, sessionId)
             val payloadJson = gson.toJson(payload)
 
             // 1. Pooled HTTP/2 OkHttp streaming
             try {
-                streamZenOkHttp(payloadJson, baseUrl, apiKey, zenHttpClient, onToken, onToolCall, onComplete, onUsage)
+                streamZenOkHttp(payloadJson, baseUrl, apiKey, zenHttpClient, sessionId, onToken, onToolCall, onComplete, onUsage)
                 return
             } catch (e: Throwable) {
                 ai.deepcode.android.util.AppLogger.w("ZenProvider", "Candidate $candidate OkHttp failed: ${e.message}")
@@ -485,15 +497,16 @@ class ZenProvider : AIProvider {
                 throw ex
             }
 
+            val isTimeout = lastException is java.net.SocketTimeoutException || errStr.contains("timeout", ignoreCase = true)
             val isHttpError = errStr.contains("503") || errStr.contains("502") ||
                 errStr.contains("500") || errStr.contains("400") || errStr.contains("404") ||
                 errStr.contains("Endpoint is unavailable") || errStr.contains("server_error") ||
                 errStr.contains("model_not_found", ignoreCase = true)
 
-            // 2. Only try HttpURLConnection backup if it was a transport/connection error, not server refusal
-            if (!isHttpError) {
+            // 2. Only try HttpURLConnection backup if it was a transport/connection error, NOT server refusal or timeout
+            if (!isHttpError && !isTimeout) {
                 try {
-                    streamZenHttp(payloadJson, baseUrl, apiKey, onToken, onToolCall, onComplete, onUsage)
+                    streamZenHttp(payloadJson, baseUrl, apiKey, sessionId, onToken, onToolCall, onComplete, onUsage)
                     return
                 } catch (e: Throwable) {
                     ai.deepcode.android.util.AppLogger.w("ZenProvider", "Candidate $candidate HttpURL failed: ${e.message}")
@@ -511,12 +524,15 @@ class ZenProvider : AIProvider {
         onError(lastException ?: java.net.ConnectException(errMsg))
     }
 
-    private fun buildZenPayload(messages: List<Message>, model: String, tools: List<Tool>?): com.google.gson.JsonObject {
+    private fun buildZenPayload(messages: List<Message>, model: String, tools: List<Tool>?, sessionId: String? = null): com.google.gson.JsonObject {
         val messagesArray = normalizeMessagesForApi(messages)
         val payload = com.google.gson.JsonObject()
         payload.addProperty("model", model)
         payload.add("messages", messagesArray)
         payload.addProperty("stream", true)
+        if (!sessionId.isNullOrBlank()) {
+            payload.addProperty("session_id", sessionId)
+        }
 
         if (!tools.isNullOrEmpty()) {
             val toolsArray = com.google.gson.JsonArray()
@@ -548,13 +564,13 @@ class ZenProvider : AIProvider {
         payloadJson: String,
         baseUrl: String,
         token: String,
+        sessionId: String = ZenModels.generateSessionId(),
         onToken: (String) -> Unit,
         onToolCall: (ToolCall) -> Unit,
         onComplete: (String) -> Unit,
         onUsage: ((TurnTokenUsage) -> Unit)?
     ) {
         withContext(Dispatchers.IO) {
-            val sessionId = ZenModels.generateSessionId()
             val url = java.net.URL("$baseUrl/chat/completions")
             val conn = url.openConnection() as java.net.HttpURLConnection
             try {
@@ -568,8 +584,8 @@ class ZenProvider : AIProvider {
                 conn.setRequestProperty(ZenModels.CLIENT_HEADER_NAME, ZenModels.CLIENT_HEADER_VALUE)
                 conn.setRequestProperty(ZenModels.HEADER_SESSION_ID, sessionId)
                 conn.setRequestProperty(ZenModels.HEADER_SESSION_AFFINITY, sessionId)
-                conn.connectTimeout = 10000
-                conn.readTimeout = 60000
+                conn.connectTimeout = 5000
+                conn.readTimeout = 12000
 
                 val writer = java.io.OutputStreamWriter(conn.outputStream, "UTF-8")
                 writer.write(payloadJson)
@@ -606,13 +622,13 @@ class ZenProvider : AIProvider {
         baseUrl: String,
         token: String,
         httpClient: OkHttpClient,
+        sessionId: String = ZenModels.generateSessionId(),
         onToken: (String) -> Unit,
         onToolCall: (ToolCall) -> Unit,
         onComplete: (String) -> Unit,
         onUsage: ((TurnTokenUsage) -> Unit)?
     ) {
         withContext(Dispatchers.IO) {
-            val sessionId = ZenModels.generateSessionId()
             val request = Request.Builder()
                 .url("$baseUrl/chat/completions")
                 .post(payloadJson.toRequestBody("application/json".toMediaType()))
@@ -879,7 +895,7 @@ class ZenProvider : AIProvider {
             } catch (e: Exception) {
                 // Preserve real server errors; ignore only malformed keep-alive chunks.
                 val msg = e.message ?: ""
-                if (msg.startsWith("Zen stream error:")) throw e
+                if (e is RateLimitException || msg.startsWith("Zen stream error:") || ApiKeyRotator.isRotatableError(e, null, msg)) throw e
             }
         }
         try { source.close() } catch (_: Exception) {}
@@ -934,6 +950,9 @@ class ZenProvider : AIProvider {
         }
         if (accumulatedContent.isEmpty() && finalAnswer.isNotEmpty()) {
             try { onToken(finalAnswer) } catch (_: Exception) {}
+        }
+        if (finalAnswer.isEmpty() && toolCallBuilders.isEmpty()) {
+            throw Exception("Zen stream completed with empty response")
         }
         onComplete(finalAnswer)
     }
@@ -1345,7 +1364,11 @@ class GeminiProvider : AIProvider {
                         val estimatedOutput = (collectedGeminiText.length / 4).coerceAtLeast(1)
                         onUsage.invoke(TurnTokenUsage(estimatedInput, estimatedOutput, 0))
                     }
-                    onComplete(collectedGeminiText.toString())
+                    val textResult = collectedGeminiText.toString()
+                    if (textResult.isEmpty() && totalCandidates == 0) {
+                        throw Exception("Gemini stream completed with empty response")
+                    }
+                    onComplete(textResult)
                 }
             } catch (e: Throwable) {
                 ai.deepcode.android.util.AppLogger.e("GeminiProvider", "Gemini stream failed", e)
@@ -2480,6 +2503,9 @@ private suspend fun streamOpenAiCompatible(
             if (accumulatedContent.isEmpty() && finalAnswer.isNotEmpty()) {
                 try { onToken(finalAnswer) } catch (_: Exception) {}
             }
+            if (finalAnswer.isEmpty() && toolCallBuilders.isEmpty()) {
+                throw Exception("Stream completed with empty content for model $effectiveModel")
+            }
             onComplete(finalAnswer)
         } catch (e: Throwable) {
             ai.deepcode.android.util.AppLogger.e("AIProvider", "streamOpenAiCompatible failed", e)
@@ -2878,6 +2904,8 @@ val PROVIDER_BASE_URLS = mapOf(
     "StepFun" to "https://api.stepfun.com/v1",
     "VolcEngine" to "https://ark.cn-beijing.volces.com/api/v3",
     "Baidu" to "https://qianfan.baidubce.com/v2",
+    "TokenHarbor" to "https://tokenharbor.ai/v1",
+    "Token Harbor" to "https://tokenharbor.ai/v1",
 )
 
 fun providerDefaultBaseUrl(providerName: String): String =
@@ -2889,6 +2917,7 @@ fun providerDefaultBaseUrl(providerName: String): String =
 fun providerStorageId(providerName: String): String {
     val clean = providerName.trim().lowercase()
     return when (clean) {
+        "tokenharbor", "token harbor", "token-harbor" -> "tokenharbor"
         "zen ai", "zen", "zen (free)" -> "zen"
         "openai" -> "openai"
         "anthropic", "claude" -> "anthropic"
@@ -3202,6 +3231,22 @@ suspend fun fetchModels(apiKey: String, baseUrl: String, providerName: String): 
                         contextWindow = ctxStr,
                         badge = if (isFree) "Free" else "Paid"
                     ))
+                }
+            }
+            if (isZen) {
+                // Prioritize verified working free models at the very top
+                result.sortBy { model ->
+                    when (model.id) {
+                        ZenModels.DEFAULT_FREE -> 0
+                        "ling-3.0-flash-fin-free" -> 1
+                        "deepseek-v4-flash-free" -> 10
+                        "muse-spark-1.3-contributor-free" -> 11
+                        "muse-spark-1.2-contributor-free" -> 12
+                        "laguna-s-2.1-free" -> 13
+                        "nemotron-3-ultra-free" -> 20
+                        "nemotron-3.5-lightning-free" -> 21
+                        else -> if (model.isFree) 5 else 15
+                    }
                 }
             }
             AppLogger.i("ModelCatalog", "Fetched ${result.size} models for $providerName")

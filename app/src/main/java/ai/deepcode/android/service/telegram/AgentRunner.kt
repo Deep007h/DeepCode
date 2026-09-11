@@ -326,6 +326,7 @@ $telegramRules"""
             "Mistral AI" -> "mistral"
             "Ollama Cloud" -> "ollama"
             "Agent Router" -> "agentrouter"
+            "TokenHarbor", "Token Harbor" -> "tokenharbor"
             "GMI Cloud" -> "gmi"
             else -> ""
         }

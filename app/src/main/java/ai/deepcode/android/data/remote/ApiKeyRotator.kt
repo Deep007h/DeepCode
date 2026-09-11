@@ -112,6 +112,9 @@ object ApiKeyRotator {
                 textToInspect.contains("401") ||
                 textToInspect.contains("402") ||
                 textToInspect.contains("403") ||
+                textToInspect.contains("model is disabled") ||
+                textToInspect.contains("model disabled") ||
+                textToInspect.contains("modelerror") ||
                 textToInspect.contains("rate limit") ||
                 textToInspect.contains("rate_limit") ||
                 textToInspect.contains("ratelimit") ||

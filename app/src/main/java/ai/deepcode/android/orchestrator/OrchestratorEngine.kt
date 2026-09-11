@@ -411,6 +411,7 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
         name.contains("Mistral", ignoreCase = true) -> true
         name.contains("Ollama", ignoreCase = true) -> true
         name.contains("Agent Router", ignoreCase = true) -> true
+        name.contains("TokenHarbor", ignoreCase = true) || name.contains("Token Harbor", ignoreCase = true) -> true
         else -> false
     }
 
@@ -446,6 +447,7 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
         name.contains("Mistral", ignoreCase = true) -> "https://api.mistral.ai/v1"
         name.contains("Ollama", ignoreCase = true) -> "https://ollama.com/v1"
         name.contains("Agent Router", ignoreCase = true) -> "https://agentrouter.org/v1"
+        name.contains("TokenHarbor", ignoreCase = true) || name.contains("Token Harbor", ignoreCase = true) -> "https://tokenharbor.ai/v1"
         name.contains("GMI Cloud", ignoreCase = true) -> "https://api.gmi-serving.com/v1"
         else -> "https://api.openai.com/v1"
     }
@@ -460,6 +462,7 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
         name.contains("Mistral", ignoreCase = true) -> prefs.getApiKey("mistral")
         name.contains("Ollama", ignoreCase = true) -> prefs.getApiKey("ollama")
         name.contains("Agent Router", ignoreCase = true) -> prefs.getApiKey("agentrouter")
+        name.contains("TokenHarbor", ignoreCase = true) || name.contains("Token Harbor", ignoreCase = true) -> prefs.getApiKey("tokenharbor")
         name.contains("GMI Cloud", ignoreCase = true) -> prefs.getApiKey("gmi")
         else -> ""
     }

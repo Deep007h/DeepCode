@@ -384,7 +384,13 @@ class AgentEngine(private val context: Context) {
                 provider.models.firstOrNull()?.id ?: dynamicModels.firstOrNull()?.id ?: (if (provider.name.contains("Zen", ignoreCase = true)) ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE else (modelOverride ?: ""))
             }
         }
-        return Pair(provider, finalModel)
+        val sanitizedModel = if (provider.name.contains("Zen", ignoreCase = true)) {
+            val allModels = provider.models + dynamicModels
+            ai.deepcode.android.data.remote.ZenModels.sanitize(finalModel, allModels)
+        } else {
+            finalModel
+        }
+        return Pair(provider, sanitizedModel)
     }
     // Helper to get API key for the chosen provider
     private fun getApiKeyForProvider(provider: AIProvider): String {
@@ -415,6 +421,7 @@ class AgentEngine(private val context: Context) {
             "Anthropic" -> securePrefs.getApiKey("anthropic")
             "Mistral AI", "Mistral" -> securePrefs.getApiKey("mistral")
             "Agent Router", "AgentRouter" -> securePrefs.getApiKey("agentrouter")
+            "TokenHarbor", "Token Harbor" -> securePrefs.getApiKey("tokenharbor")
             "GMI Cloud" -> securePrefs.getApiKey("gmi")
             "Ollama Cloud", "OllamaCloud" -> securePrefs.getApiKey("ollama-cloud")
             "NVIDIA NIM" -> securePrefs.getApiKey("nvidia")
@@ -485,6 +492,7 @@ class AgentEngine(private val context: Context) {
             "Mistral AI" -> "url_mistral"
             "Ollama", "Ollama Cloud" -> "url_ollama"
             "Agent Router" -> "url_agentrouter"
+            "TokenHarbor", "Token Harbor" -> "url_tokenharbor"
             "GMI Cloud" -> "url_gmi"
             else -> ""
         }
@@ -1631,12 +1639,18 @@ class AgentEngine(private val context: Context) {
                 val resolvedFallback = fallbackProviders.flatMap { (provider, baseModel) ->
                     val storageId = providerStorageId(provider.name)
                     val fallbackModels = linkedSetOf<String>()
-                    fallbackModels.add(baseModel)
+                    val sanitizedBaseModel = if (provider.name.contains("Zen", ignoreCase = true)) {
+                        ai.deepcode.android.data.remote.ZenModels.sanitize(baseModel, provider.models)
+                    } else {
+                        baseModel
+                    }
+                    fallbackModels.add(sanitizedBaseModel)
                     if (provider.name == "Google Gemini" && baseModel == "gemini-2.5-pro") {
                         fallbackModels.add("gemini-2.5-flash")
                     }
                     if (provider.name.contains("Zen", ignoreCase = true)) {
                         fallbackModels.add(ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE)
+                        fallbackModels.add("ling-3.0-flash-fin-free")
                         fallbackModels.addAll(ai.deepcode.android.data.remote.ZenModels.KNOWN_FREE_IDS)
                     }
                     val entries = mutableListOf<FallbackCandidate>()
@@ -1655,6 +1669,8 @@ class AgentEngine(private val context: Context) {
                     if (storageId == "together") storageKeysToCheck.add("together-ai")
                     if (storageId == "fireworks") storageKeysToCheck.add("fireworks-ai")
                     if (storageId == "nvidia") storageKeysToCheck.add("nvidia-nim")
+                    if (storageId == "tokenharbor") storageKeysToCheck.add("token-harbor")
+                    if (storageId == "token-harbor") storageKeysToCheck.add("tokenharbor")
 
                     // Add all configured slots 1..6
                     for (sk in storageKeysToCheck) {

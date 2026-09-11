@@ -122,6 +122,7 @@ private val ALL_PROVIDERS = listOf(
     ProviderDef("hcnsec", "HCNSec", "OpenAI", "apikey"),
     ProviderDef("openadapter", "OpenAdapter", "OpenAI", "apikey"),
     ProviderDef("agentrouter", "AgentRouter", "OpenAI", "apikey"),
+    ProviderDef("tokenharbor", "TokenHarbor", "OpenAI", "apikey"),
     ProviderDef("gmi", "GMI Cloud", "OpenAI", "apikey"),
     ProviderDef("baseten", "Baseten", "OpenAI", "apikey"),
     ProviderDef("heroku", "Heroku", "OpenAI", "apikey"),
@@ -877,12 +878,14 @@ private fun getProviderDescription(id: String, name: String): String = when (id)
     "novita" -> "Cost-effective GPU cloud inference."
     "siliconflow" -> "High throughput inference in Asia-Pacific."
     "agentrouter" -> "Decentralized routing and agent execution."
+    "tokenharbor" -> "High-speed AI model routing and inference."
     "ollama", "ollamacloud" -> "Local and private open source LLMs."
     else -> "Fast and secure API inference for $name."
 }
 
 private fun getProviderConsoleUrl(id: String): String = when (id) {
     "groq" -> "https://console.groq.com"
+    "tokenharbor" -> "https://tokenharbor.ai"
     "gmi" -> "https://console.gmicloud.ai"
     "zen" -> "https://opencode.ai"
     "openai" -> "https://platform.openai.com"

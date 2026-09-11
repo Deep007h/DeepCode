@@ -3428,6 +3428,7 @@ fun ProviderMiniLogo(providerName: String) {
         "Omniroute" -> Triple(Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981), "Om")
         "Antigravity" -> Triple(Color(0xFF8B5CF6).copy(alpha = 0.15f), Color(0xFF8B5CF6), "Ag")
         "Agent Router" -> Triple(Color(0xFFF59E0B).copy(alpha = 0.15f), Color(0xFFF59E0B), "Ar")
+        "TokenHarbor", "Token Harbor" -> Triple(Color(0xFF0EA5E9).copy(alpha = 0.15f), Color(0xFF0EA5E9), "Th")
         else -> Triple(AppDivider, AppWhite, providerName.take(2).uppercase())
     }
     Box(modifier = Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)).background(bgColor),

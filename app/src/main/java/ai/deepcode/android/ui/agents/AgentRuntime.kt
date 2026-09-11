@@ -214,41 +214,40 @@ class AgentRuntime(private val context: Context) {
         name.contains("Mistral", ignoreCase = true) -> true
         name.contains("Ollama", ignoreCase = true) -> true
         name.contains("Agent Router", ignoreCase = true) -> true
+        name.contains("TokenHarbor", ignoreCase = true) || name.contains("Token Harbor", ignoreCase = true) -> true
         else -> false
     }
 
-    private fun getCompatibleBaseUrl(name: String): String {
-        return when {
-            name.contains("Zen", ignoreCase = true) -> "https://opencode.ai/zen/v1"
-            name.contains("Groq", ignoreCase = true) -> "https://api.groq.com/openai/v1"
-            name.contains("Cerebrus", ignoreCase = true) -> "https://api.cerebras.ai/v1"
-            name.contains("OpenRouter", ignoreCase = true) -> "https://openrouter.ai/api/v1"
-            name.contains("Omniroute", ignoreCase = true) -> "http://10.0.2.2:20128/v1"
-            name.contains("OpenAI", ignoreCase = true) -> "https://api.openai.com/v1"
-            name.contains("Mistral", ignoreCase = true) -> "https://api.mistral.ai/v1"
-            name.contains("Ollama", ignoreCase = true) -> "https://ollama.com/v1"
-            name.contains("Agent Router", ignoreCase = true) -> "https://agentrouter.org/v1"
-            name.contains("GMI Cloud", ignoreCase = true) -> "https://api.gmi-serving.com/v1"
-            else -> "https://api.openai.com/v1"
-        }
+    private fun getCompatibleBaseUrl(name: String): String = when {
+        name.contains("Zen", ignoreCase = true) -> "https://opencode.ai/zen/v1"
+        name.contains("Groq", ignoreCase = true) -> "https://api.groq.com/openai/v1"
+        name.contains("Cerebrus", ignoreCase = true) -> "https://api.cerebras.ai/v1"
+        name.contains("OpenRouter", ignoreCase = true) -> "https://openrouter.ai/api/v1"
+        name.contains("Omniroute", ignoreCase = true) -> "http://10.0.2.2:20128/v1"
+        name.contains("OpenAI", ignoreCase = true) -> "https://api.openai.com/v1"
+        name.contains("Mistral", ignoreCase = true) -> "https://api.mistral.ai/v1"
+        name.contains("Ollama", ignoreCase = true) -> "https://ollama.com/v1"
+        name.contains("Agent Router", ignoreCase = true) -> "https://agentrouter.org/v1"
+        name.contains("TokenHarbor", ignoreCase = true) || name.contains("Token Harbor", ignoreCase = true) -> "https://tokenharbor.ai/v1"
+        name.contains("GMI Cloud", ignoreCase = true) -> "https://api.gmi-serving.com/v1"
+        else -> "https://api.openai.com/v1"
     }
 
-    private fun getApiKeyForProvider(name: String): String {
-        return when {
-            name.contains("Zen", ignoreCase = true) -> prefs.getApiKey("zen")
-            name.contains("Gemini", ignoreCase = true) -> prefs.getApiKey("gemini")
-            name.contains("Groq", ignoreCase = true) -> prefs.getApiKey("groq")
-            name.contains("Cerebrus", ignoreCase = true) -> prefs.getApiKey("cerebrus")
-            name.contains("OpenRouter", ignoreCase = true) -> prefs.getApiKey("openrouter")
-            name.contains("Omniroute", ignoreCase = true) -> prefs.getApiKey("omniroute")
-            name.contains("OpenAI", ignoreCase = true) -> prefs.getApiKey("openai")
-            name.contains("Anthropic", ignoreCase = true) -> prefs.getApiKey("anthropic")
-            name.contains("Mistral", ignoreCase = true) -> prefs.getApiKey("mistral")
-            name.contains("Ollama", ignoreCase = true) -> prefs.getApiKey("ollama")
-            name.contains("Agent Router", ignoreCase = true) -> prefs.getApiKey("agentrouter")
-            name.contains("GMI Cloud", ignoreCase = true) -> prefs.getApiKey("gmi")
-            else -> ""
-        }
+    private fun getApiKeyForProvider(name: String): String = when {
+        name.contains("Zen", ignoreCase = true) -> prefs.getApiKey("zen")
+        name.contains("Gemini", ignoreCase = true) -> prefs.getApiKey("gemini")
+        name.contains("Groq", ignoreCase = true) -> prefs.getApiKey("groq")
+        name.contains("Cerebrus", ignoreCase = true) -> prefs.getApiKey("cerebrus")
+        name.contains("OpenRouter", ignoreCase = true) -> prefs.getApiKey("openrouter")
+        name.contains("Omniroute", ignoreCase = true) -> prefs.getApiKey("omniroute")
+        name.contains("OpenAI", ignoreCase = true) -> prefs.getApiKey("openai")
+        name.contains("Anthropic", ignoreCase = true) -> prefs.getApiKey("anthropic")
+        name.contains("Mistral", ignoreCase = true) -> prefs.getApiKey("mistral")
+        name.contains("Ollama", ignoreCase = true) -> prefs.getApiKey("ollama")
+        name.contains("Agent Router", ignoreCase = true) -> prefs.getApiKey("agentrouter")
+        name.contains("TokenHarbor", ignoreCase = true) || name.contains("Token Harbor", ignoreCase = true) -> prefs.getApiKey("tokenharbor")
+        name.contains("GMI Cloud", ignoreCase = true) -> prefs.getApiKey("gmi")
+        else -> ""
     }
 
     private fun buildSystemPrompt(agent: AgentEntity, sessionContext: String): String {
