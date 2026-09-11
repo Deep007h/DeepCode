@@ -220,7 +220,9 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
                 // 4. Mirror to Telegram if chat ID is configured
                 if (!telegramChatId.isNullOrBlank() && finalOutput.isNotEmpty()) {
                     try {
-                        SimpleAutomationRunner(context).run(interpolatedPrompt, telegramChatId)
+                        val targetType = if (isChatGPT) "🌐 ChatGPT" else "🤖 In-App"
+                        val tgMessage = "⏰ <b>Scheduled Task Completed: ${rule.name}</b>\n• <b>Type:</b> $targetType\n────────── ✦ ──────────\n\n$finalOutput"
+                        SimpleAutomationRunner(context).sendDirectTelegram(tgMessage, telegramChatId)
                     } catch (e: Exception) {
                         AppLogger.w("AutomationRunner", "Telegram mirror failed: ${e.message}")
                     }

@@ -793,29 +793,66 @@ class SimpleAutomationRunner(private val context: Context) {
         return result.toString()
     }
 
+    suspend fun sendDirectTelegram(text: String, chatId: String) {
+        sendTelegram(text, chatId)
+    }
+
     private suspend fun sendTelegram(text: String, chatId: String) = withContext(Dispatchers.IO) {
         try {
-            val botToken = securePrefs.getSetting("telegram_bot_token", "")
+            var botToken = securePrefs.getSetting("telegram_bot_token", "")
+            if (botToken.isBlank()) {
+                botToken = ai.deepcode.android.service.telegram.BotConfigStore(context).getTokens().firstOrNull() ?: ""
+            }
             if (botToken.isBlank()) return@withContext
 
-            val url = URL("https://api.telegram.org/bot${botToken}/sendMessage")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"
-            conn.doOutput = true
-            conn.setRequestProperty("Content-Type", "application/json")
             val cleanText = stripThoughts(text)
-            val processed = formatMarkdownTablesForTelegram(cleanText)
-            val body = """{"chat_id":"$chatId","text":${gson.toJson(processed)},"parse_mode":"Markdown"}"""
-            OutputStreamWriter(conn.outputStream).use { it.write(body) }
-            val code = conn.responseCode
-            if (code !in 200..299) {
-                val err = conn.errorStream?.use { it.readBytes()?.let { String(it) } } ?: "no body"
-                AppLogger.e("SimpleAutomationRunner", "Telegram error $code: $err")
-            } else {
-                conn.inputStream.use { it.readBytes() }
-                AppLogger.i("SimpleAutomationRunner", "Sent to chat $chatId")
+            val formattedHtml = ai.deepcode.android.service.telegram.TelegramFormatter.formatMarkdownToTelegramHtml(cleanText)
+            val chunks = ai.deepcode.android.service.telegram.TelegramFormatter.chunkTelegramHtml(formattedHtml, maxLen = 3900)
+
+            for (chunk in chunks) {
+                var success = false
+                val url = URL("https://api.telegram.org/bot${botToken}/sendMessage")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.doOutput = true
+                conn.setRequestProperty("Content-Type", "application/json")
+                val body = """{"chat_id":"$chatId","text":${gson.toJson(chunk)},"parse_mode":"HTML"}"""
+                OutputStreamWriter(conn.outputStream).use { it.write(body) }
+                val code = conn.responseCode
+                if (code in 200..299) {
+                    conn.inputStream.use { it.readBytes() }
+                    AppLogger.i("SimpleAutomationRunner", "Sent chunk to chat $chatId")
+                    success = true
+                } else {
+                    val err = conn.errorStream?.use { it.readBytes()?.let { b -> String(b) } } ?: "no body"
+                    AppLogger.w("SimpleAutomationRunner", "Telegram HTML send returned $code: $err. Retrying as plain text.")
+                }
+                conn.disconnect()
+
+                if (!success) {
+                    // Fallback to plain text if HTML parsing failed
+                    val plainText = ai.deepcode.android.service.telegram.TelegramFormatter.stripHtml(chunk)
+                    val retryConn = url.openConnection() as HttpURLConnection
+                    retryConn.requestMethod = "POST"
+                    retryConn.doOutput = true
+                    retryConn.setRequestProperty("Content-Type", "application/json")
+                    val retryBody = """{"chat_id":"$chatId","text":${gson.toJson(plainText)}}"""
+                    OutputStreamWriter(retryConn.outputStream).use { it.write(retryBody) }
+                    val retryCode = retryConn.responseCode
+                    if (retryCode in 200..299) {
+                        retryConn.inputStream.use { it.readBytes() }
+                        AppLogger.i("SimpleAutomationRunner", "Sent fallback plain text chunk to chat $chatId")
+                    } else {
+                        val retryErr = retryConn.errorStream?.use { it.readBytes()?.let { b -> String(b) } } ?: "no body"
+                        AppLogger.e("SimpleAutomationRunner", "Telegram plain text retry error $retryCode: $retryErr")
+                    }
+                    retryConn.disconnect()
+                }
+
+                if (chunks.size > 1) {
+                    delay(500)
+                }
             }
-            conn.disconnect()
         } catch (e: Exception) {
             AppLogger.e("SimpleAutomationRunner", "Telegram send failed", e)
         }

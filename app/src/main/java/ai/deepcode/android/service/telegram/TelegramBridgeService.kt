@@ -37,6 +37,15 @@ import ai.deepcode.android.service.github.GitHubHandler
 import com.google.gson.Gson
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
+import ai.deepcode.android.data.local.AppDatabase
+import ai.deepcode.android.ui.automations.AutomationEntity
+import ai.deepcode.android.ui.automations.AutomationRepository
+import ai.deepcode.android.ui.automations.AutomationScheduler
+import ai.deepcode.android.ui.automations.AutomationRunner
+import ai.deepcode.android.ui.components.cleanControlAndCitationTokens
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -302,8 +311,65 @@ class TelegramBridgeService : Service() {
         }
     }
 
+    private fun registerBotCommands(token: String) {
+        try {
+            val commands = JsonArray().apply {
+                add(JsonObject().apply {
+                    addProperty("command", "start")
+                    addProperty("description", "Start bot & welcome message")
+                })
+                add(JsonObject().apply {
+                    addProperty("command", "tasks")
+                    addProperty("description", "View scheduled tasks & outputs")
+                })
+                add(JsonObject().apply {
+                    addProperty("command", "task_output")
+                    addProperty("description", "Show task execution output")
+                })
+                add(JsonObject().apply {
+                    addProperty("command", "models")
+                    addProperty("description", "Switch AI provider & model")
+                })
+                add(JsonObject().apply {
+                    addProperty("command", "voice")
+                    addProperty("description", "Change voice character & tone")
+                })
+                add(JsonObject().apply {
+                    addProperty("command", "language")
+                    addProperty("description", "Set AI & TTS language")
+                })
+                add(JsonObject().apply {
+                    addProperty("command", "persona")
+                    addProperty("description", "List available personas")
+                })
+                add(JsonObject().apply {
+                    addProperty("command", "clear")
+                    addProperty("description", "Clear conversation history")
+                })
+                add(JsonObject().apply {
+                    addProperty("command", "help")
+                    addProperty("description", "Show available commands & guide")
+                })
+            }
+            val payload = JsonObject().apply {
+                add("commands", commands)
+            }
+            val url = "${API_BASE}${token}/setMyCommands"
+            val request = Request.Builder()
+                .url(url)
+                .post(gson.toJson(payload).toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(request).execute().use { resp ->
+                AppLogger.d(TAG, "setMyCommands response: ${resp.code}")
+            }
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "Failed to register bot commands: ${e.message}")
+        }
+    }
+
     private suspend fun pollBot(token: String) {
         AppLogger.d(TAG, "Started polling bot: ...${token.takeLast(6)}")
+        serviceScope.launch { registerBotCommands(token) }
         var offset = offsets.getOrDefault(token, 0L)
 
         while (currentCoroutineContext().isActive) {
@@ -924,12 +990,11 @@ class TelegramBridgeService : Service() {
                 if (processingMsgId != null) {
                     deleteMessage(token, chatId, processingMsgId)
                 }
-                var remaining = finalResponse
-                while (remaining.isNotEmpty()) {
-                    val chunk = remaining.take(maxLen)
-                    sendMessage(token, chatId, chunk)
-                    remaining = remaining.drop(maxLen)
-                    if (remaining.isNotEmpty()) delay(500)
+                val formattedFull = TelegramFormatter.formatMarkdownToTelegramHtml(finalResponse)
+                val chunks = TelegramFormatter.chunkTelegramHtml(formattedFull, maxLen = 3900)
+                for (chunk in chunks) {
+                    sendMessage(token, chatId, chunk, parseMode = "HTML")
+                    delay(300)
                 }
             }
         } catch (e: TimeoutCancellationException) {
@@ -976,6 +1041,14 @@ class TelegramBridgeService : Service() {
                 repository.deleteSession(sessionId)
                 sendMessage(token, chatId, "🧹 Conversation history cleared! Starting fresh. 🚀")
             }
+            command.startsWith("/tasks") || command.startsWith("/scheduled") || command.startsWith("/automations") -> {
+                showTasksList(token, chatId)
+            }
+            command.startsWith("/task_output") || command.startsWith("/output") -> {
+                val parts = command.split("\\s+".toRegex(), limit = 2)
+                val arg = parts.getOrNull(1)?.trim() ?: ""
+                showTaskOutput(token, chatId, arg)
+            }
             command.startsWith("/models") || command.startsWith("/model") || command.startsWith("/change") ||
             command.startsWith("/provider") || command.startsWith("/providers") -> {
                 sendProviderSelection(token, chatId)
@@ -996,6 +1069,8 @@ class TelegramBridgeService : Service() {
                     ">_ <b>Commands:</b>\n\n" +
                     "🤖 /models - Switch provider & models\n" +
                     "↔️ /change - Same as /models\n" +
+                    "📋 /tasks - View scheduled tasks & outputs\n" +
+                    "📄 /task_output - Show latest output of a task\n" +
                     "🔊 /voice - Change voice character & tone\n" +
                     "🌐 /language - Set AI & TTS language\n" +
                     "👤 /persona - List available personas\n" +
@@ -1012,6 +1087,8 @@ class TelegramBridgeService : Service() {
                     "────────── ✦ ──────────\n" +
                     "🤖 /models - Switch provider & models\n" +
                     "↔️ /change - Same as /models\n" +
+                    "📋 /tasks - View scheduled tasks & outputs (In-App & ChatGPT)\n" +
+                    "📄 /task_output - Show latest output of a task\n" +
                     "🔊 /voice - Change voice character & tone\n" +
                     "🌐 /language - Set AI & TTS language\n" +
                     "👤 /persona - List available personas\n" +
@@ -1027,8 +1104,403 @@ class TelegramBridgeService : Service() {
                 sendMessage(token, chatId, msg, parseMode = "HTML")
             }
             else -> {
-                sendMessage(token, chatId, "Unknown command. Try /models, /voice, /language, /persona, /start, or /help")
+                sendMessage(token, chatId, "Unknown command. Try /tasks, /task_output, /models, /voice, /language, /persona, /start, or /help")
             }
+        }
+    }
+
+    private fun isTaskChatGPT(task: AutomationEntity): Boolean {
+        return task.category.equals("CHATGPT", ignoreCase = true) ||
+            task.templateId.contains("chatgpt", ignoreCase = true) ||
+            task.name.contains("chatgpt", ignoreCase = true) ||
+            task.configJson.contains("\"target\":\"chatgpt\"") ||
+            task.configJson.contains("\"target\": \"chatgpt\"")
+    }
+
+    private fun isTaskTelegramForwarded(task: AutomationEntity, chatId: Long? = null): Boolean {
+        return try {
+            val obj = com.google.gson.JsonParser.parseString(task.configJson).asJsonObject
+            val tgChatId = obj.get("telegram_chat_id")?.asString
+            if (chatId != null) {
+                tgChatId == chatId.toString()
+            } else {
+                !tgChatId.isNullOrBlank()
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun describeCron(cron: String): String {
+        val trimmed = cron.trim()
+        return when {
+            trimmed == "@daily" || trimmed == "@midnight" || trimmed == "0 0 * * *" -> "Daily at midnight"
+            trimmed == "@hourly" || trimmed == "0 * * * *" -> "Hourly"
+            trimmed == "@weekly" || trimmed == "0 0 * * 0" -> "Weekly on Sunday"
+            trimmed == "0 7 * * 1" -> "Weekly on Monday at 07:00 AM"
+            trimmed.matches(Regex("""^0\s+(\d{1,2})\s+\*\s+\*\s+\*$""")) -> {
+                val match = Regex("""^0\s+(\d{1,2})\s+\*\s+\*\s+\*$""").find(trimmed)!!
+                val hour = match.groupValues[1].toInt()
+                val ampm = if (hour >= 12) "PM" else "AM"
+                val h12 = when {
+                    hour == 0 -> 12
+                    hour > 12 -> hour - 12
+                    else -> hour
+                }
+                "Daily at %02d:00 %s".format(h12, ampm)
+            }
+            trimmed.matches(Regex("""^(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+\*$""")) -> {
+                val match = Regex("""^(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+\*$""").find(trimmed)!!
+                val min = match.groupValues[1].toInt()
+                val hour = match.groupValues[2].toInt()
+                val ampm = if (hour >= 12) "PM" else "AM"
+                val h12 = when {
+                    hour == 0 -> 12
+                    hour > 12 -> hour - 12
+                    else -> hour
+                }
+                "Daily at %02d:%02d %s".format(h12, min, ampm)
+            }
+            trimmed.matches(Regex("""^\*/(\d+)\s+\*\s+\*\s+\*\s+\*$""")) -> {
+                val sec = Regex("""^\*/(\d+)\s+\*\s+\*\s+\*\s+\*$""").find(trimmed)!!.groupValues[1]
+                "Every $sec seconds"
+            }
+            trimmed.matches(Regex("""^\*/(\d+)\s+\*\s+\*\s+\*$""")) -> {
+                val min = Regex("""^\*/(\d+)\s+\*\s+\*\s+\*$""").find(trimmed)!!.groupValues[1]
+                "Every $min minutes"
+            }
+            trimmed.matches(Regex("""^0\s+\*/(\d+)\s+\*\s+\*\s+\*$""")) -> {
+                val hrs = Regex("""^0\s+\*/(\d+)\s+\*\s+\*\s+\*$""").find(trimmed)!!.groupValues[1]
+                "Every $hrs hours"
+            }
+            else -> trimmed
+        }
+    }
+
+    private fun formatTaskTimestamp(timestamp: Long, isNext: Boolean = false): String {
+        if (timestamp <= 0L) return if (isNext) "Pending" else "Never"
+        val sdf = SimpleDateFormat("MMM dd, yyyy 'at' hh:mm a", Locale.getDefault())
+        val dateStr = sdf.format(Date(timestamp))
+        val now = System.currentTimeMillis()
+        return if (isNext && timestamp > now) {
+            val diffMs = timestamp - now
+            val diffMin = diffMs / 60000
+            val relative = when {
+                diffMin < 1 -> "in <1 min"
+                diffMin < 60 -> "in ${diffMin}m"
+                diffMin < 1440 -> "in ${diffMin / 60}h ${diffMin % 60}m"
+                else -> "in ${diffMin / 1440}d ${(diffMin % 1440) / 60}h"
+            }
+            "$dateStr ($relative)"
+        } else if (!isNext && timestamp > 0L && now > timestamp) {
+            val diffMin = (now - timestamp) / 60000
+            val relative = when {
+                diffMin < 1 -> "just now"
+                diffMin < 60 -> "${diffMin}m ago"
+                diffMin < 1440 -> "${diffMin / 60}h ago"
+                else -> "${diffMin / 1440}d ago"
+            }
+            "$dateStr ($relative)"
+        } else {
+            dateStr
+        }
+    }
+
+    private suspend fun getLatestTaskOutput(task: AutomationEntity): Pair<String?, Long?> {
+        val sessionId = task.getEffectiveChatSessionId() ?: task.chatSessionId
+        if (sessionId.isNullOrBlank()) return null to null
+
+        val db = AppDatabase.getDatabase(applicationContext)
+        val messages = db.messageDao().getMessagesListForSession(sessionId)
+        if (messages.isEmpty()) return null to null
+
+        val assistantMsg = messages.filter {
+            it.role.equals("assistant", ignoreCase = true) && !it.isToolCall && it.content.isNotBlank()
+        }.lastOrNull() ?: messages.filter {
+            it.role.equals("assistant", ignoreCase = true) && it.content.isNotBlank()
+        }.lastOrNull() ?: messages.lastOrNull { it.content.isNotBlank() }
+
+        if (assistantMsg != null) {
+            val clean = cleanControlAndCitationTokens(assistantMsg.content)
+            val withoutThoughts = stripThoughts(clean)
+            return withoutThoughts to assistantMsg.timestamp
+        }
+        return null to null
+    }
+
+    private suspend fun buildTasksListMessage(chatId: Long): Pair<String, JsonArray> {
+        val repo = AutomationRepository(applicationContext)
+        val tasks = repo.getAllAutomations().sortedBy { it.name.lowercase() }
+
+        if (tasks.isEmpty()) {
+            val text = "📋 <b>Scheduled Tasks & Automations</b>\n" +
+                "────────── ✦ ──────────\n" +
+                "<i>No scheduled tasks or automations found in the app.</i>\n\n" +
+                "💡 <b>You can create one anytime:</b>\n" +
+                "• In the DeepCode app under <b>Automations</b> (In-App or ChatGPT)\n" +
+                "• Or tell me here, e.g.:\n" +
+                "  <i>\"Schedule daily morning news at 8:00 AM\"</i>\n" +
+                "  <i>\"Setup ChatGPT research every 4 hours\"</i>"
+            val rows = JsonArray()
+            val row = JsonArray()
+            val refreshBtn = JsonObject().apply {
+                addProperty("text", "🔄 Refresh")
+                addProperty("callback_data", "tasks_list")
+            }
+            row.add(refreshBtn)
+            rows.add(row)
+            return text to rows
+        }
+
+        val sb = StringBuilder()
+        sb.appendLine("📋 <b>Scheduled Tasks & Automations (${tasks.size})</b>")
+        sb.appendLine("────────── ✦ ──────────")
+
+        tasks.forEachIndexed { index, task ->
+            val num = index + 1
+            val isGpt = isTaskChatGPT(task)
+            val typeTag = if (isGpt) "🌐 <b>ChatGPT</b>" else "🤖 <b>In-App</b>"
+            val statusTag = if (task.isEnabled) "🟢 Active" else "⏸️ Paused"
+            val tgForwarded = isTaskTelegramForwarded(task, chatId)
+            val tgTag = if (tgForwarded) "🔔 On" else "🔕 Off"
+            val scheduleDesc = describeCron(task.cronExpression)
+
+            sb.appendLine()
+            sb.appendLine("<b>$num. ${task.name}</b> [$statusTag]")
+            sb.appendLine("• <b>Type:</b> $typeTag")
+            sb.appendLine("• <b>Schedule:</b> $scheduleDesc (<code>${task.cronExpression}</code>)")
+            if (task.isEnabled) {
+                sb.appendLine("• <b>Next Run:</b> ${formatTaskTimestamp(task.nextRunAt, isNext = true)}")
+            }
+            if (task.lastRunAt > 0L) {
+                sb.appendLine("• <b>Last Run:</b> ${formatTaskTimestamp(task.lastRunAt, isNext = false)}")
+            }
+            sb.appendLine("• <b>Telegram Forward:</b> $tgTag")
+        }
+
+        sb.appendLine()
+        sb.appendLine("👇 <i>Tap below to view output or manage a task:</i>")
+
+        val rows = JsonArray()
+
+        // 1. Buttons to View Output for each task
+        for (chunk in tasks.chunked(2)) {
+            val row = JsonArray()
+            for (task in chunk) {
+                val idx = tasks.indexOf(task) + 1
+                val btn = JsonObject().apply {
+                    val label = if (chunk.size == 1) "📄 Output: ${task.name.take(18)}" else "📄 Output #$idx"
+                    addProperty("text", label)
+                    addProperty("callback_data", "task_output:${task.id}")
+                }
+                row.add(btn)
+            }
+            rows.add(row)
+        }
+
+        // 2. Buttons to Manage/Toggle each task
+        for (chunk in tasks.chunked(2)) {
+            val row = JsonArray()
+            for (task in chunk) {
+                val idx = tasks.indexOf(task) + 1
+                val btn = JsonObject().apply {
+                    val label = if (chunk.size == 1) "⚙️ Manage: ${task.name.take(18)}" else "⚙️ Manage #$idx"
+                    addProperty("text", label)
+                    addProperty("callback_data", "task_manage:${task.id}")
+                }
+                row.add(btn)
+            }
+            rows.add(row)
+        }
+
+        // 3. Bottom controls
+        val bottomRow = JsonArray().apply {
+            add(JsonObject().apply {
+                addProperty("text", "🔄 Refresh")
+                addProperty("callback_data", "tasks_list")
+            })
+        }
+        rows.add(bottomRow)
+
+        return sb.toString() to rows
+    }
+
+    private suspend fun showTasksList(token: String, chatId: Long, messageId: Long? = null) {
+        val (text, rows) = buildTasksListMessage(chatId)
+        val replyMarkup = JsonObject().apply {
+            add("inline_keyboard", rows)
+        }
+        if (messageId != null) {
+            editMessageWithKeyboard(token, chatId, messageId, text, replyMarkup, parseMode = "HTML")
+        } else {
+            sendMessageWithKeyboard(token, chatId, text, replyMarkup, parseMode = "HTML")
+        }
+    }
+
+    private suspend fun showTaskOutput(token: String, chatId: Long, taskIdOrQuery: String, messageId: Long? = null) {
+        val repo = AutomationRepository(applicationContext)
+        val allTasks = repo.getAllAutomations()
+        if (allTasks.isEmpty()) {
+            sendMessage(token, chatId, "No scheduled tasks found.")
+            return
+        }
+
+        // Resolve by 1-based index or ID or name
+        val index = taskIdOrQuery.toIntOrNull()
+        val task = when {
+            index != null && index in 1..allTasks.size -> {
+                allTasks.sortedBy { it.name.lowercase() }[index - 1]
+            }
+            taskIdOrQuery.isNotBlank() -> {
+                allTasks.firstOrNull { it.id == taskIdOrQuery || it.id.startsWith(taskIdOrQuery) }
+                    ?: allTasks.firstOrNull { it.name.contains(taskIdOrQuery, ignoreCase = true) }
+            }
+            else -> allTasks.firstOrNull()
+        }
+
+        if (task == null) {
+            sendMessage(token, chatId, "Task not found: '$taskIdOrQuery'. Use /tasks to see available tasks.")
+            return
+        }
+
+        val isGpt = isTaskChatGPT(task)
+        val typeTag = if (isGpt) "🌐 ChatGPT" else "🤖 In-App"
+        val (output, ts) = getLatestTaskOutput(task)
+        val isTgOn = isTaskTelegramForwarded(task, chatId)
+
+        val header = buildString {
+            appendLine("📄 <b>Task Output: ${task.name}</b>")
+            appendLine("• <b>Type:</b> $typeTag")
+            appendLine("• <b>Schedule:</b> ${describeCron(task.cronExpression)}")
+            if (ts != null && ts > 0L) {
+                appendLine("• <b>Executed:</b> ${formatTaskTimestamp(ts, isNext = false)}")
+            }
+            appendLine("────────── ✦ ──────────")
+            appendLine()
+        }
+
+        val actionsMarkup = JsonObject().apply {
+            val rows = JsonArray()
+            val row1 = JsonArray()
+            row1.add(JsonObject().apply {
+                addProperty("text", "⚡ Run Now")
+                addProperty("callback_data", "task_run:${task.id}")
+            })
+            row1.add(JsonObject().apply {
+                val label = if (isTgOn) "🔕 Forward: ON" else "🔔 Forward: OFF"
+                addProperty("text", label)
+                addProperty("callback_data", "task_toggle_tg:${task.id}")
+            })
+            rows.add(row1)
+
+            val row2 = JsonArray()
+            row2.add(JsonObject().apply {
+                addProperty("text", "⚙️ Manage Task")
+                addProperty("callback_data", "task_manage:${task.id}")
+            })
+            row2.add(JsonObject().apply {
+                addProperty("text", "🔙 Back to Tasks")
+                addProperty("callback_data", "tasks_list")
+            })
+            rows.add(row2)
+            add("inline_keyboard", rows)
+        }
+
+        if (output.isNullOrBlank()) {
+            val emptyMsg = header + "<i>No execution output available yet. This task may not have run yet.</i>\n\nTap <b>⚡ Run Now</b> below to execute it and get output immediately!"
+            if (messageId != null) {
+                editMessageWithKeyboard(token, chatId, messageId, emptyMsg, actionsMarkup, parseMode = "HTML")
+            } else {
+                sendMessageWithKeyboard(token, chatId, emptyMsg, actionsMarkup, parseMode = "HTML")
+            }
+            return
+        }
+
+        val formattedOutput = TelegramFormatter.formatMarkdownToTelegramHtml(output)
+        val fullHtml = header + formattedOutput
+        val chunks = TelegramFormatter.chunkTelegramHtml(fullHtml, maxLen = 3900)
+        if (chunks.size == 1) {
+            if (messageId != null) {
+                editMessageWithKeyboard(token, chatId, messageId, chunks[0], actionsMarkup, parseMode = "HTML")
+            } else {
+                sendMessageWithKeyboard(token, chatId, chunks[0], actionsMarkup, parseMode = "HTML")
+            }
+        } else {
+            for (i in 0 until chunks.size - 1) {
+                sendMessage(token, chatId, chunks[i], parseMode = "HTML")
+                delay(300)
+            }
+            sendMessageWithKeyboard(token, chatId, chunks.last(), actionsMarkup, parseMode = "HTML")
+        }
+    }
+
+    private suspend fun showTaskManage(token: String, chatId: Long, taskId: String, messageId: Long? = null) {
+        val repo = AutomationRepository(applicationContext)
+        val task = repo.getAutomationById(taskId)
+        if (task == null) {
+            sendMessage(token, chatId, "Task not found.")
+            return
+        }
+
+        val isGpt = isTaskChatGPT(task)
+        val typeTag = if (isGpt) "🌐 ChatGPT" else "🤖 In-App"
+        val statusTag = if (task.isEnabled) "🟢 Active" else "⏸️ Paused"
+        val isTgOn = isTaskTelegramForwarded(task, chatId)
+        val promptText = task.getEffectiveActionPrompt() ?: "Default task execution"
+
+        val text = buildString {
+            appendLine("⚙️ <b>Manage Task: ${task.name}</b>")
+            appendLine("────────── ✦ ──────────")
+            appendLine("• <b>Type:</b> $typeTag")
+            appendLine("• <b>Status:</b> $statusTag")
+            appendLine("• <b>Schedule:</b> ${describeCron(task.cronExpression)} (<code>${task.cronExpression}</code>)")
+            appendLine("• <b>Next Run:</b> ${formatTaskTimestamp(task.nextRunAt, isNext = true)}")
+            appendLine("• <b>Last Run:</b> ${formatTaskTimestamp(task.lastRunAt, isNext = false)}")
+            appendLine("• <b>Telegram Auto-Forward:</b> ${if (isTgOn) "🔔 Enabled" else "🔕 Disabled"}")
+            appendLine("• <b>Prompt:</b> <code>${promptText.take(100)}</code>")
+        }
+
+        val markup = JsonObject().apply {
+            val rows = JsonArray()
+
+            val row1 = JsonArray()
+            row1.add(JsonObject().apply {
+                addProperty("text", "📄 View Output")
+                addProperty("callback_data", "task_output:${task.id}")
+            })
+            row1.add(JsonObject().apply {
+                addProperty("text", "⚡ Run Now")
+                addProperty("callback_data", "task_run:${task.id}")
+            })
+            rows.add(row1)
+
+            val row2 = JsonArray()
+            row2.add(JsonObject().apply {
+                val statusBtn = if (task.isEnabled) "⏸️ Pause" else "▶️ Resume"
+                addProperty("text", statusBtn)
+                addProperty("callback_data", "task_toggle_status:${task.id}")
+            })
+            row2.add(JsonObject().apply {
+                val tgBtn = if (isTgOn) "🔕 TG Forward: OFF" else "🔔 TG Forward: ON"
+                addProperty("text", tgBtn)
+                addProperty("callback_data", "task_toggle_tg:${task.id}")
+            })
+            rows.add(row2)
+
+            val row3 = JsonArray()
+            row3.add(JsonObject().apply {
+                addProperty("text", "🔙 Back to Tasks")
+                addProperty("callback_data", "tasks_list")
+            })
+            rows.add(row3)
+
+            add("inline_keyboard", rows)
+        }
+
+        if (messageId != null) {
+            editMessageWithKeyboard(token, chatId, messageId, text, markup, parseMode = "HTML")
+        } else {
+            sendMessageWithKeyboard(token, chatId, text, markup, parseMode = "HTML")
         }
     }
 
@@ -1488,6 +1960,91 @@ class TelegramBridgeService : Service() {
     private suspend fun handleCallbackQuery(token: String, chatId: Long, messageId: Long, callbackId: String, callbackData: String) {
         AppLogger.d(TAG, "handleCallbackQuery entered: callbackId=$callbackId, callbackData=$callbackData")
         when {
+            callbackData == "tasks_list" -> {
+                showTasksList(token, chatId, messageId)
+                answerCallbackQuery(token, callbackId, "Refreshed tasks")
+                AppLogger.d(TAG, "handleCallbackQuery finish (tasks_list).")
+            }
+            callbackData.startsWith("task_output:") -> {
+                val taskId = callbackData.removePrefix("task_output:")
+                showTaskOutput(token, chatId, taskId, messageId)
+                answerCallbackQuery(token, callbackId, "Loading output...")
+                AppLogger.d(TAG, "handleCallbackQuery finish (task_output).")
+            }
+            callbackData.startsWith("task_manage:") -> {
+                val taskId = callbackData.removePrefix("task_manage:")
+                showTaskManage(token, chatId, taskId, messageId)
+                answerCallbackQuery(token, callbackId, "Task settings")
+                AppLogger.d(TAG, "handleCallbackQuery finish (task_manage).")
+            }
+            callbackData.startsWith("task_run:") -> {
+                val taskId = callbackData.removePrefix("task_run:")
+                val repo = AutomationRepository(applicationContext)
+                val task = repo.getAutomationById(taskId)
+                if (task != null) {
+                    answerCallbackQuery(token, callbackId, "⚡ Running ${task.name}...")
+                    sendMessage(token, chatId, "⏳ Executing <b>${task.name}</b> now...", parseMode = "HTML")
+                    serviceScope.launch {
+                        try {
+                            AutomationRunner.executeAutomation(applicationContext, task.id, forceRun = true)
+                            showTaskOutput(token, chatId, task.id)
+                        } catch (e: Exception) {
+                            AppLogger.e(TAG, "Failed running automation $taskId", e)
+                            sendMessage(token, chatId, "❌ Error executing task: ${e.message}")
+                        }
+                    }
+                } else {
+                    answerCallbackQuery(token, callbackId, "Task not found")
+                }
+                AppLogger.d(TAG, "handleCallbackQuery finish (task_run).")
+            }
+            callbackData.startsWith("task_toggle_tg:") -> {
+                val taskId = callbackData.removePrefix("task_toggle_tg:")
+                val repo = AutomationRepository(applicationContext)
+                val task = repo.getAutomationById(taskId)
+                if (task != null) {
+                    val configObj = try {
+                        Gson().fromJson(task.configJson, JsonObject::class.java)
+                    } catch (_: Exception) { JsonObject() }
+                    val currentTg = configObj.get("telegram_chat_id")?.asString
+                    val isCurrentlyOn = currentTg == chatId.toString()
+                    val newTgOn = !isCurrentlyOn
+                    if (newTgOn) {
+                        configObj.addProperty("telegram_chat_id", chatId.toString())
+                    } else {
+                        configObj.remove("telegram_chat_id")
+                    }
+                    val updated = task.copy(configJson = Gson().toJson(configObj))
+                    repo.insertAutomation(updated)
+                    val toast = if (newTgOn) "🔔 Telegram auto-forward enabled!" else "🔕 Telegram auto-forward disabled."
+                    answerCallbackQuery(token, callbackId, toast)
+                    showTaskManage(token, chatId, taskId, messageId)
+                } else {
+                    answerCallbackQuery(token, callbackId, "Task not found")
+                }
+                AppLogger.d(TAG, "handleCallbackQuery finish (task_toggle_tg).")
+            }
+            callbackData.startsWith("task_toggle_status:") -> {
+                val taskId = callbackData.removePrefix("task_toggle_status:")
+                val repo = AutomationRepository(applicationContext)
+                val task = repo.getAutomationById(taskId)
+                if (task != null) {
+                    val newStatus = !task.isEnabled
+                    repo.updateEnabledStatus(taskId, newStatus)
+                    val scheduler = AutomationScheduler(applicationContext)
+                    if (newStatus) {
+                        scheduler.schedule(task.copy(isEnabled = true), forceRecalculate = false)
+                        answerCallbackQuery(token, callbackId, "▶️ Task resumed!")
+                    } else {
+                        scheduler.cancel(taskId)
+                        answerCallbackQuery(token, callbackId, "⏸️ Task paused!")
+                    }
+                    showTaskManage(token, chatId, taskId, messageId)
+                } else {
+                    answerCallbackQuery(token, callbackId, "Task not found")
+                }
+                AppLogger.d(TAG, "handleCallbackQuery finish (task_toggle_status).")
+            }
             callbackData == "back_to_providers" -> {
                 showProviderSelection(token, chatId, messageId)
                 answerCallbackQuery(token, callbackId, "")
@@ -1769,11 +2326,11 @@ class TelegramBridgeService : Service() {
         }
     }
 
-    private fun sendMessage(token: String, chatId: Long, text: String, parseMode: String = "Markdown"): Long? {
+    private fun sendMessage(token: String, chatId: Long, text: String, parseMode: String = "HTML"): Long? {
         val cleanText = stripThoughts(text)
         val isHtml = parseMode.equals("HTML", ignoreCase = true) || (parseMode.isNotEmpty() && (cleanText.contains("<b>") || cleanText.contains("</b>") || cleanText.contains("<code>")))
         val targetParseMode = if (isHtml) "HTML" else parseMode
-        val processed = if (targetParseMode == "Markdown") preprocessMarkdown(cleanText) else cleanText
+        val processed = if (targetParseMode == "HTML") TelegramFormatter.formatMarkdownToTelegramHtml(cleanText) else preprocessMarkdown(cleanText)
         return try {
             val url = "${API_BASE}${token}/sendMessage"
             val payload = JsonObject().apply {
@@ -1805,10 +2362,11 @@ class TelegramBridgeService : Service() {
             }
 
             if (shouldRetry) {
-                AppLogger.d(TAG, "Retrying sendMessage without Markdown for chat $chatId")
+                AppLogger.d(TAG, "Retrying sendMessage without parse_mode for chat $chatId")
+                val plainFallback = TelegramFormatter.stripHtml(cleanText)
                 val retryPayload = JsonObject().apply {
                     addProperty("chat_id", chatId)
-                    addProperty("text", cleanText)
+                    addProperty("text", plainFallback)
                 }
                 val retryRequest = Request.Builder()
                     .url(url)
@@ -1848,12 +2406,12 @@ class TelegramBridgeService : Service() {
         } catch (_: Exception) {}
     }
 
-    private fun editMessage(token: String, chatId: Long, messageId: Long, text: String, parseMode: String = "Markdown"): Boolean {
+    private fun editMessage(token: String, chatId: Long, messageId: Long, text: String, parseMode: String = "HTML"): Boolean {
         AppLogger.d(TAG, "editMessage entry: messageId=$messageId, text.length=${text.length}, parseMode=$parseMode")
         val cleanText = stripThoughts(text)
         val isHtml = parseMode.equals("HTML", ignoreCase = true) || (parseMode.isNotEmpty() && (cleanText.contains("<b>") || cleanText.contains("</b>") || cleanText.contains("<code>")))
         val targetParseMode = if (isHtml) "HTML" else parseMode
-        val processed = if (targetParseMode == "Markdown") preprocessMarkdown(cleanText) else cleanText
+        val processed = if (targetParseMode == "HTML") TelegramFormatter.formatMarkdownToTelegramHtml(cleanText) else preprocessMarkdown(cleanText)
         try {
             val url = "${API_BASE}${token}/editMessageText"
             val payload = JsonObject().apply {
@@ -1893,10 +2451,11 @@ class TelegramBridgeService : Service() {
 
             if (shouldRetry && targetParseMode.isNotEmpty()) {
                 AppLogger.d(TAG, "Retrying editMessage without parse_mode for chat $chatId, message $messageId")
+                val plainFallback = TelegramFormatter.stripHtml(cleanText)
                 val retryPayload = JsonObject().apply {
                     addProperty("chat_id", chatId)
                     addProperty("message_id", messageId)
-                    addProperty("text", cleanText)
+                    addProperty("text", plainFallback)
                 }
                 val retryRequest = Request.Builder()
                     .url(url)
@@ -1928,12 +2487,12 @@ class TelegramBridgeService : Service() {
         messageId: Long,
         text: String,
         replyMarkup: JsonObject,
-        parseMode: String = "Markdown"
+        parseMode: String = "HTML"
     ) {
         val cleanText = stripThoughts(text)
         val isHtml = parseMode.equals("HTML", ignoreCase = true) || (cleanText.contains("<b>") || cleanText.contains("</b>") || cleanText.contains("<code>"))
         val targetParseMode = if (isHtml) "HTML" else parseMode
-        val processed = if (targetParseMode == "Markdown") preprocessMarkdown(cleanText) else cleanText
+        val processed = if (targetParseMode == "HTML") TelegramFormatter.formatMarkdownToTelegramHtml(cleanText) else preprocessMarkdown(cleanText)
         try {
             val url = "${API_BASE}${token}/editMessageText"
             val payload = JsonObject().apply {
@@ -1954,10 +2513,11 @@ class TelegramBridgeService : Service() {
                     val body = response.body?.string()
                     AppLogger.e(TAG, "editMessageWithKeyboard failed: $body")
                     if (targetParseMode.isNotEmpty() && body != null && (body.contains("can't parse entities", ignoreCase = true) || body.contains("parse_mode", ignoreCase = true))) {
+                        val plainFallback = TelegramFormatter.stripHtml(cleanText)
                         val retryPayload = JsonObject().apply {
                             addProperty("chat_id", chatId)
                             addProperty("message_id", messageId)
-                            addProperty("text", cleanText)
+                            addProperty("text", plainFallback)
                             add("reply_markup", Gson().toJsonTree(replyMarkup))
                         }
                         val retryRequest = Request.Builder()
@@ -2085,15 +2645,19 @@ class TelegramBridgeService : Service() {
         }
     }
 
-    private fun sendMessageWithKeyboard(token: String, chatId: Long, text: String, replyMarkup: JsonObject): Long? {
+    private fun sendMessageWithKeyboard(token: String, chatId: Long, text: String, replyMarkup: JsonObject, parseMode: String = "HTML"): Long? {
         val cleanText = stripThoughts(text)
-        val processed = preprocessMarkdown(cleanText)
+        val isHtml = parseMode.equals("HTML", ignoreCase = true) || (parseMode.isNotEmpty() && (cleanText.contains("<b>") || cleanText.contains("</b>") || cleanText.contains("<code>")))
+        val targetParseMode = if (isHtml) "HTML" else parseMode
+        val processed = if (targetParseMode == "HTML") TelegramFormatter.formatMarkdownToTelegramHtml(cleanText) else preprocessMarkdown(cleanText)
         return try {
             val url = "${API_BASE}${token}/sendMessage"
             val payload = JsonObject().apply {
                 addProperty("chat_id", chatId)
                 addProperty("text", processed)
-                addProperty("parse_mode", "Markdown")
+                if (targetParseMode.isNotEmpty()) {
+                    addProperty("parse_mode", targetParseMode)
+                }
                 add("reply_markup", Gson().toJsonTree(replyMarkup))
             }
             val request = Request.Builder()
@@ -2122,10 +2686,11 @@ class TelegramBridgeService : Service() {
             }
 
             if (shouldRetry) {
-                AppLogger.d(TAG, "Retrying sendMessageWithKeyboard without Markdown for chat $chatId")
+                AppLogger.d(TAG, "Retrying sendMessageWithKeyboard without parse_mode for chat $chatId")
+                val plainFallback = TelegramFormatter.stripHtml(cleanText)
                 val retryPayload = JsonObject().apply {
                     addProperty("chat_id", chatId)
-                    addProperty("text", cleanText)
+                    addProperty("text", plainFallback)
                     add("reply_markup", Gson().toJsonTree(replyMarkup))
                 }
                 val retryRequest = Request.Builder()

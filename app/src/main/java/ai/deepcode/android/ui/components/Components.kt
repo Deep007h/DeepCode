@@ -1056,6 +1056,7 @@ private fun parseSingleMarkdownLine(rawLine: String, codeBg: Color, codeColor: C
 
     val contentToStyle = when {
         trimmedLine.startsWith("> ") -> trimmedLine.substring(2)
+        trimmedLine.startsWith(">") -> trimmedLine.substring(1).trimStart()
         headingMatch != null -> headingMatch.groupValues[2]
         isHeadingInProgress -> ""
         trimmedLine.startsWith("- ") || trimmedLine.startsWith("* ") || trimmedLine.startsWith("+ ") -> trimmedLine.substring(2)
@@ -1193,10 +1194,11 @@ fun buildStreamingMarkdown(
             continue
         }
 
-        if (trimmed.startsWith("> ")) {
+        if (trimmed.startsWith(">")) {
             withStyle(SpanStyle(fontStyle = FontStyle.Italic, color = textColor.copy(alpha = 0.8f))) {
                 append("▎ ")
-                append(buildInlineStyledString(trimmed.substring(2), codeBg, codeColor, linkColor))
+                val qContent = if (trimmed.startsWith("> ")) trimmed.substring(2) else trimmed.substring(1).trimStart()
+                append(buildInlineStyledString(qContent, codeBg, codeColor, linkColor))
             }
             if (!isLast) append("\n")
             continue
@@ -1437,7 +1439,7 @@ fun MarkdownText(
                                 StreamingActiveCursor(color = AppPrimary)
                             }
                         }
-                        trimmedLine.startsWith("> ") -> {
+                        trimmedLine.startsWith(">") -> {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     styledText,
@@ -1491,7 +1493,7 @@ fun MarkdownText(
                                     val candidate = parsedLines[endJ]
                                     val cTrimmed = candidate.trimmedLine
                                     val isSpecial = candidate.headingLevel > 0 ||
-                                            cTrimmed.startsWith("> ") ||
+                                            cTrimmed.startsWith(">") ||
                                             cTrimmed.startsWith("- ") || cTrimmed.startsWith("* ") || cTrimmed.startsWith("+ ") ||
                                             cTrimmed == "-" || cTrimmed == "*" || cTrimmed == "+" ||
                                             candidate.isNumberedList ||
