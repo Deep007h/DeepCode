@@ -62,6 +62,7 @@ import ai.deepcode.android.ui.connections.ConnectionsScreen
 import ai.deepcode.android.ui.connections.ConnectionsViewModel
 import ai.deepcode.android.ui.automations.AutomationsScreen
 import ai.deepcode.android.ui.theme.DeepCodeTheme
+import ai.deepcode.android.ui.theme.isDarkThemeActive
 import ai.deepcode.android.ui.theme.AppBackground
 import ai.deepcode.android.ui.theme.AppWhite
 import ai.deepcode.android.ui.theme.AppSurface
@@ -254,8 +255,14 @@ class MainActivity : ComponentActivity() {
         val profileManager = ProfileManager(this)
 
         enableEdgeToEdge(
-            statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+            statusBarStyle = androidx.activity.SystemBarStyle.auto(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT
+            ),
+            navigationBarStyle = androidx.activity.SystemBarStyle.auto(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT
+            )
         )
         if (!hasRequestedPermissionsThisInstance) {
             hasRequestedPermissionsThisInstance = true
@@ -269,22 +276,20 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            DeepCodeTheme {
+            val activeRepo = repoState
+            val themeMode by (activeRepo?.securePrefs?.themeFlow ?: remember { kotlinx.coroutines.flow.MutableStateFlow(ai.deepcode.android.ui.theme.AppThemeMode) })
+                .collectAsStateWithLifecycle(ai.deepcode.android.ui.theme.AppThemeMode)
+            val accentId by (activeRepo?.securePrefs?.accentFlow ?: remember { kotlinx.coroutines.flow.MutableStateFlow(ai.deepcode.android.ui.theme.AppAccentId) })
+                .collectAsStateWithLifecycle(ai.deepcode.android.ui.theme.AppAccentId)
+
+            DeepCodeTheme(themeMode = themeMode, accentId = accentId) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = AppScreenBg
                 ) {
-                    val activeRepo = repoState
                     val showSplash = !splashFinished || activeRepo == null
 
                     if (activeRepo != null) {
-                        // Sync persisted theme prefs into the global theme state
-                        val themeMode by activeRepo.securePrefs.themeFlow.collectAsStateWithLifecycle()
-                        val accentId by activeRepo.securePrefs.accentFlow.collectAsStateWithLifecycle()
-                        LaunchedEffect(themeMode, accentId) {
-                            ai.deepcode.android.ui.theme.AppThemeMode = themeMode
-                            ai.deepcode.android.ui.theme.AppAccentId = accentId
-                        }
                         AppMainLayout(activeRepo, profileManager)
                     }
 
@@ -1583,10 +1588,17 @@ fun ActiveSessionCard(
                     )
                     Spacer(modifier = Modifier.height(3.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        val badgeBg = if (isDarkThemeActive) {
+                            if (isGpt) Color(0xFF073024) else Color(0xFF042F22)
+                        } else {
+                            if (isGpt) Color(0xFFE6F7F2) else Color(0xFFE8F5E9)
+                        }
+                        val badgeBorder = (if (isGpt) Color(0xFF10A37F) else Color(0xFF10B981))
+                            .copy(alpha = if (isDarkThemeActive) 0.3f else 0.5f)
                         Box(
                             modifier = Modifier
-                                .background(if (isGpt) Color(0xFF073024) else Color(0xFF042F22), RoundedCornerShape(4.dp))
-                                .border(0.5.dp, (if (isGpt) Color(0xFF10A37F) else Color(0xFF10B981)).copy(alpha = 0.3f), RoundedCornerShape(4.dp))
+                                .background(badgeBg, RoundedCornerShape(4.dp))
+                                .border(0.5.dp, badgeBorder, RoundedCornerShape(4.dp))
                                 .padding(horizontal = 5.dp, vertical = 2.dp)
                         ) {
                             Text(
@@ -1853,7 +1865,7 @@ private fun formatTokenCount(count: Long): String = when {
 @Composable
 fun GlobalWallpaperBackground(repository: DeepCodeRepository) {
     if (!ai.deepcode.android.ui.theme.isDarkThemeActive) {
-        Box(modifier = Modifier.fillMaxSize().background(Color(0xFFF6F6F9)))
+        Box(modifier = Modifier.fillMaxSize().background(ai.deepcode.android.ui.theme.AppScreenBg))
         return
     }
     val activeWallpaperId by repository.securePrefs.wallpaperFlow.collectAsStateWithLifecycle()

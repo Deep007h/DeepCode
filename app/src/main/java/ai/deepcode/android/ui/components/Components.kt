@@ -37,6 +37,11 @@ import android.provider.MediaStore
 import android.os.Environment
 import android.os.Build
 import android.content.ContentValues
+import android.graphics.Bitmap
+import android.net.Uri
+import java.io.File
+import java.net.URL
+import java.net.HttpURLConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -163,14 +168,15 @@ fun OutlinedAppButton(
 
     val shape = RoundedCornerShape(24.dp)
     val isPrimary = color == MaterialTheme.colorScheme.primary
-    val gradient = if (isDarkThemeActive) {
+    val isDark = isDarkThemeActive
+    val gradient = if (isDark) {
         if (isPrimary) listOf(Color(0xFF35302A), Color(0xFF1F1C18))
         else listOf(DepthTokens.PillGradientTopDark, DepthTokens.PillGradientBottomDark)
     } else {
         listOf(DepthTokens.PillGradientTopLight, DepthTokens.PillGradientBottomLight)
     }
-    val topBorder = if (isPrimary) color.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.22f)
-    val bottomBorder = if (isPrimary) color.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.04f)
+    val topBorder = if (isPrimary) color.copy(alpha = 0.6f) else if (isDark) Color.White.copy(alpha = 0.22f) else Color(0xFFD4D4D8)
+    val bottomBorder = if (isPrimary) color.copy(alpha = 0.2f) else if (isDark) Color.White.copy(alpha = 0.04f) else Color(0xFFE4E4E7)
 
     Row(
         modifier = modifier
@@ -182,8 +188,8 @@ fun OutlinedAppButton(
                 elevation = 2.5.dp,
                 shape = shape,
                 clip = false,
-                spotColor = Color(0x66000000),
-                ambientColor = Color(0x33000000)
+                spotColor = if (isDark) Color(0x66000000) else Color(0x1A000000),
+                ambientColor = if (isDark) Color(0x33000000) else Color(0x0A000000)
             )
             .clip(shape)
             .background(Brush.verticalGradient(gradient))
@@ -826,6 +832,29 @@ private fun formatJsonPretty(jsonStr: String): String {
 @Composable
 fun CodeBlock(code: String, language: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    val isDark = isDarkThemeActive
+
+    val cardGradient = if (isDark) {
+        listOf(Color(0xFF141418), Color(0xFF0C0C0F))
+    } else {
+        listOf(Color(0xFFF6F8FA), Color(0xFFEFF1F4))
+    }
+    val cardBorder = if (isDark) Color.White.copy(alpha = 0.08f) else Color(0xFFD0D7DE)
+    val headerGradient = if (isDark) {
+        listOf(Color(0xFF1A1A20), Color(0xFF131317))
+    } else {
+        listOf(Color(0xFFECEFF2), Color(0xFFE2E6EA))
+    }
+    val headerTextColor = if (isDark) Color(0xFFAAAAAA) else Color(0xFF57606A)
+    val copyPillGradient = if (isDark) {
+        listOf(Color(0xFF222228), Color(0xFF16161C))
+    } else {
+        listOf(Color(0xFFFFFFFF), Color(0xFFE9ECEF))
+    }
+    val copyBorderColor = if (isDark) Color.White.copy(alpha = 0.10f) else Color(0x1F000000)
+    val copyContentColor = if (isDark) Color(0xFFD1D5DB) else Color(0xFF57606A)
+    val codeTextColor = if (isDark) Color(0xFFE3E3E3) else Color(0xFF24292F)
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -833,27 +862,23 @@ fun CodeBlock(code: String, language: String, modifier: Modifier = Modifier) {
             .depthCard(
                 shape = RoundedCornerShape(18.dp),
                 elevation = 2.dp,
-                isDark = true,
-                customGradient = listOf(Color(0xFF141418), Color(0xFF0C0C0F)),
-                customBorderColor = Color.White.copy(alpha = 0.08f)
+                isDark = isDark,
+                customGradient = cardGradient,
+                customBorderColor = cardBorder
             )
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color(0xFF1A1A20), Color(0xFF131317))
-                        )
-                    )
+                    .background(Brush.verticalGradient(headerGradient))
                     .padding(horizontal = 16.dp, vertical = 9.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = language.ifBlank { "code" }.uppercase(),
-                    color = Color(0xFFAAAAAA),
+                    color = headerTextColor,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
@@ -863,9 +888,9 @@ fun CodeBlock(code: String, language: String, modifier: Modifier = Modifier) {
                         .depthPill(
                             shape = RoundedCornerShape(12.dp),
                             elevation = 1.dp,
-                            isDark = true,
-                            customGradient = listOf(Color(0xFF222228), Color(0xFF16161C)),
-                            customBorderColor = Color.White.copy(alpha = 0.10f)
+                            isDark = isDark,
+                            customGradient = copyPillGradient,
+                            customBorderColor = copyBorderColor
                         )
                         .bouncyClickable(provideHaptic = true) {
                             try {
@@ -880,7 +905,7 @@ fun CodeBlock(code: String, language: String, modifier: Modifier = Modifier) {
                     Icon(
                         imageVector = Icons.Default.ContentCopy,
                         contentDescription = "Copy code",
-                        tint = Color(0xFFD1D5DB),
+                        tint = copyContentColor,
                         modifier = Modifier.size(13.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
@@ -888,7 +913,7 @@ fun CodeBlock(code: String, language: String, modifier: Modifier = Modifier) {
                         text = "Copy",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
-                        color = Color(0xFFD1D5DB),
+                        color = copyContentColor,
                         maxLines = 1
                     )
                 }
@@ -905,7 +930,7 @@ fun CodeBlock(code: String, language: String, modifier: Modifier = Modifier) {
                     fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
                     lineHeight = 19.sp,
-                    color = Color(0xFFE3E3E3)
+                    color = codeTextColor
                 )
             }
         }
@@ -1104,7 +1129,7 @@ fun buildStreamingMarkdown(
     codeBg: Color,
     codeColor: Color,
     linkColor: Color = AppPrimary,
-    textColor: Color = Color.White
+    textColor: Color = AppWhite
 ): AnnotatedString = buildAnnotatedString {
     if (text.isEmpty()) return@buildAnnotatedString
 
@@ -1465,8 +1490,8 @@ fun MarkdownText(
                                 modifier = Modifier.padding(start = indentDp).padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("•  ", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                Text(styledText, fontSize = 15.sp, lineHeight = 23.sp, color = Color.White)
+                                Text("•  ", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = AppWhite)
+                                Text(styledText, fontSize = 15.sp, lineHeight = 23.sp, color = AppWhite)
                                 if (isStreaming && isLastLine) {
                                     Spacer(Modifier.width(4.dp))
                                     StreamingActiveCursor(color = AppPrimary)
@@ -1478,8 +1503,8 @@ fun MarkdownText(
                                 modifier = Modifier.padding(start = indentDp).padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(trimmedLine.substring(0, dotIdx + 2), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                Text(styledText, fontSize = 15.sp, lineHeight = 23.sp, color = Color.White)
+                                Text(trimmedLine.substring(0, dotIdx + 2), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = AppWhite)
+                                Text(styledText, fontSize = 15.sp, lineHeight = 23.sp, color = AppWhite)
                                 if (isStreaming && isLastLine) {
                                     Spacer(Modifier.width(4.dp))
                                     StreamingActiveCursor(color = AppPrimary)
@@ -1549,8 +1574,8 @@ fun MarkdownText(
 private fun TableCard(
     rows: List<List<String>>,
     maxCols: Int,
-    codeBg: Color = Color(0xFF232530),
-    codeColor: Color = Color(0xFFF5A623),
+    codeBg: Color = if (isDarkThemeActive) Color(0xFF232530) else Color(0xFFEFF0F4),
+    codeColor: Color = AppPrimary,
     linkColor: Color = Color(0xFF3B82F6)
 ) {
     if (rows.isEmpty() || maxCols <= 0) return
@@ -2382,13 +2407,13 @@ fun ImageGenerationSkeleton(
                 modifier = Modifier
                     .fillMaxSize()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF232428).copy(alpha = alpha)),
+                    .background((if (isDarkThemeActive) Color(0xFF232428) else Color(0xFFE4E4E8)).copy(alpha = alpha)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.Image,
                     contentDescription = null,
-                    tint = Color(0xFF6B6E76),
+                    tint = if (isDarkThemeActive) Color(0xFF6B6E76) else Color(0xFF9E9EA7),
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -2398,6 +2423,18 @@ fun ImageGenerationSkeleton(
             } else {
                 statusText
             }
+
+            val isDark = isDarkThemeActive
+            val mainBg = if (isDark) Color(0xFF232428) else AppCard
+            val mainBorder = if (isDark) Color(0xFF33353C) else AppBorder
+            val cardFarthestBg = if (isDark) Color(0xFF26282E).copy(alpha = 0.28f) else Color(0xFFD4D4D8).copy(alpha = 0.45f)
+            val cardMiddleBg = if (isDark) Color(0xFF2A2C33).copy(alpha = 0.55f) else Color(0xFFE4E4E7).copy(alpha = 0.70f)
+            val cardFrontBg = if (isDark) Color(0xFF2E3037) else Color(0xFFF4F4F6)
+            val trackBg = if (isDark) Color(0xFF383A41) else Color(0xFFE4E4E8)
+            val thumbBg = if (isDark) Color(0xFFD1D5DB).copy(alpha = 0.88f) else AppPrimary.copy(alpha = 0.90f)
+            val sunColor = if (isDark) Color(0xFF63666E) else Color(0xFFC4C7CD)
+            val peakLeftColor = if (isDark) Color(0xFF3F4249) else Color(0xFFD8DCE2)
+            val peakRightColor = if (isDark) Color(0xFF4C4F57) else Color(0xFFC0C5CC)
 
             val infiniteTransition = rememberInfiniteTransition(label = "image_loading")
 
@@ -2437,9 +2474,14 @@ fun ImageGenerationSkeleton(
                 modifier = Modifier
                     .widthIn(max = 310.dp)
                     .fillMaxWidth(0.85f)
+                    .shadow(
+                        elevation = if (isDark) 0.dp else 3.dp,
+                        shape = RoundedCornerShape(26.dp),
+                        spotColor = Color(0x18000000)
+                    )
                     .clip(RoundedCornerShape(26.dp))
-                    .background(Color(0xFF232428))
-                    .border(1.dp, Color(0xFF33353C), RoundedCornerShape(26.dp))
+                    .background(mainBg)
+                    .border(1.dp, mainBorder, RoundedCornerShape(26.dp))
                     .padding(horizontal = 22.dp, vertical = 24.dp)
             ) {
                 Column(
@@ -2449,7 +2491,7 @@ fun ImageGenerationSkeleton(
                     // Header text
                     Text(
                         text = displayText,
-                        color = Color(0xFFECEEF2),
+                        color = if (isDark) Color(0xFFECEEF2) else AppWhite,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.SemiBold,
                         letterSpacing = (-0.2).sp
@@ -2478,7 +2520,7 @@ fun ImageGenerationSkeleton(
                                     .offset(x = (-16).dp)
                                     .size(136.dp, 108.dp)
                                     .clip(RoundedCornerShape(16.dp))
-                                    .background(Color(0xFF26282E).copy(alpha = 0.28f))
+                                    .background(cardFarthestBg)
                             )
                             // Farthest right card
                             Box(
@@ -2486,7 +2528,7 @@ fun ImageGenerationSkeleton(
                                     .offset(x = 16.dp)
                                     .size(136.dp, 108.dp)
                                     .clip(RoundedCornerShape(16.dp))
-                                    .background(Color(0xFF26282E).copy(alpha = 0.28f))
+                                    .background(cardFarthestBg)
                             )
                             // Middle left card
                             Box(
@@ -2494,7 +2536,7 @@ fun ImageGenerationSkeleton(
                                     .offset(x = (-8).dp)
                                     .size(140.dp, 113.dp)
                                     .clip(RoundedCornerShape(17.dp))
-                                    .background(Color(0xFF2A2C33).copy(alpha = 0.55f))
+                                    .background(cardMiddleBg)
                             )
                             // Middle right card
                             Box(
@@ -2502,14 +2544,14 @@ fun ImageGenerationSkeleton(
                                     .offset(x = 8.dp)
                                     .size(140.dp, 113.dp)
                                     .clip(RoundedCornerShape(17.dp))
-                                    .background(Color(0xFF2A2C33).copy(alpha = 0.55f))
+                                    .background(cardMiddleBg)
                             )
                             // Front center photo card
                             Box(
                                 modifier = Modifier
                                     .size(144.dp, 118.dp)
                                     .clip(RoundedCornerShape(18.dp))
-                                    .background(Color(0xFF2E3037))
+                                    .background(cardFrontBg)
                             ) {
                                 Canvas(modifier = Modifier.fillMaxSize()) {
                                     val w = size.width
@@ -2519,7 +2561,7 @@ fun ImageGenerationSkeleton(
                                     val sunRadius = w * 0.082f
                                     val sunCenter = Offset(w * 0.31f, h * 0.32f)
                                     drawCircle(
-                                        color = Color(0xFF63666E).copy(alpha = ambientGlow),
+                                        color = sunColor.copy(alpha = ambientGlow),
                                         radius = sunRadius,
                                         center = sunCenter
                                     )
@@ -2532,7 +2574,7 @@ fun ImageGenerationSkeleton(
                                         lineTo(w * 0.76f, h)
                                         close()
                                     }
-                                    drawPath(leftPath, color = Color(0xFF3F4249))
+                                    drawPath(leftPath, color = peakLeftColor)
 
                                     // Right mountain (taller / foreground peak)
                                     val rightPath = Path().apply {
@@ -2542,7 +2584,7 @@ fun ImageGenerationSkeleton(
                                         lineTo(w * 1.05f, h)
                                         close()
                                     }
-                                    drawPath(rightPath, color = Color(0xFF4C4F57))
+                                    drawPath(rightPath, color = peakRightColor)
                                 }
                             }
                         }
@@ -2564,7 +2606,7 @@ fun ImageGenerationSkeleton(
                                 .width(barWidth)
                                 .height(barHeight)
                                 .clip(CircleShape)
-                                .background(Color(0xFF383A41))
+                                .background(trackBg)
                         ) {
                             Box(
                                 modifier = Modifier
@@ -2572,7 +2614,7 @@ fun ImageGenerationSkeleton(
                                     .width(thumbWidth)
                                     .offset(x = (barWidth - thumbWidth) * progress)
                                     .clip(CircleShape)
-                                    .background(Color(0xFFD1D5DB).copy(alpha = 0.88f))
+                                    .background(thumbBg)
                             )
                         }
                     }
@@ -2588,8 +2630,8 @@ fun ImageGenerationSkeleton(
 fun AuthenticatedImageView(
     imageUrl: String,
     modifier: Modifier = Modifier,
-    maxDimension: Dp = 110.dp,
-    fillContainer: Boolean = false
+    fillContainer: Boolean = false,
+    maxDimension: Dp = 260.dp
 ) {
     val context = LocalContext.current
     var bitmap by remember(imageUrl) { mutableStateOf<android.graphics.Bitmap?>(null) }
@@ -2600,11 +2642,28 @@ fun AuthenticatedImageView(
     LaunchedEffect(imageUrl, retryKey) {
         isLoading = true
         isError = false
-        val fetchedBitmap = loadImageBitmapFromUrl(imageUrl)
-        if (fetchedBitmap != null) {
-            bitmap = fetchedBitmap
-        } else {
-            isError = true
+        bitmap = withContext(Dispatchers.IO) {
+            try {
+                if (imageUrl.startsWith("content://") || imageUrl.startsWith("file://")) {
+                    val uri = Uri.parse(imageUrl)
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        android.graphics.BitmapFactory.decodeStream(stream)
+                    }
+                } else if (imageUrl.startsWith("/") && File(imageUrl).exists()) {
+                    android.graphics.BitmapFactory.decodeFile(imageUrl)
+                } else {
+                    val url = URL(imageUrl)
+                    val conn = url.openConnection() as HttpURLConnection
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 15000
+                    conn.inputStream.use { stream ->
+                        android.graphics.BitmapFactory.decodeStream(stream)
+                    }
+                }
+            } catch (e: Exception) {
+                isError = true
+                null
+            }
         }
         isLoading = false
     }
@@ -2629,7 +2688,7 @@ fun AuthenticatedImageView(
         modifier = modifier
             .then(if (!fillContainer) Modifier.size(width = widthDp, height = heightDp) else Modifier)
             .then(if (!fillContainer) Modifier.clip(RoundedCornerShape(12.dp)) else Modifier)
-            .background(if (fillContainer) Color.Black else Color(0xFF1E202B)),
+            .background(if (fillContainer) Color.Black else if (isDarkThemeActive) Color(0xFF1E202B) else Color(0xFFE4E4E8)),
         contentAlignment = Alignment.Center
     ) {
         if (isLoading) {
@@ -2659,7 +2718,7 @@ fun AuthenticatedImageView(
                 )
                 Text(
                     text = "Image failed • Tap to retry",
-                    color = Color.White.copy(alpha = 0.8f),
+                    color = if (isDarkThemeActive) Color.White.copy(alpha = 0.8f) else AppWhite,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.SansSerif
                 )
@@ -2803,28 +2862,28 @@ fun FullScreenImagePreviewDialog(
                 if (activeActionDialog == "comment") {
                     AlertDialog(
                         onDismissRequest = { activeActionDialog = null },
-                        containerColor = Color(0xFF1C1C1E),
-                        titleContentColor = Color.White,
-                        textContentColor = Color.White.copy(alpha = 0.8f),
+                        containerColor = AppCard,
+                        titleContentColor = AppWhite,
+                        textContentColor = AppMuted,
                         title = { Text("Comment on Image", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
                         text = {
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Text(
                                     "Describe any changes or additions you'd like ChatGPT to make to this image:",
                                     fontSize = 13.sp,
-                                    color = Color.White.copy(alpha = 0.7f)
+                                    color = AppMuted
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
                                 OutlinedTextField(
                                     value = commentText,
                                     onValueChange = { commentText = it },
-                                    placeholder = { Text("e.g. Add party hat, make background sunset...", fontSize = 13.sp, color = Color.Gray) },
+                                    placeholder = { Text("e.g. Add party hat, make background sunset...", fontSize = 13.sp, color = AppMuted) },
                                     modifier = Modifier.fillMaxWidth(),
                                     colors = OutlinedTextFieldDefaults.colors(
-                                        focusedTextColor = Color.White,
-                                        unfocusedTextColor = Color.White,
-                                        focusedBorderColor = Color.White,
-                                        unfocusedBorderColor = Color.Gray.copy(alpha = 0.5f)
+                                        focusedTextColor = AppWhite,
+                                        unfocusedTextColor = AppWhite,
+                                        focusedBorderColor = AppPrimary,
+                                        unfocusedBorderColor = AppBorder
                                     ),
                                     maxLines = 3
                                 )
@@ -2840,12 +2899,12 @@ fun FullScreenImagePreviewDialog(
                                     }
                                 }
                             ) {
-                                Text("Send", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("Send", color = AppPrimary, fontWeight = FontWeight.Bold)
                             }
                         },
                         dismissButton = {
                             TextButton(onClick = { activeActionDialog = null }) {
-                                Text("Cancel", color = Color.Gray)
+                                Text("Cancel", color = AppMuted)
                             }
                         }
                     )
@@ -2854,28 +2913,28 @@ fun FullScreenImagePreviewDialog(
                 if (activeActionDialog == "erase") {
                     AlertDialog(
                         onDismissRequest = { activeActionDialog = null },
-                        containerColor = Color(0xFF1C1C1E),
-                        titleContentColor = Color.White,
-                        textContentColor = Color.White.copy(alpha = 0.8f),
+                        containerColor = AppCard,
+                        titleContentColor = AppWhite,
+                        textContentColor = AppMuted,
                         title = { Text("Erase Object", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
                         text = {
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Text(
                                     "What item or part would you like to erase from this image?",
                                     fontSize = 13.sp,
-                                    color = Color.White.copy(alpha = 0.7f)
+                                    color = AppMuted
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
                                 OutlinedTextField(
                                     value = eraseText,
                                     onValueChange = { eraseText = it },
-                                    placeholder = { Text("e.g. leash, collar, person in background...", fontSize = 13.sp, color = Color.Gray) },
+                                    placeholder = { Text("e.g. leash, collar, person in background...", fontSize = 13.sp, color = AppMuted) },
                                     modifier = Modifier.fillMaxWidth(),
                                     colors = OutlinedTextFieldDefaults.colors(
-                                        focusedTextColor = Color.White,
-                                        unfocusedTextColor = Color.White,
-                                        focusedBorderColor = Color.White,
-                                        unfocusedBorderColor = Color.Gray.copy(alpha = 0.5f)
+                                        focusedTextColor = AppWhite,
+                                        unfocusedTextColor = AppWhite,
+                                        focusedBorderColor = AppPrimary,
+                                        unfocusedBorderColor = AppBorder
                                     ),
                                     maxLines = 2
                                 )
@@ -2891,12 +2950,12 @@ fun FullScreenImagePreviewDialog(
                                     }
                                 }
                             ) {
-                                Text("Erase", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("Erase", color = AppPrimary, fontWeight = FontWeight.Bold)
                             }
                         },
                         dismissButton = {
                             TextButton(onClick = { activeActionDialog = null }) {
-                                Text("Cancel", color = Color.Gray)
+                                Text("Cancel", color = AppMuted)
                             }
                         }
                     )
@@ -2905,9 +2964,9 @@ fun FullScreenImagePreviewDialog(
                 if (activeActionDialog == "resize") {
                     AlertDialog(
                         onDismissRequest = { activeActionDialog = null },
-                        containerColor = Color(0xFF1C1C1E),
-                        titleContentColor = Color.White,
-                        textContentColor = Color.White.copy(alpha = 0.8f),
+                        containerColor = AppCard,
+                        titleContentColor = AppWhite,
+                        textContentColor = AppMuted,
                         title = { Text("Resize Aspect Ratio", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
                         text = {
                             Column(
@@ -2925,7 +2984,7 @@ fun FullScreenImagePreviewDialog(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(8.dp))
-                                            .background(Color(0xFF2C2C2E))
+                                            .background(AppSurfaceVariant)
                                             .clickable {
                                                 onSendSuggestion?.invoke("Resize and reframe this image into $ratioVal [image:$imageUrl]")
                                                 activeActionDialog = null
@@ -2934,7 +2993,7 @@ fun FullScreenImagePreviewDialog(
                                             .padding(horizontal = 14.dp, vertical = 12.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(label, color = Color.White, fontSize = 14.sp)
+                                        Text(label, color = AppWhite, fontSize = 14.sp)
                                     }
                                 }
                             }
@@ -2942,7 +3001,7 @@ fun FullScreenImagePreviewDialog(
                         confirmButton = {},
                         dismissButton = {
                             TextButton(onClick = { activeActionDialog = null }) {
-                                Text("Cancel", color = Color.Gray)
+                                Text("Cancel", color = AppMuted)
                             }
                         }
                     )
@@ -2965,7 +3024,7 @@ fun FullScreenImageActionPill(
             .depthPill(
                 shape = RoundedCornerShape(24.dp),
                 elevation = 4.dp,
-                isDark = true
+                isDark = isDarkThemeActive
             )
             .padding(horizontal = 10.dp, vertical = 5.dp)
     ) {

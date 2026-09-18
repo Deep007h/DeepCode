@@ -62,14 +62,16 @@ object DepthTokens {
 
     // ── Light Theme Equivalents ──
     val PillGradientTopLight = Color(0xFFFFFFFF)
-    val PillGradientBottomLight = Color(0xFFEDEDF0)
+    val PillGradientBottomLight = Color(0xFFF1F1F4)
     val PillHighlightTopLight = Color.White
-    val PillHighlightBottomLight = Color(0x1F000000)
+    val PillHighlightBottomLight = Color(0x18000000)
 
     val CardGradientTopLight = Color(0xFFFFFFFF)
-    val CardGradientBottomLight = Color(0xFFF7F7F9)
+    val CardGradientBottomLight = Color(0xFFFAFAFC)
     val CardHighlightTopLight = Color.White
-    val CardHighlightBottomLight = Color(0x14000000)
+    val CardHighlightBottomLight = Color(0x10000000)
+
+    val SegmentDividerLight = Color(0x18000000)
 }
 
 /**
@@ -82,7 +84,7 @@ fun Modifier.depthPill(
     customGradient: List<Color>? = null,
     customBorderColor: Color? = null,
     highlightAlpha: Float = 0.11f,
-    isDark: Boolean = true
+    isDark: Boolean = isDarkThemeActive
 ): Modifier {
     val gradient = customGradient ?: if (isDark) {
         listOf(DepthTokens.PillGradientTopDark, DepthTokens.PillGradientBottomDark)
@@ -98,13 +100,15 @@ fun Modifier.depthPill(
     val bottomHighlight = if (isDark) {
         Color.White.copy(alpha = 0.02f)
     } else {
-        Color(0x1F000000)
+        Color(0x14000000)
     }
 
     val borderBrush = if (customBorderColor != null) {
         SolidColor(customBorderColor)
-    } else {
+    } else if (isDark) {
         Brush.verticalGradient(listOf(topHighlight, bottomHighlight))
+    } else {
+        SolidColor(Color(0xFFE2E2E8))
     }
 
     return this
@@ -112,8 +116,8 @@ fun Modifier.depthPill(
             elevation = elevation,
             shape = shape,
             clip = false,
-            spotColor = if (isDark) Color(0x80000000) else Color(0x1F000000),
-            ambientColor = if (isDark) Color(0x40000000) else Color(0x0F000000)
+            spotColor = if (isDark) Color(0x80000000) else Color(0x18000000),
+            ambientColor = if (isDark) Color(0x40000000) else Color(0x0A000000)
         )
         .clip(shape)
         .background(Brush.verticalGradient(gradient))
@@ -132,7 +136,7 @@ fun Modifier.depthCard(
     elevation: Dp = 2.dp,
     customGradient: List<Color>? = null,
     customBorderColor: Color? = null,
-    isDark: Boolean = true
+    isDark: Boolean = isDarkThemeActive
 ): Modifier {
     val gradient = customGradient ?: if (isDark) {
         listOf(DepthTokens.CardGradientTopDark, DepthTokens.CardGradientBottomDark)
@@ -145,8 +149,10 @@ fun Modifier.depthCard(
 
     val borderBrush = if (customBorderColor != null) {
         SolidColor(customBorderColor)
-    } else {
+    } else if (isDark) {
         Brush.verticalGradient(listOf(topHighlight, bottomHighlight))
+    } else {
+        SolidColor(Color(0xFFE5E5EB))
     }
 
     return this
@@ -154,8 +160,8 @@ fun Modifier.depthCard(
             elevation = elevation,
             shape = shape,
             clip = false,
-            spotColor = if (isDark) Color(0x99000000) else Color(0x1A000000),
-            ambientColor = if (isDark) Color(0x4D000000) else Color(0x0D000000)
+            spotColor = if (isDark) Color(0x99000000) else Color(0x14000000),
+            ambientColor = if (isDark) Color(0x4D000000) else Color(0x08000000)
         )
         .clip(shape)
         .background(Brush.verticalGradient(gradient))
@@ -172,30 +178,33 @@ fun Modifier.depthCard(
 fun Modifier.depthInputBar(
     shape: Shape = RoundedCornerShape(32.dp),
     elevation: Dp = 2.5.dp,
-    isDark: Boolean = true
+    isDark: Boolean = isDarkThemeActive
 ): Modifier {
     val gradient = if (isDark) {
         listOf(DepthTokens.InputGradientTopDark, DepthTokens.InputGradientBottomDark)
     } else {
-        listOf(Color(0xFFFFFFFF), Color(0xFFF2F2F5))
+        listOf(Color(0xFFFFFFFF), Color(0xFFF7F7FA))
     }
 
-    val topHighlight = if (isDark) DepthTokens.InputHighlightTopDark else Color.White
-    val bottomHighlight = if (isDark) DepthTokens.InputHighlightBottomDark else Color(0x22000000)
+    val borderBrush = if (isDark) {
+        Brush.verticalGradient(listOf(DepthTokens.InputHighlightTopDark, DepthTokens.InputHighlightBottomDark))
+    } else {
+        SolidColor(Color(0xFFE2E2E8))
+    }
 
     return this
         .shadow(
             elevation = elevation,
             shape = shape,
             clip = false,
-            spotColor = if (isDark) Color(0xA6000000) else Color(0x1A000000),
-            ambientColor = if (isDark) Color(0x59000000) else Color(0x0D000000)
+            spotColor = if (isDark) Color(0xA6000000) else Color(0x14000000),
+            ambientColor = if (isDark) Color(0x59000000) else Color(0x08000000)
         )
         .clip(shape)
         .background(Brush.verticalGradient(gradient))
         .border(
             width = 1.dp,
-            brush = Brush.verticalGradient(listOf(topHighlight, bottomHighlight)),
+            brush = borderBrush,
             shape = shape
         )
 }
@@ -211,7 +220,7 @@ fun DepthPillButton(
     text: String? = null,
     enabled: Boolean = true,
     isPrimary: Boolean = false,
-    contentColor: Color = Color.White,
+    contentColor: Color = if (isPrimary) Color.White else AppWhite,
     shape: Shape = CircleShape,
     contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
 ) {
@@ -291,7 +300,7 @@ fun DepthSegmentedPill(
 ) {
     Row(
         modifier = modifier
-            .depthPill(shape = shape, elevation = 3.dp),
+            .depthPill(shape = shape, elevation = 3.dp, isDark = isDarkThemeActive),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
         content = content
@@ -304,7 +313,7 @@ fun DepthSegmentedPill(
 @Composable
 fun DepthSegmentDivider(
     height: Dp = 18.dp,
-    color: Color = DepthTokens.SegmentDividerDark
+    color: Color = if (isDarkThemeActive) DepthTokens.SegmentDividerDark else DepthTokens.SegmentDividerLight
 ) {
     Box(
         modifier = Modifier

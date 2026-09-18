@@ -220,7 +220,7 @@ fun PlaceholderFeatureCard(
             .depthCard(
                 shape = RoundedCornerShape(22.dp),
                 elevation = 3.5.dp,
-                isDark = true
+                isDark = isDarkThemeActive
             )
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
     ) {
@@ -244,14 +244,14 @@ fun PlaceholderFeatureCard(
                     text = title,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
-                    color = Color.White,
+                    color = AppWhite,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = subtitle,
                     fontSize = 11.sp,
-                    color = Color(0xFF9E9EA7),
+                    color = AppMuted,
                     lineHeight = 15.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
@@ -265,12 +265,12 @@ fun PlaceholderFeatureCard(
                     text = actionText,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFFFF6D00)
+                    color = AppPrimary
                 )
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = null,
-                    tint = Color(0xFFFF6D00),
+                    tint = AppPrimary,
                     modifier = Modifier.size(13.dp)
                 )
             }
@@ -486,67 +486,73 @@ fun ChatScreen(
         }
     }
 
-    val groupedItems = remember(messages) { groupChatMessages(messages) }
-
     val currentSessionTitle = remember(sessions, activeSessionId, sessionTitle) {
         sessions.find { it.id == activeSessionId }?.title ?: sessionTitle
     }
 
-    val activeWallpaperId = remember { repository.securePrefs.getSetting("chat_wallpaper", "default") }
-    val customWallpaperPath = remember { repository.securePrefs.getSetting("chat_wallpaper_custom", "") }
+    val isChatGptSession = remember(activeModel, currentSessionTitle, activeSessionId) {
+        activeModel.provider.equals("ChatGPT", ignoreCase = true) ||
+            activeModel.id.equals("chatgpt-4o", ignoreCase = true) ||
+            activeModel.name.contains("chatgpt", ignoreCase = true) ||
+            currentSessionTitle.contains("ChatGPT", ignoreCase = true) ||
+            repository.securePrefs.getSetting("session_provider_$activeSessionId", "").equals("ChatGPT", ignoreCase = true)
+    }
+
+    val groupedItems = remember(messages, isChatGptSession) { groupChatMessages(messages, isChatGptSession) }
+
+    val activeWallpaperId by repository.securePrefs.wallpaperFlow.collectAsStateWithLifecycle()
+    val customWallpaperPath by repository.securePrefs.customWallpaperFlow.collectAsStateWithLifecycle()
 
     Box(modifier = modifier.fillMaxSize().background(AppScreenBg)) {
-        val wallpaperOpt = remember(activeWallpaperId) {
-            ai.deepcode.android.ui.settings.PresetWallpapers.find { it.id == activeWallpaperId }
-        }
-        val customFile = remember(customWallpaperPath) {
-            if (customWallpaperPath.isNotEmpty()) java.io.File(customWallpaperPath) else null
-        }
-        if (activeWallpaperId == "custom" && customFile != null && customFile.exists()) {
-            // Decode off the main thread and downsample to ~screen size — a full-size
-            // photo decoded synchronously in composition freezes frames and risks OOM.
-            val config = LocalConfiguration.current
-            val density = LocalDensity.current
-            // bounds.outWidth/Height are PIXELS; screenWidthDp is DP — convert
-            // before comparing, else sample is under-estimated and we decode
-            // a far larger bitmap than needed (jank + OOM risk).
-            val screenWPx = with(density) { config.screenWidthDp.dp.roundToPx().coerceAtLeast(1) }
-            val screenHPx = with(density) { config.screenHeightDp.dp.roundToPx().coerceAtLeast(1) }
-            val bm by produceState<android.graphics.Bitmap?>(initialValue = null, customFile.absolutePath) {
-                value = withContext(Dispatchers.IO) {
-                    try {
-                        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        android.graphics.BitmapFactory.decodeFile(customFile.absolutePath, bounds)
-                        var sample = 1
-                        while (bounds.outWidth / (sample * 2) >= screenWPx || bounds.outHeight / (sample * 2) >= screenHPx) {
-                            sample *= 2
+        if (isDarkThemeActive) {
+            val wallpaperOpt = remember(activeWallpaperId) {
+                ai.deepcode.android.ui.settings.PresetWallpapers.find { it.id == activeWallpaperId }
+            }
+            val customFile = remember(customWallpaperPath) {
+                if (customWallpaperPath.isNotEmpty()) java.io.File(customWallpaperPath) else null
+            }
+            if (activeWallpaperId == "custom" && customFile != null && customFile.exists()) {
+                // Decode off the main thread and downsample to ~screen size — a full-size
+                // photo decoded synchronously in composition freezes frames and risks OOM.
+                val config = LocalConfiguration.current
+                val density = LocalDensity.current
+                // bounds.outWidth/Height are PIXELS; screenWidthDp is DP — convert
+                // before comparing, else sample is under-estimated and we decode
+                // a far larger bitmap than needed (jank + OOM risk).
+                val screenWPx = with(density) { config.screenWidthDp.dp.roundToPx().coerceAtLeast(1) }
+                val screenHPx = with(density) { config.screenHeightDp.dp.roundToPx().coerceAtLeast(1) }
+                val bm by produceState<android.graphics.Bitmap?>(initialValue = null, customFile.absolutePath) {
+                    value = withContext(Dispatchers.IO) {
+                        try {
+                            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                            android.graphics.BitmapFactory.decodeFile(customFile.absolutePath, bounds)
+                            var sample = 1
+                            while (bounds.outWidth / (sample * 2) >= screenWPx || bounds.outHeight / (sample * 2) >= screenHPx) {
+                                sample *= 2
+                            }
+                            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                            android.graphics.BitmapFactory.decodeFile(customFile.absolutePath, opts)
+                        } catch (_: Exception) {
+                            null
                         }
-                        val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
-                        android.graphics.BitmapFactory.decodeFile(customFile.absolutePath, opts)
-                    } catch (_: Exception) {
-                        null
                     }
                 }
-            }
-            val wallpaperBitmap = bm
-            if (wallpaperBitmap != null) {
-                Image(
-                    bitmap = wallpaperBitmap.asImageBitmap(),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                val wallpaperBitmap = bm
+                if (wallpaperBitmap != null) {
+                    Image(
+                        bitmap = wallpaperBitmap.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                }
+            } else if (wallpaperOpt != null && wallpaperOpt.gradientColors != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Brush.verticalGradient(wallpaperOpt.gradientColors))
                 )
-            } else {
-                Box(modifier = Modifier.fillMaxSize().background(AppScreenBg))
             }
-        } else if (wallpaperOpt != null && wallpaperOpt.gradientColors != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Brush.verticalGradient(wallpaperOpt.gradientColors))
-            )
-        } else {
-            Box(modifier = Modifier.fillMaxSize().background(AppScreenBg))
         }
         Column(Modifier.fillMaxSize()) {
             TopBar(
@@ -685,7 +691,7 @@ fun ChatScreen(
                                 "Deep",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 32.sp,
-                                color = Color.White
+                                color = AppWhite
                             )
                             Text(
                                 "Code",
@@ -697,7 +703,7 @@ fun ChatScreen(
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "Your AI coding companion",
-                            color = Color(0xFF9CA3AF),
+                            color = AppMuted,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Normal
                         )
@@ -1006,7 +1012,7 @@ fun ChatScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
-                            .depthCard(shape = RoundedCornerShape(24.dp), elevation = 3.dp, isDark = true)
+                            .depthCard(shape = RoundedCornerShape(24.dp), elevation = 3.dp, isDark = isDarkThemeActive)
                             .padding(vertical = 12.dp, horizontal = 18.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -1018,8 +1024,8 @@ fun ChatScreen(
                                 modifier = Modifier
                                     .size(26.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFF1E2129))
-                                    .border(1.dp, Color(0xFF323642), RoundedCornerShape(10.dp)),
+                                    .background(AppSurfaceVariant)
+                                    .border(1.dp, AppBorder, RoundedCornerShape(10.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
@@ -1033,7 +1039,7 @@ fun ChatScreen(
                                 "Built for developers. Powered by AI.",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = Color(0xFFD1D5DB)
+                                color = AppWhite
                             )
                         }
                     }
@@ -1221,21 +1227,21 @@ fun ChatScreen(
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 52.dp)
-                        .depthInputBar(shape = RoundedCornerShape(32.dp), elevation = 6.dp, isDark = true)
+                        .depthInputBar(shape = RoundedCornerShape(32.dp), elevation = 6.dp, isDark = isDarkThemeActive)
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
                         modifier = Modifier
                             .size(38.dp)
-                            .depthPill(shape = CircleShape, elevation = 2.dp, isDark = true)
+                            .depthPill(shape = CircleShape, elevation = 2.dp, isDark = isDarkThemeActive)
                             .bouncyClickable(provideHaptic = true) { filePickerLauncher.launch("*/*") },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Attach",
-                            tint = Color.White,
+                            tint = AppWhite,
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -1249,14 +1255,14 @@ fun ChatScreen(
                             .weight(1f)
                             .padding(vertical = 10.dp),
                         maxLines = 5,
-                        textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
-                        cursorBrush = SolidColor(Color.White),
+                        textStyle = TextStyle(color = AppWhite, fontSize = 15.sp),
+                        cursorBrush = SolidColor(AppPrimary),
                         decorationBox = { innerTextField ->
                             Box(contentAlignment = Alignment.CenterStart) {
                                 if (inputMsg.isEmpty()) {
                                     Text(
                                         "Ask anything...",
-                                        color = Color(0xFF9E9EA5),
+                                        color = AppMuted,
                                         fontSize = 15.sp
                                     )
                                 }
@@ -1278,7 +1284,7 @@ fun ChatScreen(
                     Box(
                         modifier = Modifier
                             .size(38.dp)
-                            .depthPill(shape = CircleShape, elevation = 2.dp, isDark = true)
+                            .depthPill(shape = CircleShape, elevation = 2.dp, isDark = isDarkThemeActive)
                             .bouncyClickable(provideHaptic = true) {
                                 Toast.makeText(context, "Voice input...", Toast.LENGTH_SHORT).show()
                             },
@@ -1287,7 +1293,7 @@ fun ChatScreen(
                         Icon(
                             imageVector = Icons.Default.Mic,
                             contentDescription = "Voice",
-                            tint = Color.White,
+                            tint = AppWhite,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -1329,9 +1335,10 @@ fun ChatScreen(
                                     shape = CircleShape,
                                     elevation = 5.dp,
                                     customGradient = if (isStreaming) listOf(Color(0xFFEF4444), Color(0xFFDC2626))
-                                                     else listOf(Color(0xFFFFFFFF), Color(0xFFEDEDED)),
-                                    highlightAlpha = if (isStreaming) 0.35f else 0.45f,
-                                    isDark = isStreaming
+                                                     else if (isDarkThemeActive) listOf(Color(0xFFFFFFFF), Color(0xFFEDEDED))
+                                                     else listOf(Color(0xFF18181B), Color(0xFF111113)),
+                                    highlightAlpha = if (isStreaming) 0.35f else if (isDarkThemeActive) 0.45f else 0.20f,
+                                    isDark = if (isStreaming) true else isDarkThemeActive
                                 )
                                 .bouncyClickable(provideHaptic = true) {
                                     if (isStreaming) {
@@ -1348,7 +1355,7 @@ fun ChatScreen(
                             Icon(
                                 imageVector = if (isStreaming) Icons.Rounded.Stop else Icons.AutoMirrored.Rounded.Send,
                                 contentDescription = if (isStreaming) "Stop" else "Send",
-                                tint = if (isStreaming) Color.White else Color.Black,
+                                tint = if (isStreaming) Color.White else if (isDarkThemeActive) Color.Black else Color.White,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -1361,7 +1368,7 @@ fun ChatScreen(
                                     elevation = 5.dp,
                                     customGradient = listOf(AppPrimary, AppPrimaryGradientEnd),
                                     highlightAlpha = 0.40f,
-                                    isDark = true
+                                    isDark = isDarkThemeActive
                                 )
                                 .bouncyClickable(provideHaptic = true) {
                                     Toast.makeText(context, "Voice mode activated", Toast.LENGTH_SHORT).show()
@@ -1430,7 +1437,7 @@ private fun BoxScope.ScrollToBottomButton(visible: Boolean, lazyListState: LazyL
                 .depthPill(
                     shape = CircleShape,
                     elevation = 4.dp,
-                    isDark = true
+                    isDark = isDarkThemeActive
                 )
                 .bouncyClickable(provideHaptic = true) {
                     scope.launch {
@@ -1447,7 +1454,7 @@ private fun BoxScope.ScrollToBottomButton(visible: Boolean, lazyListState: LazyL
             Icon(
                 imageVector = Icons.Default.KeyboardArrowDown,
                 contentDescription = "Scroll to bottom",
-                tint = Color.White,
+                tint = AppWhite,
                 modifier = Modifier.size(22.dp)
             )
         }
@@ -1455,7 +1462,7 @@ private fun BoxScope.ScrollToBottomButton(visible: Boolean, lazyListState: LazyL
 }
 
 @Composable
-fun MenuTwoBarsIcon(color: Color = Color.White, modifier: Modifier = Modifier) {
+fun MenuTwoBarsIcon(color: Color = AppWhite, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(4.5.dp),
@@ -1508,15 +1515,15 @@ private fun TopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // Left: Circular dark button with 2 horizontal bars
+        // Left: Circular button with 2 horizontal bars
         Box(
             modifier = Modifier
                 .size(44.dp)
-                .depthPill(shape = CircleShape, elevation = 3.dp, isDark = true)
+                .depthPill(shape = CircleShape, elevation = 3.dp, isDark = isDarkThemeActive)
                 .bouncyClickable(provideHaptic = true) { onMenuClick() },
             contentAlignment = Alignment.Center
         ) {
-            MenuTwoBarsIcon(color = Color.White)
+            MenuTwoBarsIcon(color = AppWhite)
         }
 
         // Right: Model selection capsule pill [ deepseek v4 flash  ⋮ ]
@@ -1530,9 +1537,12 @@ private fun TopBar(
                     .depthPill(
                         shape = RoundedCornerShape(24.dp),
                         elevation = 3.dp,
-                        customGradient = if (isGpt) listOf(Color(0xFF1B3D34), Color(0xFF0F2620)) else null,
+                        customGradient = if (isGpt) {
+                            if (isDarkThemeActive) listOf(Color(0xFF1B3D34), Color(0xFF0F2620))
+                            else listOf(Color(0xFFE6F7F2), Color(0xFFD0F0E6))
+                        } else null,
                         highlightAlpha = if (isGpt) 0.35f else 0.22f,
-                        isDark = true
+                        isDark = isDarkThemeActive
                     )
                     .bouncyClickable(provideHaptic = true) { expandedSelectorDropdown = !expandedSelectorDropdown }
                     .padding(horizontal = 16.dp, vertical = 9.dp),
@@ -1549,7 +1559,7 @@ private fun TopBar(
                 }
                 Text(
                     text = modelDisplayName,
-                    color = if (isGpt) Color(0xFF10A37F) else Color.White,
+                    color = if (isGpt) Color(0xFF10A37F) else AppWhite,
                     fontWeight = FontWeight.Medium,
                     fontSize = 15.sp,
                     maxLines = 1,
@@ -1560,7 +1570,7 @@ private fun TopBar(
                 Icon(
                     imageVector = Icons.Default.MoreVert,
                     contentDescription = "Select model",
-                    tint = if (isGpt) Color(0xFF10A37F) else Color.White,
+                    tint = if (isGpt) Color(0xFF10A37F) else AppWhite,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -1676,7 +1686,7 @@ private fun UserBubble(
                 elevation = 2.dp,
                 isDark = isDarkThemeActive,
                 customGradient = listOf(topColor, bottomColor),
-                customBorderColor = if (isDarkThemeActive) Color.White.copy(alpha = 0.09f) else Color.White.copy(alpha = 0.40f)
+                customBorderColor = if (isDarkThemeActive) Color.White.copy(alpha = 0.09f) else AppPrimary.copy(alpha = 0.25f)
             )
             .padding(horizontal = 18.dp, vertical = 13.dp)
             .pointerInput(Unit) {
@@ -1692,7 +1702,7 @@ private fun UserBubble(
                 text = cleanedContent,
                 fontSize = 15.sp,
                 lineHeight = 22.sp,
-                color = Color.White,
+                color = AppWhite,
                 maxLines = if (isExpanded) Int.MAX_VALUE else 6,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1708,7 +1718,7 @@ private fun UserBubble(
                 ) {
                     Text(
                         text = if (isExpanded) "Show less ⌃" else "Show more ⌵",
-                        color = Color.White.copy(alpha = 0.85f),
+                        color = AppWhite.copy(alpha = 0.85f),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -1723,7 +1733,7 @@ private fun UserBubble(
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = timeStr,
-                        color = Color.White.copy(alpha = 0.55f),
+                        color = AppMuted,
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
                         modifier = Modifier.align(Alignment.End)
@@ -2089,9 +2099,10 @@ private fun AudioPlayer(part: MessageContentPart.Audio) {
             .depthCard(
                 shape = RoundedCornerShape(22.dp),
                 elevation = 2.dp,
-                isDark = true,
-                customGradient = listOf(Color(0xFF17181C), Color(0xFF0E0F12)),
-                customBorderColor = Color.White.copy(alpha = 0.08f)
+                isDark = isDarkThemeActive,
+                customGradient = if (isDarkThemeActive) listOf(Color(0xFF17181C), Color(0xFF0E0F12))
+                    else listOf(Color(0xFFFFFFFF), Color(0xFFF6F6F9)),
+                customBorderColor = if (isDarkThemeActive) Color.White.copy(alpha = 0.08f) else Color(0xFFE4E4E7)
             )
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -2103,8 +2114,9 @@ private fun AudioPlayer(part: MessageContentPart.Audio) {
                 .depthPill(
                     shape = CircleShape,
                     elevation = 2.dp,
-                    isDark = true,
-                    customGradient = listOf(Color(0xFF332D1E), Color(0xFF201B0F)),
+                    isDark = isDarkThemeActive,
+                    customGradient = if (isDarkThemeActive) listOf(Color(0xFF332D1E), Color(0xFF201B0F))
+                        else listOf(Color(0xFFFFF8E6), Color(0xFFFFEDBF)),
                     customBorderColor = Color(0xFFEAA315).copy(alpha = 0.35f)
                 )
                 .bouncyClickable(provideHaptic = true) {
@@ -2197,7 +2209,8 @@ private fun AudioPlayer(part: MessageContentPart.Audio) {
                     for (i in 0 until barCount) {
                         val barCenterX = (i + 0.5f) * step
                         val isPlayed = (barCenterX / size.width) <= progress
-                        val barColor = if (isPlayed) Color.White else Color.White.copy(alpha = 0.28f)
+                        val barColor = if (isPlayed) (if (isDarkThemeActive) Color.White else AppWhite)
+                            else (if (isDarkThemeActive) Color.White.copy(alpha = 0.28f) else AppWhite.copy(alpha = 0.22f))
                         val barHeight = (amps[i] * maxHeight).coerceAtLeast(3.dp.toPx())
 
                         drawLine(
@@ -2219,13 +2232,13 @@ private fun AudioPlayer(part: MessageContentPart.Audio) {
             ) {
                 Text(
                     text = formatAudioTime(currentPosMs.value),
-                    color = Color.White.copy(alpha = 0.65f),
+                    color = AppMuted,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace
                 )
                 Text(
                     text = formatAudioTime(totalDurationMs.value),
-                    color = Color.White.copy(alpha = 0.65f),
+                    color = AppMuted,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace
                 )
@@ -2240,9 +2253,10 @@ private fun AudioPlayer(part: MessageContentPart.Audio) {
                 .depthPill(
                     shape = RoundedCornerShape(16.dp),
                     elevation = 1.5.dp,
-                    isDark = true,
-                    customGradient = listOf(Color(0xFF1B1C20), Color(0xFF101114)),
-                    customBorderColor = Color.White.copy(alpha = 0.08f)
+                    isDark = isDarkThemeActive,
+                    customGradient = if (isDarkThemeActive) listOf(Color(0xFF1B1C20), Color(0xFF101114))
+                        else listOf(Color(0xFFFFFFFF), Color(0xFFF1F1F4)),
+                    customBorderColor = if (isDarkThemeActive) Color.White.copy(alpha = 0.08f) else Color(0xFFE4E4E7)
                 )
                 .bouncyClickable(provideHaptic = true) {
                     val nextIdx = (speedIndex.value + 1) % speedList.size
@@ -2272,7 +2286,7 @@ private fun AudioPlayer(part: MessageContentPart.Audio) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
                     contentDescription = "Options",
-                    tint = Color.White.copy(alpha = 0.55f),
+                    tint = AppMuted,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -2584,7 +2598,7 @@ fun PulsatingBrainIcon() {
     Icon(
         imageVector = Icons.Default.AutoAwesome,
         contentDescription = "Thinking",
-        tint = Color(0xFFFF6D00),
+        tint = AppPrimary,
         modifier = Modifier
             .size(18.dp)
             .graphicsLayer {
@@ -2613,7 +2627,7 @@ fun BlinkingCursor() {
             .width(2.dp)
             .height(18.dp)
             .alpha(alpha)
-            .background(Color(0xFFFF6D00))
+            .background(AppPrimary)
     )
 }
 
@@ -3458,7 +3472,7 @@ sealed class ChatItem {
 // ═══════════════════════════════════════════════
 // Group consecutive tool messages into ToolExecutionGroups
 // ═══════════════════════════════════════════════
-private fun groupChatMessages(messages: List<Message>): List<ChatItem> {
+private fun groupChatMessages(messages: List<Message>, isChatGptSession: Boolean = false): List<ChatItem> {
     val result = mutableListOf<ChatItem>()
     val currentToolGroup = mutableListOf<Message>()
 
@@ -3475,7 +3489,48 @@ private fun groupChatMessages(messages: List<Message>): List<ChatItem> {
         }
     }
 
-    for (msg in messages) {
+    // Filter out repeated automation input messages
+    // For ChatGPT / automation sessions, the automation input prompt must only be shown once
+    // at the top of the chat screen, and all subsequent repeating automation input prompts are suppressed
+    // so that only the AI replies (and any manual user follow-ups) appear.
+    var hasSeenFirstAutomationPrompt = false
+    var firstUserPromptClean: String? = null
+
+    val displayMessages = messages.filter { msg ->
+        if (msg.role == "user") {
+            val trimmed = msg.content.trim()
+            val isScheduledTask = trimmed.startsWith("⏰ [Scheduled Task:") ||
+                trimmed.startsWith("⏰ [") ||
+                trimmed.contains("[Scheduled Task:") ||
+                trimmed.startsWith("⏰")
+
+            if (isScheduledTask) {
+                if (!hasSeenFirstAutomationPrompt) {
+                    hasSeenFirstAutomationPrompt = true
+                    if (firstUserPromptClean == null) firstUserPromptClean = trimmed
+                    true // Keep the first automation prompt at the top
+                } else {
+                    false // Suppress repeating scheduled task input prompts
+                }
+            } else if (isChatGptSession) {
+                if (firstUserPromptClean == null) {
+                    firstUserPromptClean = trimmed
+                    true
+                } else if (trimmed == firstUserPromptClean && trimmed.length > 20) {
+                    // Suppress exact repeated automation prompts in ChatGPT sessions
+                    false
+                } else {
+                    true
+                }
+            } else {
+                true
+            }
+        } else {
+            true
+        }
+    }
+
+    for (msg in displayMessages) {
         if (msg.isToolCall || msg.role == "tool") {
             currentToolGroup.add(msg)
         } else {

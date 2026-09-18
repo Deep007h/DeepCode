@@ -114,7 +114,7 @@ fun SettingsScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 3.dp, isDark = true)
+                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 3.dp, isDark = isDarkThemeActive)
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -171,7 +171,7 @@ fun SettingsScreen(
                         .depthPill(
                             shape = RoundedCornerShape(10.dp),
                             elevation = 2.dp,
-                            isDark = true,
+                            isDark = isDarkThemeActive,
                             customGradient = listOf(AppPrimary.copy(alpha = 0.22f), AppPrimary.copy(alpha = 0.08f)),
                             customBorderColor = AppPrimary.copy(alpha = 0.6f)
                         )
@@ -201,7 +201,7 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = true)
+                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = isDarkThemeActive)
             ) {
                 SettingsNavRow(
                     icon = Icons.Default.Palette,
@@ -217,7 +217,7 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = true)
+                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = isDarkThemeActive)
             ) {
                 // Manage Agents Row
                 SettingsNavRow(
@@ -308,7 +308,7 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = true)
+                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = isDarkThemeActive)
             ) {
                 SettingsSubscreenRow(
                     icon = Icons.Default.Shield,
@@ -370,7 +370,7 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = true)
+                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = isDarkThemeActive)
             ) {
                 SettingsSubscreenRow(
                     icon = Icons.Default.Info,
@@ -393,7 +393,7 @@ fun SettingsScreen(
                     .depthPill(
                         shape = RoundedCornerShape(14.dp),
                         elevation = 2.5.dp,
-                        isDark = true,
+                        isDark = isDarkThemeActive,
                         customGradient = listOf(Color(0xFFE53935).copy(alpha = 0.22f), Color(0xFFE53935).copy(alpha = 0.08f)),
                         customBorderColor = Color(0xFFE53935).copy(alpha = 0.6f)
                     )

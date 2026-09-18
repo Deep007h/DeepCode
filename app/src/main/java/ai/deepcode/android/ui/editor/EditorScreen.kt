@@ -19,6 +19,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ai.deepcode.android.data.repository.DeepCodeRepository
+import ai.deepcode.android.ui.theme.*
 import io.github.rosemoe.sora.widget.CodeEditor
 import io.github.rosemoe.sora.widget.schemes.EditorColorScheme
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -125,14 +126,14 @@ fun EditorScreen(
         editorInstance?.isWordwrap = softWrap
     }
 
-    Column(modifier = modifier.fillMaxSize().background(Color(0xFF121212))) {
+    Column(modifier = modifier.fillMaxSize().background(AppScreenBg)) {
         // Toolbar
         Row(
-            modifier = Modifier.fillMaxWidth().background(Color(0xFF1E1E1E)).padding(8.dp),
+            modifier = Modifier.fillMaxWidth().background(AppSurface).padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = AppWhite)
             }
 
             Spacer(modifier = Modifier.width(8.dp))
@@ -140,7 +141,7 @@ fun EditorScreen(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = if (filePath.isNotEmpty()) File(filePath).name else "No File Opened",
-                    color = Color.White,
+                    color = AppWhite,
                     style = MaterialTheme.typography.titleMedium
                 )
                 Text(
@@ -175,17 +176,17 @@ fun EditorScreen(
 
         // Sub Actions Toolbar
         Row(
-            modifier = Modifier.fillMaxWidth().background(Color(0xFF1E1E1E)).padding(horizontal = 8.dp, vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth().background(AppSurface).padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             TextButton(onClick = { editorInstance?.undo() }) {
-                Text("Undo", fontSize = 12.sp, color = Color.White)
+                Text("Undo", fontSize = 12.sp, color = AppWhite)
             }
             TextButton(onClick = { editorInstance?.redo() }) {
-                Text("Redo", fontSize = 12.sp, color = Color.White)
+                Text("Redo", fontSize = 12.sp, color = AppWhite)
             }
             TextButton(onClick = { showFindReplace = !showFindReplace }) {
-                Text("Find/Replace", fontSize = 12.sp, color = Color.White)
+                Text("Find/Replace", fontSize = 12.sp, color = AppWhite)
             }
             TextButton(
                 onClick = {
@@ -195,26 +196,26 @@ fun EditorScreen(
                     }
                 }
             ) {
-                Text(if (softWrap) "Unwrap Lines" else "Soft Wrap", fontSize = 12.sp, color = Color.White)
+                Text(if (softWrap) "Unwrap Lines" else "Soft Wrap", fontSize = 12.sp, color = AppWhite)
             }
         }
 
         // Search & Replace UI
         if (showFindReplace) {
             Row(
-                modifier = Modifier.fillMaxWidth().background(Color(0xFF2E2E2E)).padding(8.dp),
+                modifier = Modifier.fillMaxWidth().background(if (isDarkThemeActive) Color(0xFF2E2E2E) else Color(0xFFF4F4F6)).padding(8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
                     value = searchVal,
                     onValueChange = { searchVal = it },
-                    label = { Text("Find", color = Color.Gray) },
+                    label = { Text("Find", color = AppMuted) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
+                        focusedTextColor = AppWhite,
+                        unfocusedTextColor = AppWhite,
                         focusedBorderColor = Color(0xFF00FF9C)
                     )
                 )
@@ -222,12 +223,12 @@ fun EditorScreen(
                 OutlinedTextField(
                     value = replaceVal,
                     onValueChange = { replaceVal = it },
-                    label = { Text("Replace", color = Color.Gray) },
+                    label = { Text("Replace", color = AppMuted) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
+                        focusedTextColor = AppWhite,
+                        unfocusedTextColor = AppWhite,
                         focusedBorderColor = Color(0xFF00FF9C)
                     )
                 )
@@ -244,7 +245,7 @@ fun EditorScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    Text("Go", color = Color.Black)
+                    Text("Go", color = MaterialTheme.colorScheme.onPrimary)
                 }
             }
         }

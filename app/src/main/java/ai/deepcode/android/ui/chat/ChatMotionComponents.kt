@@ -44,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -52,8 +53,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import ai.deepcode.android.ui.theme.MotionTokens
-import ai.deepcode.android.ui.theme.bouncyClickable
+import ai.deepcode.android.ui.theme.*
 import kotlin.math.sin
 
 /**
@@ -91,20 +91,38 @@ fun AnimatedThinkingPill(
         label = "GlowAlpha"
     )
 
-    val borderBrush = remember(glowAlpha, accentColor) {
-        Brush.linearGradient(
-            colors = listOf(
-                accentColor.copy(alpha = glowAlpha * 0.4f),
-                accentColor.copy(alpha = glowAlpha),
-                accentColor.copy(alpha = glowAlpha * 0.2f)
+    val isDark = isDarkThemeActive
+    val pillBg = if (isDark) Color(0xFF13151A) else AppCard
+    val borderBrush = remember(glowAlpha, accentColor, isDark) {
+        if (isDark) {
+            Brush.linearGradient(
+                colors = listOf(
+                    accentColor.copy(alpha = glowAlpha * 0.4f),
+                    accentColor.copy(alpha = glowAlpha),
+                    accentColor.copy(alpha = glowAlpha * 0.2f)
+                )
             )
-        )
+        } else {
+            Brush.linearGradient(
+                colors = listOf(
+                    accentColor.copy(alpha = (glowAlpha * 0.7f).coerceAtMost(1f)),
+                    accentColor.copy(alpha = glowAlpha),
+                    accentColor.copy(alpha = (glowAlpha * 0.4f).coerceAtMost(1f))
+                )
+            )
+        }
     }
 
     Row(
         modifier = modifier
+            .shadow(
+                elevation = if (isDark) 0.dp else 2.dp,
+                shape = RoundedCornerShape(16.dp),
+                spotColor = Color(0x18000000),
+                ambientColor = Color(0x0A000000)
+            )
             .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF13151A))
+            .background(pillBg)
             .border(1.2.dp, borderBrush, RoundedCornerShape(16.dp))
             .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -329,13 +347,31 @@ fun ReasoningAccordion(
         1f
     }
 
+    val isDark = isDarkThemeActive
+    val accordionBg = if (isDark) {
+        if (isLiveStreaming) Color(0xFF13151A) else Color(0xFF16181F)
+    } else {
+        if (isLiveStreaming) AppCard else AppSurfaceVariant.copy(alpha = 0.7f)
+    }
+    val accordionBorder = if (isLiveStreaming) {
+        accentColor.copy(alpha = if (isDark) 0.4f else 0.7f)
+    } else {
+        if (isDark) Color(0xFF262933) else AppBorder
+    }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
+            .shadow(
+                elevation = if (isDark) 0.dp else 1.5.dp,
+                shape = RoundedCornerShape(12.dp),
+                spotColor = Color(0x14000000),
+                ambientColor = Color(0x06000000)
+            )
             .border(
                 width = if (isLiveStreaming) 1.dp else 0.5.dp,
-                color = if (isLiveStreaming) accentColor.copy(alpha = 0.4f) else Color(0xFF262933),
+                color = accordionBorder,
                 shape = RoundedCornerShape(12.dp)
             )
             .animateContentSize(
@@ -345,7 +381,7 @@ fun ReasoningAccordion(
                 )
             ),
         colors = CardDefaults.cardColors(
-            containerColor = if (isLiveStreaming) Color(0xFF13151A) else Color(0xFF16181F)
+            containerColor = accordionBg
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -366,7 +402,7 @@ fun ReasoningAccordion(
                 Text(
                     text = if (isLiveStreaming) "Live Thought Process" else "Thought Process",
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (isLiveStreaming) accentColor else Color(0xFF9E9EA7),
+                    color = if (isLiveStreaming) accentColor else AppMuted,
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.5.sp
                 )
@@ -383,7 +419,7 @@ fun ReasoningAccordion(
                 Icon(
                     imageVector = Icons.Default.KeyboardArrowDown,
                     contentDescription = "Expand thought",
-                    tint = Color(0xFF8E8E93),
+                    tint = AppMuted,
                     modifier = Modifier
                         .size(18.dp)
                         .graphicsLayer {
@@ -407,7 +443,7 @@ fun ReasoningAccordion(
                     Text(
                         text = thought.trim(),
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFD1D1D6),
+                        color = if (isDark) Color(0xFFD1D1D6) else AppWhite.copy(alpha = 0.85f),
                         fontStyle = FontStyle.Italic,
                         lineHeight = 19.sp
                     )

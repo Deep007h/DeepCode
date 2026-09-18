@@ -584,7 +584,7 @@ private fun OnboardingFlow(
                         elevation = 4.dp,
                         customGradient = listOf(ActiveAccent.primary, ActiveAccent.primaryGradientEnd),
                         highlightAlpha = 0.40f,
-                        isDark = true
+                        isDark = isDarkThemeActive
                     )
                     .bouncyClickable(
                         enabled = step != 0 || name.isNotBlank() || isFirstRun,

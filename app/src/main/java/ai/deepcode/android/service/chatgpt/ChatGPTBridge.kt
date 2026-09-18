@@ -775,10 +775,45 @@ class ChatGPTBridge private constructor(private val context: Context) {
         AppLogger.i(TAG, "Executing ChatGPT image generation: $cleanPrompt")
 
         val token = getAccessToken()
-        val turnResult = executeSingleSessionTurn(
-            prompt = "Generate an image of: $cleanPrompt. Do not explain, just generate the image.",
-            model = "gpt-4o"
-        )
+        val openAiKey = prefs.getApiKey("openai").trim().ifEmpty { prefs.getSetting("openai_api_key", "").trim() }
+
+        // 1. Direct OpenAI API Key (sk-...) -> generate directly via DALL-E 3 API
+        if (token.startsWith("sk-")) {
+            AppLogger.i(TAG, "Using OpenAI DALL-E 3 API directly for image generation")
+            val dalleResult = ai.deepcode.android.service.tools.ToolExecutor(context)
+                .executeOpenAIDallE(cleanPrompt, token, "dall-e-3")
+            if (dalleResult.isNotBlank() && !dalleResult.startsWith("Error:") && !dalleResult.startsWith("No image")) {
+                return@withContext dalleResult.removePrefix("[image:").removeSuffix("]").trim()
+            }
+        }
+
+        if (token.isBlank()) {
+            if (openAiKey.isNotBlank()) {
+                val dalleResult = ai.deepcode.android.service.tools.ToolExecutor(context)
+                    .executeOpenAIDallE(cleanPrompt, openAiKey, "dall-e-3")
+                if (dalleResult.isNotBlank() && !dalleResult.startsWith("Error:") && !dalleResult.startsWith("No image")) {
+                    return@withContext dalleResult.removePrefix("[image:").removeSuffix("]").trim()
+                }
+            }
+            throw IllegalStateException("ChatGPT access token not configured. Please connect ChatGPT in Integrations or add an OpenAI API key in Settings.")
+        }
+
+        val turnResult = try {
+            executeSingleSessionTurn(
+                prompt = "Generate an image of: $cleanPrompt. Do not explain, just generate the image.",
+                model = "gpt-4o"
+            )
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "ChatGPT turn execution failed: ${e.message}")
+            if (openAiKey.isNotBlank()) {
+                val dalleResult = ai.deepcode.android.service.tools.ToolExecutor(context)
+                    .executeOpenAIDallE(cleanPrompt, openAiKey, "dall-e-3")
+                if (dalleResult.isNotBlank() && !dalleResult.startsWith("Error:") && !dalleResult.startsWith("No image")) {
+                    return@withContext dalleResult.removePrefix("[image:").removeSuffix("]").trim()
+                }
+            }
+            throw e
+        }
 
         // If asset pointers were captured, download the first one locally
         if (turnResult.assetPointers.isNotEmpty()) {
@@ -806,6 +841,15 @@ class ChatGPTBridge private constructor(private val context: Context) {
             if (urlMatch != null) {
                 val localPath = downloadAndSaveImageLocally(urlMatch.groupValues[1], token)
                 return@withContext localPath.removePrefix("[image:").removeSuffix("]").trim()
+            }
+        }
+
+        // Fallback: If ChatGPT conversation didn't return image assets, try DALL-E 3 with OpenAI key
+        if (openAiKey.isNotBlank()) {
+            val dalleResult = ai.deepcode.android.service.tools.ToolExecutor(context)
+                .executeOpenAIDallE(cleanPrompt, openAiKey, "dall-e-3")
+            if (dalleResult.isNotBlank() && !dalleResult.startsWith("Error:") && !dalleResult.startsWith("No image")) {
+                return@withContext dalleResult.removePrefix("[image:").removeSuffix("]").trim()
             }
         }
 

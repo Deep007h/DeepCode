@@ -70,13 +70,13 @@ private val LevelBgColors = mapOf(
     LogLevel.DEBUG to Color.Transparent
 )
 
-private val DarkBg      = Color(0xFF0A0A0A)
-private val SurfaceBg   = Color(0xFF111111)
-private val CardBg      = Color(0xFF1A1A1A)
-private val CardBg2     = Color(0xFF161616)
-private val BorderColor = Color(0xFF252525)
-private val TextPrimary = Color(0xFFE5E5E5)
-private val TextSecondary = Color(0xFF888888)
+private val DarkBg      get() = if (isDarkThemeActive) Color(0xFF0A0A0A) else AppBackground
+private val SurfaceBg   get() = if (isDarkThemeActive) Color(0xFF111111) else AppSurface
+private val CardBg      get() = if (isDarkThemeActive) Color(0xFF1A1A1A) else AppCard
+private val CardBg2     get() = if (isDarkThemeActive) Color(0xFF161616) else AppSurfaceVariant
+private val BorderColor get() = if (isDarkThemeActive) Color(0xFF252525) else AppBorder
+private val TextPrimary get() = if (isDarkThemeActive) Color(0xFFE5E5E5) else AppWhite
+private val TextSecondary get() = if (isDarkThemeActive) Color(0xFF888888) else AppMuted
 private val AccentBlue get() = AppPrimary
 private val AccentGreen = Color(0xFF22C55E)
 private val AccentPurple = Color(0xFFA855F7)
@@ -557,16 +557,16 @@ private fun AdbConsolePanel(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF0D0D0D))
+            .background(DarkBg)
             .drawBehind {
-                drawLine(Color(0xFF2A2A2A), Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx())
+                drawLine(BorderColor, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx())
             }
     ) {
         // Panel header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFF0F0F0F))
+                .background(CardBg)
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
@@ -597,7 +597,7 @@ private fun AdbConsolePanel(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF080808))
+                    .background(SurfaceBg)
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 Text("── ADB COMMAND REFERENCE ──", fontSize = 8.sp,
@@ -725,7 +725,7 @@ private fun AdbConsolePanel(
                     .weight(1f)
                     .height(28.dp)
                     .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFF0A0A0A))
+                    .background(SurfaceBg)
                     .border(1.dp, BorderColor, RoundedCornerShape(6.dp))
                     .padding(horizontal = 8.dp),
                 contentAlignment = Alignment.CenterStart
@@ -755,13 +755,15 @@ private fun AdbConsolePanel(
 
 @Composable
 private fun AdbCodeLine(code: String) {
+    val codeBg = if (isDarkThemeActive) Color(0xFF0A2A1A).copy(alpha = 0.5f) else Color(0xFFD1FAE5)
+    val codeColor = if (isDarkThemeActive) Color(0xFF6EE7B7) else Color(0xFF065F46)
     Text(
         code, fontSize = 7.5.sp, fontFamily = FontFamily.Monospace,
-        color = Color(0xFF6EE7B7),
+        color = codeColor,
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(3.dp))
-            .background(Color(0xFF0A2A1A).copy(alpha = 0.5f))
+            .background(codeBg)
             .padding(horizontal = 6.dp, vertical = 2.dp)
     )
 }

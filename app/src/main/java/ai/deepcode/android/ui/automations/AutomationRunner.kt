@@ -63,6 +63,13 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
                     return true
                 }
 
+                val configObj = try {
+                    Gson().fromJson(rule.configJson, JsonObject::class.java)
+                } catch (_: Exception) {
+                    JsonObject()
+                }
+                val isChatGPT = rule.category == "CHATGPT" || configObj.get("target")?.asString == "chatgpt"
+
                 // 1. Resolve or create the single dedicated ChatSession for this automation task
                 val existingSessionId = rule.getEffectiveChatSessionId()
                 val existingSession = if (existingSessionId != null) {
@@ -76,7 +83,7 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
                     val newSessionId = UUID.randomUUID().toString()
                     val newSession = SessionEntity(
                         id = newSessionId,
-                        title = "🤖 ${rule.name}",
+                        title = if (isChatGPT && !rule.name.contains("ChatGPT", ignoreCase = true)) "🤖 ${rule.name} (ChatGPT)" else "🤖 ${rule.name}",
                         createdAt = System.currentTimeMillis()
                     )
                     sessionDao.insertSession(newSession)
@@ -84,18 +91,18 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
                     AppLogger.i("AutomationRunner", "Created new dedicated chat session $targetSessionId for task '${rule.name}'")
 
                     // Persist linked chatSessionId to the automation entity and configJson
-                    val configObj = try {
-                        Gson().fromJson(rule.configJson, JsonObject::class.java)
-                    } catch (_: Exception) {
-                        JsonObject()
-                    }.apply {
-                        addProperty("chat_session_id", targetSessionId)
-                    }
+                    configObj.addProperty("chat_session_id", targetSessionId)
                     val updatedRuleWithSession = rule.copy(
                         chatSessionId = targetSessionId,
                         configJson = Gson().toJson(configObj)
                     )
                     automationRepository.insertAutomation(updatedRuleWithSession)
+                }
+
+                if (isChatGPT) {
+                    val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context)
+                    prefs.saveSetting("session_provider_$targetSessionId", "ChatGPT")
+                    prefs.saveSetting("session_model_$targetSessionId", "chatgpt-4o")
                 }
 
                 // 2. Calculate dynamic date, time, and system data by itself
@@ -106,12 +113,6 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
 
                 val batteryStatus = getBatteryStatus(context)
                 val networkStatus = getNetworkStatus(context)
-
-                val configObj = try {
-                    Gson().fromJson(rule.configJson, JsonObject::class.java)
-                } catch (_: Exception) {
-                    JsonObject()
-                }
                 val rawPrompt = configObj.get("action_prompt")?.asString?.takeIf { it.isNotBlank() }
                     ?: "Execute scheduled task: ${rule.name}"
                 val telegramChatId = configObj.get("telegram_chat_id")?.asString?.takeIf { it.isNotBlank() }
@@ -152,7 +153,6 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
                 AppLogger.i("AutomationRunner", "Running agent in session $targetSessionId with prompt: $effectiveActionPrompt")
 
                 // 3. Execute through ChatGPT integration (for CHATGPT automations) or AgentEngine (for standard automations)
-                val isChatGPT = rule.category == "CHATGPT" || configObj.get("target")?.asString == "chatgpt"
                 val finalOutput = if (isChatGPT) {
                     AppLogger.i("AutomationRunner", "Running ChatGPT task for rule '${rule.name}' in single session")
                     val bridge = ai.deepcode.android.service.chatgpt.ChatGPTBridge.getInstance(context)
@@ -169,16 +169,22 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
                     }
 
                     // Record the execution in the dedicated chat session
-                    val userMsg = ai.deepcode.android.data.local.MessageEntity(
-                        id = UUID.randomUUID().toString(),
-                        sessionId = targetSessionId,
-                        role = "user",
-                        content = contextualPrompt,
-                        timestamp = System.currentTimeMillis(),
-                        isToolCall = false,
-                        toolCallsJson = null,
-                        toolResultsJson = null
-                    )
+                    // For ChatGPT automations, only record the input automation message once at the top
+                    val existingMessages = database.messageDao().getMessagesListForSession(targetSessionId)
+                    val hasExistingUserMsg = existingMessages.any { it.role == "user" }
+                    if (!hasExistingUserMsg) {
+                        val userMsg = ai.deepcode.android.data.local.MessageEntity(
+                            id = UUID.randomUUID().toString(),
+                            sessionId = targetSessionId,
+                            role = "user",
+                            content = contextualPrompt,
+                            timestamp = System.currentTimeMillis(),
+                            isToolCall = false,
+                            toolCallsJson = null,
+                            toolResultsJson = null
+                        )
+                        database.messageDao().insertMessage(userMsg)
+                    }
                     val assistantMsg = ai.deepcode.android.data.local.MessageEntity(
                         id = UUID.randomUUID().toString(),
                         sessionId = targetSessionId,
@@ -189,7 +195,6 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
                         toolCallsJson = null,
                         toolResultsJson = null
                     )
-                    database.messageDao().insertMessage(userMsg)
                     database.messageDao().insertMessage(assistantMsg)
                     result
                 } else {

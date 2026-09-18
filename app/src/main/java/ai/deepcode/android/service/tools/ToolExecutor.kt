@@ -2149,8 +2149,27 @@ class ToolExecutor(private val context: Context? = null) {
                     }
                 } catch (e: Exception) {
                     AppLogger.e("ToolExecutor", "ChatGPT image generation failed: ${e.message}", e)
-                    if (specifiedModel == "chatgpt") {
-                        return "Error: ${e.message}"
+                    // If ChatGPT failed, check if OpenAI API key is available for direct DALL-E 3 fallback
+                    val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
+                    val openAiKey = prefs.getApiKey("openai").trim().ifEmpty { prefs.getSetting("openai_api_key", "").trim() }
+                    if (openAiKey.isNotEmpty()) {
+                        val dalleResult = executeOpenAIDallE(cleanPrompt, openAiKey, "dall-e-3")
+                        if (dalleResult.isNotBlank() && !dalleResult.startsWith("Error:") && !dalleResult.startsWith("No image")) {
+                            return dalleResult
+                        }
+                    }
+                    // For specifiedModel == "chatgpt", if both ChatGPT and DALL-E 3 fail, log warning and let it fall through
+                    // to other available generators (Gemini Imagen, Cloudflare, Pollinations FLUX) so user gets an image.
+                    AppLogger.w("ToolExecutor", "ChatGPT image generation failed, attempting fallback engines for prompt: $cleanPrompt")
+                }
+            } else if (specifiedModel == "chatgpt") {
+                // ChatGPT requested but not configured: check for OpenAI API key or fall through to high quality image generators
+                val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
+                val openAiKey = prefs.getApiKey("openai").trim().ifEmpty { prefs.getSetting("openai_api_key", "").trim() }
+                if (openAiKey.isNotEmpty()) {
+                    val dalleResult = executeOpenAIDallE(cleanPrompt, openAiKey, "dall-e-3")
+                    if (dalleResult.isNotBlank() && !dalleResult.startsWith("Error:") && !dalleResult.startsWith("No image")) {
+                        return dalleResult
                     }
                 }
             }

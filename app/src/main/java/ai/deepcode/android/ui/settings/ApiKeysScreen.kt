@@ -485,7 +485,7 @@ fun ApiKeysScreen(
             Box(
                 modifier = Modifier
                     .size(36.dp)
-                    .depthPill(shape = RoundedCornerShape(10.dp), elevation = 2.dp, isDark = true)
+                    .depthPill(shape = RoundedCornerShape(10.dp), elevation = 2.dp, isDark = isDarkThemeActive)
                     .bouncyClickable(provideHaptic = true) { onBack() },
                 contentAlignment = Alignment.Center
             ) {
@@ -515,7 +515,7 @@ fun ApiKeysScreen(
             Spacer(modifier = Modifier.weight(1f))
             Box(
                 modifier = Modifier
-                    .depthPill(shape = RoundedCornerShape(10.dp), elevation = 2.dp, isDark = true)
+                    .depthPill(shape = RoundedCornerShape(10.dp), elevation = 2.dp, isDark = isDarkThemeActive)
                     .bouncyClickable(provideHaptic = true) { filePickerLauncher.launch("text/plain") }
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
@@ -587,7 +587,7 @@ fun ApiKeysScreen(
                         .depthPill(
                             shape = RoundedCornerShape(10.dp),
                             elevation = if (isSelected) 2.dp else 1.dp,
-                            isDark = true,
+                            isDark = isDarkThemeActive,
                             customGradient = if (isSelected) listOf(
                                 chipColor.copy(alpha = 0.28f), chipColor.copy(alpha = 0.12f)
                             ) else null,
@@ -817,7 +817,7 @@ private suspend fun performBrowserOAuth(
 // ── Cube Icon & Helpers ───────────────────────────────────────────────────
 
 @Composable
-fun CubeIcon(modifier: Modifier = Modifier, tint: Color = Color.White) {
+fun CubeIcon(modifier: Modifier = Modifier, tint: Color = AppWhite) {
     Canvas(modifier = modifier.size(16.dp)) {
         val w = size.width
         val h = size.height
@@ -1102,8 +1102,8 @@ private fun ApiKeyProviderCard(
                         .fillMaxWidth()
                         .height(44.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF18181B))
-                        .border(1.dp, Color(0xFF2E2E32), RoundedCornerShape(8.dp))
+                        .background(if (isDarkThemeActive) Color(0xFF18181B) else AppField)
+                        .border(1.dp, if (isDarkThemeActive) Color(0xFF2E2E32) else AppBorder, RoundedCornerShape(8.dp))
                         .clickable { showModelsDrawer = !showModelsDrawer }
                         .padding(horizontal = 10.dp),
                     contentAlignment = Alignment.CenterStart
@@ -1121,7 +1121,7 @@ private fun ApiKeyProviderCard(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = selectedModelName,
-                                color = Color.White,
+                                color = AppWhite,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium,
                                 maxLines = 1,
@@ -1176,8 +1176,8 @@ private fun ApiKeyProviderCard(
                             .weight(1f)
                             .height(44.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF18181B))
-                            .border(1.dp, Color(0xFF2E2E32), RoundedCornerShape(8.dp))
+                            .background(if (isDarkThemeActive) Color(0xFF18181B) else AppField)
+                            .border(1.dp, if (isDarkThemeActive) Color(0xFF2E2E32) else AppBorder, RoundedCornerShape(8.dp))
                             .padding(horizontal = 8.dp),
                         contentAlignment = Alignment.CenterStart
                     ) {
@@ -1214,7 +1214,7 @@ private fun ApiKeyProviderCard(
                                     singleLine = true,
                                     visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation('•'),
                                     textStyle = androidx.compose.ui.text.TextStyle(
-                                        color = Color.White,
+                                        color = AppWhite,
                                         fontSize = 13.sp,
                                         fontFamily = FontFamily.Monospace
                                     ),
@@ -1267,8 +1267,8 @@ private fun ApiKeyProviderCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF101012))
-                    .border(1.dp, Color(0xFF242428), RoundedCornerShape(12.dp))
+                    .background(if (isDarkThemeActive) Color(0xFF101012) else Color(0xFFF4F4F6))
+                    .border(1.dp, if (isDarkThemeActive) Color(0xFF242428) else Color(0xFFE4E4E7), RoundedCornerShape(12.dp))
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
@@ -1279,11 +1279,11 @@ private fun ApiKeyProviderCard(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        CubeIcon(tint = Color.White, modifier = Modifier.size(18.dp))
+                        CubeIcon(tint = AppWhite, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Models by ${provider.name}",
-                            color = Color.White,
+                            color = AppWhite,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -1291,7 +1291,7 @@ private fun ApiKeyProviderCard(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF222226))
+                                .background(if (isDarkThemeActive) Color(0xFF222226) else Color(0xFFE4E4E7))
                                 .padding(horizontal = 8.dp, vertical = 2.dp)
                         ) {
                             Text(
@@ -1370,8 +1370,8 @@ private fun ApiKeyProviderCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF18181B))
-                        .border(1.dp, Color(0xFF2A2A2E), RoundedCornerShape(8.dp))
+                        .background(if (isDarkThemeActive) Color(0xFF18181B) else AppField)
+                        .border(1.dp, if (isDarkThemeActive) Color(0xFF2A2A2E) else AppBorder, RoundedCornerShape(8.dp))
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                     contentAlignment = Alignment.CenterStart
                 ) {
@@ -1399,7 +1399,7 @@ private fun ApiKeyProviderCard(
                                 onValueChange = { modelSearchQuery = it },
                                 singleLine = true,
                                 textStyle = androidx.compose.ui.text.TextStyle(
-                                    color = Color.White,
+                                    color = AppWhite,
                                     fontSize = 13.sp
                                 ),
                                 cursorBrush = SolidColor(Color(0xFFF59E0B)),
@@ -1435,7 +1435,7 @@ private fun ApiKeyProviderCard(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(16.dp))
-                                .background(if (isSelected) Color(0xFFF59E0B) else Color(0xFF1F1F23))
+                                .background(if (isSelected) Color(0xFFF59E0B) else (if (isDarkThemeActive) Color(0xFF1F1F23) else Color(0xFFE4E4E7)))
                                 .clickable { modelFilter = key }
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
@@ -1443,7 +1443,7 @@ private fun ApiKeyProviderCard(
                                 text = label,
                                 fontSize = 12.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) Color.Black else Color(0xFFA1A1AA)
+                                color = if (isSelected) Color.Black else (if (isDarkThemeActive) Color(0xFFA1A1AA) else AppMuted)
                             )
                         }
                     }
@@ -1474,7 +1474,7 @@ private fun ApiKeyProviderCard(
                     ) {
                         Text(
                             text = if (modelFilter == "Configured") "No models configured yet. Select models below to show in chat." else "No models matching criteria",
-                            color = Color(0xFF71717A),
+                            color = AppMuted,
                             fontSize = 12.sp
                         )
                     }
@@ -1512,7 +1512,7 @@ private fun ApiKeyProviderCard(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
                                     text = model.name,
-                                    color = Color.White,
+                                    color = AppWhite,
                                     fontSize = 13.sp,
                                     fontWeight = if (isModelSelected || isDefaultModel) FontWeight.SemiBold else FontWeight.Medium,
                                     modifier = Modifier.weight(1f),
@@ -1525,7 +1525,7 @@ private fun ApiKeyProviderCard(
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(Color(0xFF222226))
+                                        .background(if (isDarkThemeActive) Color(0xFF222226) else Color(0xFFE4E4E7))
                                         .padding(horizontal = 7.dp, vertical = 3.dp)
                                 ) {
                                     Text(
@@ -1542,7 +1542,7 @@ private fun ApiKeyProviderCard(
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(Color(0xFF222226))
+                                        .background(if (isDarkThemeActive) Color(0xFF222226) else Color(0xFFE4E4E7))
                                         .padding(horizontal = 7.dp, vertical = 3.dp)
                                 ) {
                                     Text(
@@ -2107,7 +2107,7 @@ private fun ProviderCardFrame(
             .depthCard(
                 shape = RoundedCornerShape(14.dp),
                 elevation = if (isExpanded) 3.5.dp else 1.5.dp,
-                isDark = true,
+                isDark = isDarkThemeActive,
                 customBorderColor = if (isExpanded) categoryColor.copy(alpha = 0.55f) else null
             )
             .animateContentSize()
@@ -2282,7 +2282,7 @@ private fun ApiKeyField(
                         .depthPill(
                             shape = RoundedCornerShape(8.dp),
                             elevation = 1.5.dp,
-                            isDark = true,
+                            isDark = isDarkThemeActive,
                             customGradient = listOf(Color(0xFFE53935).copy(alpha = 0.25f), Color(0xFFE53935).copy(alpha = 0.10f)),
                             customBorderColor = Color(0xFFE53935).copy(alpha = 0.5f)
                         )
@@ -2321,7 +2321,7 @@ private fun ModelFilterRow(
                         .depthPill(
                             shape = RoundedCornerShape(8.dp),
                             elevation = if (isSelected) 2.dp else 1.dp,
-                            isDark = true,
+                            isDark = isDarkThemeActive,
                             customGradient = if (isSelected) listOf(
                                 categoryColor.copy(alpha = 0.9f), categoryColor.copy(alpha = 0.65f)
                             ) else null,
@@ -2370,7 +2370,7 @@ private fun ActionRow(
                     .depthPill(
                         shape = RoundedCornerShape(8.dp),
                         elevation = if (hasChanged) 1.5.dp else 0.dp,
-                        isDark = true
+                        isDark = isDarkThemeActive
                     )
                     .bouncyClickable(enabled = hasChanged, provideHaptic = true, onClick = onCancel)
                     .padding(horizontal = 14.dp, vertical = 7.dp),
@@ -2388,13 +2388,13 @@ private fun ActionRow(
                     .depthPill(
                         shape = RoundedCornerShape(8.dp),
                         elevation = if (hasChanged) 2.5.dp else 0.dp,
-                        isDark = true,
+                        isDark = isDarkThemeActive,
                         customGradient = if (hasChanged) listOf(
                             AppPrimary, AppPrimary.copy(alpha = 0.8f)
                         ) else listOf(
                             AppMuted.copy(alpha = 0.25f), AppMuted.copy(alpha = 0.12f)
                         ),
-                        customBorderColor = if (hasChanged) Color.White.copy(alpha = 0.4f) else null
+                        customBorderColor = if (hasChanged) (if (isDarkThemeActive) Color.White.copy(alpha = 0.4f) else AppPrimary.copy(alpha = 0.5f)) else null
                     )
                     .bouncyClickable(enabled = hasChanged, provideHaptic = true, onClick = onSave)
                     .padding(horizontal = 16.dp, vertical = 7.dp),
@@ -2485,8 +2485,8 @@ private fun ProviderIcon(id: String, name: String) {
         modifier = Modifier
             .size(42.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xFF202024))
-            .border(1.dp, Color(0xFF2E2E34), RoundedCornerShape(10.dp)),
+            .background(if (isDarkThemeActive) Color(0xFF202024) else Color(0xFFEFF0F4))
+            .border(1.dp, if (isDarkThemeActive) Color(0xFF2E2E34) else AppBorder, RoundedCornerShape(10.dp)),
         contentAlignment = Alignment.Center
     ) {
         Text(

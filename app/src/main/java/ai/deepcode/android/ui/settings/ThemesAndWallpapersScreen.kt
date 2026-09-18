@@ -353,7 +353,7 @@ fun ThemesAndWallpapersScreen(
                                             .size(40.dp)
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(Brush.verticalGradient(wp.gradientColors ?: listOf(Color(0xFF0D0D12), Color(0xFF0D0D12))))
-                                            .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                            .border(1.dp, if (isDarkThemeActive) Color.White.copy(alpha = 0.2f) else AppBorder, RoundedCornerShape(8.dp))
                                     )
                                     Spacer(Modifier.width(14.dp))
                                     Column {

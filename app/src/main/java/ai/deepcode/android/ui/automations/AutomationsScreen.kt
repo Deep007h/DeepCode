@@ -227,7 +227,7 @@ fun AutomationsScreen(
                                 .depthPill(
                                     shape = CircleShape,
                                     elevation = 2.dp,
-                                    isDark = true
+                                    isDark = isDarkThemeActive
                                 )
                                 .bouncyClickable(provideHaptic = true) { onBack() },
                             contentAlignment = Alignment.Center
@@ -235,7 +235,7 @@ fun AutomationsScreen(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back",
-                                tint = Color.White,
+                                tint = AppWhite,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -244,7 +244,7 @@ fun AutomationsScreen(
                             Text(
                                 text = "Automations",
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White,
+                                color = AppWhite,
                                 fontSize = 20.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -252,7 +252,7 @@ fun AutomationsScreen(
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "Automate your tasks and let AI work for you.",
-                                color = Color(0xFF9CA3AF),
+                                color = AppMuted,
                                 fontSize = 12.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -269,7 +269,7 @@ fun AutomationsScreen(
                                 elevation = 4.dp,
                                 customGradient = listOf(Color(0xFFF59E0B), Color(0xFFD97706)),
                                 highlightAlpha = 0.40f,
-                                isDark = true
+                                isDark = isDarkThemeActive
                             )
                             .bouncyClickable(provideHaptic = true) {
                                 openCreateRuleSheet()
@@ -317,14 +317,14 @@ fun AutomationsScreen(
                         .depthPill(
                             shape = CircleShape,
                             elevation = 1.dp,
-                            isDark = true
+                            isDark = isDarkThemeActive
                         )
                         .padding(horizontal = 7.dp, vertical = 2.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "${activeRules.size}",
-                        color = Color(0xFF9CA3AF),
+                        color = AppMuted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -340,7 +340,7 @@ fun AutomationsScreen(
                         .depthCard(
                             shape = RoundedCornerShape(20.dp),
                             elevation = 2.dp,
-                            isDark = true
+                            isDark = isDarkThemeActive
                         )
                         .padding(vertical = 32.dp, horizontal = 24.dp),
                     contentAlignment = Alignment.Center
@@ -355,14 +355,14 @@ fun AutomationsScreen(
                                 .depthPill(
                                     shape = RoundedCornerShape(16.dp),
                                     elevation = 1.dp,
-                                    isDark = true
+                                    isDark = isDarkThemeActive
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.FlashOff,
                                 contentDescription = null,
-                                tint = Color(0xFF9CA3AF),
+                                tint = AppMuted,
                                 modifier = Modifier.size(32.dp)
                             )
                         }
@@ -371,13 +371,13 @@ fun AutomationsScreen(
                             text = "No active rules yet",
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
-                            color = Color.White
+                            color = AppWhite
                         )
 
                         Text(
                             text = "Automate your workflow by creating rules that trigger actions based on specific events.",
                             fontSize = 12.sp,
-                            color = Color(0xFF9CA3AF),
+                            color = AppMuted,
                             textAlign = TextAlign.Center,
                             lineHeight = 16.sp,
                             modifier = Modifier.padding(horizontal = 12.dp)
@@ -433,7 +433,7 @@ fun AutomationsScreen(
                     modifier = Modifier
                         .animateItem()
                         .fillMaxWidth()
-                        .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.5.dp, isDark = true)
+                        .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.5.dp, isDark = isDarkThemeActive)
                         .padding(14.dp)
                 ) {
                     Column {
@@ -454,20 +454,40 @@ fun AutomationsScreen(
                                         .depthPill(
                                             shape = RoundedCornerShape(12.dp),
                                             elevation = 1.5.dp,
-                                            isDark = true,
-                                            customGradient = when {
-                                                isGpt -> listOf(Color(0xFF144D3B), Color(0xFF0A261D))
-                                                rule.name.contains("morning", ignoreCase = true) || rule.name.contains("weather", ignoreCase = true) || rule.name.contains("briefing", ignoreCase = true) -> listOf(Color(0xFF553D19), Color(0xFF2E200C))
-                                                rule.category.equals("MESSAGING", ignoreCase = true) || rule.name.contains("responder", ignoreCase = true) -> listOf(Color(0xFF402B6F), Color(0xFF22173B))
-                                                rule.category.equals("EMAIL", ignoreCase = true) || rule.name.contains("email", ignoreCase = true) -> listOf(Color(0xFF1D3757), Color(0xFF0F1C2C))
-                                                else -> listOf(Color(0xFF2B2D38), Color(0xFF181A20))
+                                            isDark = isDarkThemeActive,
+                                            customGradient = if (isDarkThemeActive) {
+                                                when {
+                                                    isGpt -> listOf(Color(0xFF144D3B), Color(0xFF0A261D))
+                                                    rule.name.contains("morning", ignoreCase = true) || rule.name.contains("weather", ignoreCase = true) || rule.name.contains("briefing", ignoreCase = true) -> listOf(Color(0xFF553D19), Color(0xFF2E200C))
+                                                    rule.category.equals("MESSAGING", ignoreCase = true) || rule.name.contains("responder", ignoreCase = true) -> listOf(Color(0xFF402B6F), Color(0xFF22173B))
+                                                    rule.category.equals("EMAIL", ignoreCase = true) || rule.name.contains("email", ignoreCase = true) -> listOf(Color(0xFF1D3757), Color(0xFF0F1C2C))
+                                                    else -> listOf(Color(0xFF2B2D38), Color(0xFF181A20))
+                                                }
+                                            } else {
+                                                when {
+                                                    isGpt -> listOf(Color(0xFFE6F7F2), Color(0xFFD0F0E6))
+                                                    rule.name.contains("morning", ignoreCase = true) || rule.name.contains("weather", ignoreCase = true) || rule.name.contains("briefing", ignoreCase = true) -> listOf(Color(0xFFFFF8E6), Color(0xFFFFEDBF))
+                                                    rule.category.equals("MESSAGING", ignoreCase = true) || rule.name.contains("responder", ignoreCase = true) -> listOf(Color(0xFFF3E8FF), Color(0xFFE9D5FF))
+                                                    rule.category.equals("EMAIL", ignoreCase = true) || rule.name.contains("email", ignoreCase = true) -> listOf(Color(0xFFE0F2FE), Color(0xFFBAE6FD))
+                                                    else -> listOf(Color(0xFFF1F1F4), Color(0xFFE4E4E7))
+                                                }
                                             },
-                                            customBorderColor = when {
-                                                isGpt -> Color(0xFF155E3E)
-                                                rule.name.contains("morning", ignoreCase = true) || rule.name.contains("weather", ignoreCase = true) || rule.name.contains("briefing", ignoreCase = true) -> Color(0xFF5A411B)
-                                                rule.category.equals("MESSAGING", ignoreCase = true) || rule.name.contains("responder", ignoreCase = true) -> Color(0xFF452E75)
-                                                rule.category.equals("EMAIL", ignoreCase = true) || rule.name.contains("email", ignoreCase = true) -> Color(0xFF1E3A5F)
-                                                else -> Color(0xFF2E323D)
+                                            customBorderColor = if (isDarkThemeActive) {
+                                                when {
+                                                    isGpt -> Color(0xFF155E3E)
+                                                    rule.name.contains("morning", ignoreCase = true) || rule.name.contains("weather", ignoreCase = true) || rule.name.contains("briefing", ignoreCase = true) -> Color(0xFF5A411B)
+                                                    rule.category.equals("MESSAGING", ignoreCase = true) || rule.name.contains("responder", ignoreCase = true) -> Color(0xFF452E75)
+                                                    rule.category.equals("EMAIL", ignoreCase = true) || rule.name.contains("email", ignoreCase = true) -> Color(0xFF1E3A5F)
+                                                    else -> Color(0xFF2E323D)
+                                                }
+                                            } else {
+                                                when {
+                                                    isGpt -> Color(0xFF10A37F).copy(alpha = 0.35f)
+                                                    rule.name.contains("morning", ignoreCase = true) || rule.name.contains("weather", ignoreCase = true) || rule.name.contains("briefing", ignoreCase = true) -> Color(0xFFEAA315).copy(alpha = 0.35f)
+                                                    rule.category.equals("MESSAGING", ignoreCase = true) || rule.name.contains("responder", ignoreCase = true) -> Color(0xFF8B5CF6).copy(alpha = 0.35f)
+                                                    rule.category.equals("EMAIL", ignoreCase = true) || rule.name.contains("email", ignoreCase = true) -> Color(0xFF0284C7).copy(alpha = 0.35f)
+                                                    else -> Color(0xFFD4D4D8)
+                                                }
                                             }
                                         ),
                                     contentAlignment = Alignment.Center
@@ -517,7 +537,7 @@ fun AutomationsScreen(
                                         Text(
                                             text = rule.name,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.White,
+                                            color = AppWhite,
                                             fontSize = 15.sp,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
@@ -531,7 +551,7 @@ fun AutomationsScreen(
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = rule.description.ifEmpty { "Automation task" },
-                                        color = Color(0xFF9CA3AF),
+                                        color = AppMuted,
                                         fontSize = 12.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -554,8 +574,8 @@ fun AutomationsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF0A0A0D))
-                                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(10.dp))
+                                .background(if (isDarkThemeActive) Color(0xFF0A0A0D) else Color(0xFFF4F4F6))
+                                .border(1.dp, if (isDarkThemeActive) Color.White.copy(alpha = 0.05f) else Color(0xFFE4E4E7), RoundedCornerShape(10.dp))
                                 .padding(horizontal = 12.dp, vertical = 9.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -569,7 +589,7 @@ fun AutomationsScreen(
                                 Text(
                                     text = "Schedule: ",
                                     fontSize = 11.sp,
-                                    color = Color(0xFF9CA3AF)
+                                    color = AppMuted
                                 )
                                 Text(
                                     text = rule.cronExpression,
@@ -580,12 +600,12 @@ fun AutomationsScreen(
                                 Text(
                                     text = " • ",
                                     fontSize = 11.sp,
-                                    color = Color(0xFF6B7280)
+                                    color = AppMuted
                                 )
                                 Text(
                                     text = "Next: ",
                                     fontSize = 11.sp,
-                                    color = Color(0xFF9CA3AF)
+                                    color = AppMuted
                                 )
                                 Text(
                                     text = nextRunText,
@@ -611,14 +631,14 @@ fun AutomationsScreen(
                                 Icon(
                                     imageVector = Icons.Default.CalendarToday,
                                     contentDescription = null,
-                                    tint = Color(0xFF6B7280),
+                                    tint = AppMuted,
                                     modifier = Modifier.size(12.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "Last run: ${formatLastRun(rule.lastRunAt)}",
                                     fontSize = 10.5.sp,
-                                    color = Color(0xFF6B7280),
+                                    color = AppMuted,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -638,7 +658,7 @@ fun AutomationsScreen(
                                             .depthPill(
                                                 shape = RoundedCornerShape(8.dp),
                                                 elevation = 1.dp,
-                                                isDark = true,
+                                                isDark = isDarkThemeActive,
                                                 customBorderColor = if (isGpt) Color(0xFF10A37F).copy(alpha = 0.4f) else null
                                             )
                                             .bouncyClickable(provideHaptic = true) { onOpenChat(chatId, isGpt, rule.name) }
@@ -669,7 +689,7 @@ fun AutomationsScreen(
                                         .depthPill(
                                             shape = RoundedCornerShape(8.dp),
                                             elevation = 1.dp,
-                                            isDark = true
+                                            isDark = isDarkThemeActive
                                         )
                                         .bouncyClickable(provideHaptic = true) {
                                             editingRuleId = rule.id
@@ -693,8 +713,8 @@ fun AutomationsScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(3.dp)
                                     ) {
-                                        Icon(Icons.Default.Edit, "Edit", tint = Color.White, modifier = Modifier.size(11.dp))
-                                        Text("Edit", fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                        Icon(Icons.Default.Edit, "Edit", tint = AppWhite, modifier = Modifier.size(11.dp))
+                                        Text("Edit", fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, color = AppWhite)
                                     }
                                 }
 
@@ -703,8 +723,8 @@ fun AutomationsScreen(
                                         .depthPill(
                                             shape = RoundedCornerShape(8.dp),
                                             elevation = 1.dp,
-                                            isDark = true,
-                                            customGradient = listOf(Color(0xFF0D281C), Color(0xFF081811)),
+                                            isDark = isDarkThemeActive,
+                                            customGradient = if (isDarkThemeActive) listOf(Color(0xFF0D281C), Color(0xFF081811)) else listOf(Color(0xFFE6F7F2), Color(0xFFD0F0E6)),
                                             customBorderColor = Color(0xFF10A37F).copy(alpha = 0.35f)
                                         )
                                         .bouncyClickable(provideHaptic = true) {
@@ -729,8 +749,8 @@ fun AutomationsScreen(
                                         .depthPill(
                                             shape = RoundedCornerShape(8.dp),
                                             elevation = 1.dp,
-                                            isDark = true,
-                                            customGradient = listOf(Color(0xFF240E10), Color(0xFF160809)),
+                                            isDark = isDarkThemeActive,
+                                            customGradient = if (isDarkThemeActive) listOf(Color(0xFF240E10), Color(0xFF160809)) else listOf(Color(0xFFFEE2E2), Color(0xFFFECACA)),
                                             customBorderColor = Color(0xFFE53935).copy(alpha = 0.35f)
                                         )
                                         .bouncyClickable(provideHaptic = true) { ruleToDelete = rule },
@@ -874,7 +894,7 @@ fun AutomationsScreen(
                     .depthCard(
                         shape = RoundedCornerShape(16.dp),
                         elevation = 2.dp,
-                        isDark = true
+                        isDark = isDarkThemeActive
                     )
                     .bouncyClickable(provideHaptic = true) {
                         openCreateRuleSheet()
@@ -888,12 +908,12 @@ fun AutomationsScreen(
                     Icon(
                         imageVector = Icons.Default.GridView,
                         contentDescription = null,
-                        tint = Color(0xFF9CA3AF),
+                        tint = AppMuted,
                         modifier = Modifier.size(18.dp)
                     )
                     Text(
                         text = "Browse More Templates",
-                        color = Color.White,
+                        color = AppWhite,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center,
@@ -902,7 +922,7 @@ fun AutomationsScreen(
                     Icon(
                         imageVector = Icons.Default.ChevronRight,
                         contentDescription = null,
-                        tint = Color(0xFF6B7280),
+                        tint = AppMuted,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -947,22 +967,22 @@ fun AutomationsScreen(
                 editingRuleId = null
             },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = Color(0xFF111114),
+            containerColor = if (isDarkThemeActive) Color(0xFF111114) else AppSurface,
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
             dragHandle = {
-                BottomSheetDefaults.DragHandle(color = Color(0xFF374151))
+                BottomSheetDefaults.DragHandle(color = if (isDarkThemeActive) Color(0xFF374151) else Color(0xFFD1D5DB))
             }
         ) {
-            val inputBorderColor = Color.White.copy(alpha = 0.12f)
+            val inputBorderColor = if (isDarkThemeActive) Color.White.copy(alpha = 0.12f) else AppBorder
             val inputFocusedBorderColor = Color(0xFFF59E0B)
             val textFieldColors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = inputFocusedBorderColor,
                 unfocusedBorderColor = inputBorderColor,
                 focusedLabelColor = inputFocusedBorderColor,
-                unfocusedLabelColor = Color(0xFF9CA3AF),
+                unfocusedLabelColor = AppMuted,
                 cursorColor = inputFocusedBorderColor,
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White
+                focusedTextColor = AppWhite,
+                unfocusedTextColor = AppWhite
             )
 
             Column(
@@ -980,7 +1000,7 @@ fun AutomationsScreen(
                            else "Add Automation Rule",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = AppWhite
                 )
 
                 OutlinedTextField(
@@ -1083,7 +1103,7 @@ fun AutomationsScreen(
                         onValueChange = { customCronInput = it },
                         label = { Text("Cron Expression") },
                         placeholder = { Text("e.g. */15 * * * * or 0 9 * * 1-5") },
-                        supportingText = { Text("Format: min hour dom month dow (e.g. */30 * * * *)", fontSize = 10.sp, color = Color(0xFF9CA3AF)) },
+                        supportingText = { Text("Format: min hour dom month dow (e.g. */30 * * * *)", fontSize = 10.sp, color = AppMuted) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp),
@@ -1106,7 +1126,7 @@ fun AutomationsScreen(
                     Text(
                         text = "Dynamic parameters (tap to insert):",
                         fontSize = 11.sp,
-                        color = Color(0xFF9CA3AF),
+                        color = AppMuted,
                         fontWeight = FontWeight.Medium
                     )
                     Row(
@@ -1120,7 +1140,7 @@ fun AutomationsScreen(
                                     .depthPill(
                                         shape = RoundedCornerShape(6.dp),
                                         elevation = 1.dp,
-                                        isDark = true
+                                        isDark = isDarkThemeActive
                                     )
                                     .clickable {
                                         newRuleActionPrompt = if (newRuleActionPrompt.isBlank()) tag else "$newRuleActionPrompt $tag"
@@ -1201,15 +1221,15 @@ fun AutomationsScreen(
                             showAddRuleBottomSheet = false
                             editingRuleId = null
                         },
-                        backgroundColor = Color(0xFF141418),
-                        borderColor = Color.White.copy(alpha = 0.08f),
+                        backgroundColor = if (isDarkThemeActive) Color(0xFF141418) else Color(0xFFF4F4F6),
+                        borderColor = if (isDarkThemeActive) Color.White.copy(alpha = 0.08f) else Color(0xFFE4E4E7),
                         shadowColor = Color.Transparent,
                         borderWidth = 1.dp,
                         shadowOffset = 0.dp,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("Cancel", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("Cancel", color = AppWhite, fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -1220,8 +1240,8 @@ fun AutomationsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFF220C0E))
-                            .border(1.dp, Color(0xFF4A141A), RoundedCornerShape(12.dp))
+                            .background(if (isDarkThemeActive) Color(0xFF220C0E) else Color(0xFFFEE2E2))
+                            .border(1.dp, if (isDarkThemeActive) Color(0xFF4A141A) else Color(0xFFFECACA), RoundedCornerShape(12.dp))
                             .clickable {
                                 val target = activeRules.firstOrNull { it.id == editId }
                                 showAddRuleBottomSheet = false
@@ -1253,13 +1273,13 @@ fun AutomationsScreen(
         val r = ruleToDelete!!
         AlertDialog(
             onDismissRequest = { ruleToDelete = null },
-            containerColor = Color(0xFF16181F),
+            containerColor = if (isDarkThemeActive) Color(0xFF16181F) else AppSurface,
             shape = RoundedCornerShape(16.dp),
             title = {
-                Text("Delete Automation Task", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("Delete Automation Task", color = AppWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             },
             text = {
-                Text("Are you sure you want to delete \"${r.name}\"?\nThis scheduled task will be removed permanently.", color = Color(0xFF9CA3AF), fontSize = 14.sp)
+                Text("Are you sure you want to delete \"${r.name}\"?\nThis scheduled task will be removed permanently.", color = AppMuted, fontSize = 14.sp)
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -1272,7 +1292,7 @@ fun AutomationsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { ruleToDelete = null }) {
-                    Text("Cancel", color = Color(0xFF9CA3AF))
+                    Text("Cancel", color = AppMuted)
                 }
             }
         )
@@ -1296,7 +1316,7 @@ private fun TemplateItemCard(
             .depthCard(
                 shape = RoundedCornerShape(16.dp),
                 elevation = 2.dp,
-                isDark = true
+                isDark = isDarkThemeActive
             )
             .bouncyClickable(provideHaptic = true) { onEdit() }
             .padding(14.dp)
@@ -1314,7 +1334,7 @@ private fun TemplateItemCard(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(iconBgColor),
+                        .background(if (isDarkThemeActive) iconBgColor else iconColor.copy(alpha = 0.15f)),
                     contentAlignment = Alignment.Center
                 ) {
                     if (iconDrawableRes != null) {
@@ -1340,7 +1360,7 @@ private fun TemplateItemCard(
                     Text(
                         text = title,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = AppWhite,
                         fontSize = 15.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -1348,7 +1368,7 @@ private fun TemplateItemCard(
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = subtitle,
-                        color = Color(0xFF9CA3AF),
+                        color = AppMuted,
                         fontSize = 12.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -1366,7 +1386,7 @@ private fun TemplateItemCard(
                         .depthPill(
                             shape = RoundedCornerShape(8.dp),
                             elevation = 1.dp,
-                            isDark = true
+                            isDark = isDarkThemeActive
                         )
                         .bouncyClickable(provideHaptic = true) { onEdit() }
                         .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -1379,14 +1399,14 @@ private fun TemplateItemCard(
                         Icon(
                             imageVector = Icons.Default.Edit,
                             contentDescription = "Edit Template",
-                            tint = Color.White,
+                            tint = AppWhite,
                             modifier = Modifier.size(12.dp)
                         )
                         Text(
                             text = "Edit",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color.White
+                            color = AppWhite
                         )
                     }
                 }
@@ -1398,8 +1418,8 @@ private fun TemplateItemCard(
                         .depthPill(
                             shape = RoundedCornerShape(10.dp),
                             elevation = 1.dp,
-                            isDark = true,
-                            customGradient = listOf(Color(0xFF0D281C), Color(0xFF081811)),
+                            isDark = isDarkThemeActive,
+                            customGradient = if (isDarkThemeActive) listOf(Color(0xFF0D281C), Color(0xFF081811)) else listOf(Color(0xFFE6F7F2), Color(0xFFD0F0E6)),
                             customBorderColor = Color(0xFF10A37F).copy(alpha = 0.35f)
                         )
                         .bouncyClickable(provideHaptic = true) { onAdd() },

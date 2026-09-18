@@ -163,7 +163,11 @@ fun AgentCard(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
                 .background(
-                    if (isRunning) Color(0xFF1A1A1A) else Color(0xFF141414)
+                    if (isDarkThemeActive) {
+                        if (isRunning) Color(0xFF1A1A1A) else Color(0xFF141414)
+                    } else {
+                        if (isRunning) AppCard else AppSurface
+                    }
                 )
                 .then(
                     if (isRunning) {
@@ -175,7 +179,7 @@ fun AgentCard(
                     } else if (agent.status == AgentStatus.FAILED) {
                         Modifier.border(1.dp, errorColor.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
                     } else {
-                        Modifier.border(1.dp, Color(0xFF2E2E2E), RoundedCornerShape(24.dp))
+                        Modifier.border(1.dp, if (isDarkThemeActive) Color(0xFF2E2E2E) else AppBorder, RoundedCornerShape(24.dp))
                     }
                 )
                 .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -208,7 +212,7 @@ fun AgentCard(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = agent.subTask.description,
-                        color = Color(0xFFCCCCCC),
+                        color = if (isDarkThemeActive) Color(0xFFCCCCCC) else AppWhite,
                         fontSize = 12.sp,
                         maxLines = 2,
                         modifier = Modifier.weight(1f)
@@ -248,8 +252,8 @@ fun AgentPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFF0F0F10))
-                .border(1.dp, Color(0xFF2E2E2E), RoundedCornerShape(16.dp))
+                .background(if (isDarkThemeActive) Color(0xFF0F0F10) else AppCard)
+                .border(1.dp, if (isDarkThemeActive) Color(0xFF2E2E2E) else AppBorder, RoundedCornerShape(16.dp))
                 .clickable { onToggle() }
                 .padding(12.dp)
         ) {
@@ -322,7 +326,7 @@ fun AgentPanel(
                             .height(3.dp)
                             .clip(RoundedCornerShape(2.dp)),
                         color = accentColor,
-                        trackColor = Color(0xFF2E2E2E)
+                        trackColor = if (isDarkThemeActive) Color(0xFF2E2E2E) else AppSurfaceVariant
                     )
                 }
             }

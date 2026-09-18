@@ -24,6 +24,8 @@ import ai.deepcode.android.data.remote.fetchAntigravityModels
 import ai.deepcode.android.data.remote.formatModelTitle
 import ai.deepcode.android.data.remote.ApiKeyRotator
 import ai.deepcode.android.domain.model.AIModel
+import ai.deepcode.android.domain.model.Message
+import java.util.UUID
 import ai.deepcode.android.ui.settings.Persona
 import ai.deepcode.android.ui.settings.builtInPersonas
 import ai.deepcode.android.agent.AgentEngine
@@ -726,11 +728,37 @@ class TelegramBridgeService : Service() {
 
         try {
             val sessionId = "telegram_$chatId"
+            if (repository.getSessionById(sessionId) == null) {
+                repository.createSessionWithId(sessionId, "Telegram Chat $chatId")
+            }
+
+            // Helper to record an exchange in repository so subsequent turns have full conversational context
+            suspend fun recordBypassExchange(userPrompt: String, assistantReply: String) {
+                try {
+                    repository.insertMessage(Message(
+                        id = UUID.randomUUID().toString(),
+                        sessionId = sessionId,
+                        role = "user",
+                        content = userPrompt,
+                        timestamp = System.currentTimeMillis()
+                    ))
+                    repository.insertMessage(Message(
+                        id = UUID.randomUUID().toString(),
+                        sessionId = sessionId,
+                        role = "assistant",
+                        content = assistantReply,
+                        timestamp = System.currentTimeMillis() + 1
+                    ))
+                } catch (e: Exception) {
+                    AppLogger.e(TAG, "Failed to persist bypass exchange", e)
+                }
+            }
 
             // Music playback bypass — no AI needed
             val musicHandler = MusicDetectionHandler(this)
             val musicMsg = musicHandler.play(text)
             if (musicMsg.isNotEmpty()) {
+                recordBypassExchange(text, musicMsg)
                 if (processingMsgId != null) {
                     if (!editMessage(token, chatId, processingMsgId, musicMsg)) {
                         sendMessage(token, chatId, musicMsg)
@@ -745,6 +773,7 @@ class TelegramBridgeService : Service() {
             val automationHandler = AutomationHandler(this)
             val automationMsg = automationHandler.create(text, chatId.toString())
             if (automationMsg.isNotEmpty()) {
+                recordBypassExchange(text, automationMsg)
                 if (processingMsgId != null) {
                     if (!editMessage(token, chatId, processingMsgId, automationMsg)) {
                         sendMessage(token, chatId, automationMsg)
@@ -759,6 +788,7 @@ class TelegramBridgeService : Service() {
             val gmailHandler = GmailHandler(this)
             val gmailResponse = gmailHandler.fetch(text)
             if (gmailResponse.isNotEmpty()) {
+                recordBypassExchange(text, gmailResponse)
                 if (processingMsgId != null) {
                     if (!editMessage(token, chatId, processingMsgId, gmailResponse)) {
                         sendMessage(token, chatId, gmailResponse)
@@ -773,6 +803,7 @@ class TelegramBridgeService : Service() {
             val githubHandler = GitHubHandler(this)
             val githubResponse = githubHandler.fetch(text)
             if (githubResponse.isNotEmpty()) {
+                recordBypassExchange(text, githubResponse)
                 if (processingMsgId != null) {
                     if (!editMessage(token, chatId, processingMsgId, githubResponse)) {
                         sendMessage(token, chatId, githubResponse)
@@ -798,9 +829,23 @@ class TelegramBridgeService : Service() {
                             .executeTool("search_image", searchArgs, workingDir, false)
                     }
                     TaskType.IMAGE_GENERATION -> {
-                        val genArgs = """{"prompt":${gson.toJson(toolJob.userPrompt)}}"""
+                        val userText = toolJob.userPrompt
+                        val model = when {
+                            userText.contains("chatgpt", ignoreCase = true) -> "chatgpt"
+                            userText.contains("dalle", ignoreCase = true) || userText.contains("dall-e", ignoreCase = true) -> "dalle"
+                            userText.contains("imagen", ignoreCase = true) || userText.contains("gemini", ignoreCase = true) -> "imagen"
+                            userText.contains("flux", ignoreCase = true) -> "flux"
+                            userText.contains("turbo", ignoreCase = true) -> "turbo"
+                            userText.contains("sdxl", ignoreCase = true) -> "sdxl"
+                            userText.contains("antigravity", ignoreCase = true) -> "antigravity"
+                            else -> ""
+                        }
+                        val genPayload = JsonObject().apply {
+                            addProperty("prompt", userText)
+                            if (model.isNotEmpty()) addProperty("model", model)
+                        }
                         ai.deepcode.android.service.tools.ToolExecutor(applicationContext)
-                            .executeTool("generate_image", genArgs, workingDir, false)
+                            .executeTool("generate_image", gson.toJson(genPayload), workingDir, false)
                     }
                     TaskType.AUDIO_GENERATION -> {
                         val audioArgs = """{"text":${gson.toJson(toolJob.userPrompt)},"voice":"","rate":"","pitch":""}"""
@@ -816,6 +861,7 @@ class TelegramBridgeService : Service() {
                 }
                 if (toolResult != null) {
                     finalResponse = toolResult
+                    recordBypassExchange(text, toolResult)
                 }
             }
 
@@ -925,11 +971,17 @@ class TelegramBridgeService : Service() {
                 try {
                     val audioFile = File(audioPath)
                     if (audioFile.exists()) {
-                        if (processingMsgId != null) deleteMessage(token, chatId, processingMsgId)
-                        sendAudio(token, chatId, audioFile, cleanResponse.ifEmpty { null })
+                        val sent = sendAudio(token, chatId, audioFile, cleanResponse.ifEmpty { null })
+                        if (processingMsgId != null) {
+                            if (sent) deleteMessage(token, chatId, processingMsgId)
+                            else editMessage(token, chatId, processingMsgId, "⚠️ Audio was generated, but failed to deliver to Telegram.\nPath: $audioPath")
+                        }
+                    } else {
+                        if (processingMsgId != null) editMessage(token, chatId, processingMsgId, "⚠️ Audio file not found at: $audioPath")
                     }
                 } catch (e: Exception) {
                     AppLogger.e(TAG, "Failed to send audio file", e)
+                    if (processingMsgId != null) editMessage(token, chatId, processingMsgId, "⚠️ Failed to send audio: ${e.message}")
                 }
                 return
             }
@@ -940,8 +992,14 @@ class TelegramBridgeService : Service() {
                     if (cleanResponse.isNotEmpty()) {
                         sendMessage(token, chatId, cleanResponse)
                     }
-                    sendPhoto(token, chatId, imgUrl)
-                    if (processingMsgId != null) deleteMessage(token, chatId, processingMsgId)
+                    val sent = sendPhoto(token, chatId, imgUrl)
+                    if (processingMsgId != null) {
+                        if (sent) {
+                            deleteMessage(token, chatId, processingMsgId)
+                        } else {
+                            editMessage(token, chatId, processingMsgId, "⚠️ Image was generated, but Telegram could not display it.\nLocal path: $imgUrl")
+                        }
+                    }
                     return
                 }
             }
@@ -952,8 +1010,14 @@ class TelegramBridgeService : Service() {
                     if (cleanResponse.isNotEmpty()) {
                         sendMessage(token, chatId, cleanResponse)
                     }
-                    sendVideo(token, chatId, videoUrl)
-                    if (processingMsgId != null) deleteMessage(token, chatId, processingMsgId)
+                    val sent = sendVideo(token, chatId, videoUrl)
+                    if (processingMsgId != null) {
+                        if (sent) {
+                            deleteMessage(token, chatId, processingMsgId)
+                        } else {
+                            editMessage(token, chatId, processingMsgId, "⚠️ Video was generated, but Telegram could not display it.\nPath: $videoUrl")
+                        }
+                    }
                     return
                 }
             }
@@ -963,13 +1027,18 @@ class TelegramBridgeService : Service() {
                 try {
                     val file = File(filePath)
                     if (file.exists()) {
-                        if (processingMsgId != null) deleteMessage(token, chatId, processingMsgId)
-                        sendDocument(token, chatId, file, cleanResponse.ifEmpty { null })
+                        val sent = sendDocument(token, chatId, file, cleanResponse.ifEmpty { null })
+                        if (processingMsgId != null) {
+                            if (sent) deleteMessage(token, chatId, processingMsgId)
+                            else editMessage(token, chatId, processingMsgId, "⚠️ Document could not be sent to Telegram: $filePath")
+                        }
                     } else {
                         AppLogger.w(TAG, "File not found for sending: $filePath")
+                        if (processingMsgId != null) editMessage(token, chatId, processingMsgId, "⚠️ File not found: $filePath")
                     }
                 } catch (e: Exception) {
                     AppLogger.e(TAG, "Failed to send document", e)
+                    if (processingMsgId != null) editMessage(token, chatId, processingMsgId, "⚠️ Error sending file: ${e.message}")
                 }
                 return
             }
@@ -999,6 +1068,15 @@ class TelegramBridgeService : Service() {
             }
         } catch (e: TimeoutCancellationException) {
             val timeoutMsg = "⏱️ Request timed out after 5 minutes. Please try again."
+            try {
+                repository.insertMessage(Message(
+                    id = UUID.randomUUID().toString(),
+                    sessionId = "telegram_$chatId",
+                    role = "assistant",
+                    content = timeoutMsg,
+                    timestamp = System.currentTimeMillis()
+                ))
+            } catch (_: Exception) {}
             if (processingMsgId != null) {
                 val edited = editMessage(token, chatId, processingMsgId, timeoutMsg)
                 if (!edited) {
@@ -1022,6 +1100,15 @@ class TelegramBridgeService : Service() {
             } else {
                 "Error: ${e.javaClass.simpleName}"
             }
+            try {
+                repository.insertMessage(Message(
+                    id = UUID.randomUUID().toString(),
+                    sessionId = "telegram_$chatId",
+                    role = "assistant",
+                    content = errorMsg,
+                    timestamp = System.currentTimeMillis()
+                ))
+            } catch (_: Exception) {}
             if (processingMsgId != null) {
                 val edited = editMessage(token, chatId, processingMsgId, errorMsg, parseMode = "HTML")
                 if (!edited) {
@@ -2555,7 +2642,7 @@ class TelegramBridgeService : Service() {
         }
     }
 
-    private fun sendAudio(token: String, chatId: Long, audioFile: File, caption: String? = null) {
+    private fun sendAudio(token: String, chatId: Long, audioFile: File, caption: String? = null): Boolean {
         try {
             val url = "${API_BASE}${token}/sendAudio"
             val requestBody = MultipartBody.Builder()
@@ -2568,61 +2655,214 @@ class TelegramBridgeService : Service() {
                 .url(url)
                 .post(requestBody)
                 .build()
+            var success = false
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    AppLogger.e(TAG, "sendAudio failed: ${response.body?.string()}")
+                val body = response.body?.string()
+                if (response.isSuccessful) {
+                    success = try { gson.fromJson(body, JsonObject::class.java).get("ok")?.asBoolean == true } catch (_: Exception) { false }
+                } else {
+                    AppLogger.e(TAG, "sendAudio failed: $body")
                 }
             }
+            if (success) return true
+
+            AppLogger.w(TAG, "sendAudio failed, falling back to sendDocument for: ${audioFile.absolutePath}")
+            return sendDocument(token, chatId, audioFile, caption)
         } catch (e: Exception) {
             AppLogger.e(TAG, "sendAudio error", e)
+            return false
         }
     }
 
-    private fun sendPhoto(token: String, chatId: Long, photoUrl: String, caption: String? = null) {
+    private fun sendPhoto(token: String, chatId: Long, photoUrlOrPath: String, caption: String? = null): Boolean {
         try {
-            val url = "${API_BASE}${token}/sendPhoto"
-            val payload = JsonObject().apply {
-                addProperty("chat_id", chatId)
-                addProperty("photo", photoUrl)
-                caption?.let { addProperty("caption", it) }
-            }
-            val request = Request.Builder()
-                .url(url)
-                .post(gson.toJson(payload).toRequestBody(jsonMediaType))
-                .build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    AppLogger.e(TAG, "sendPhoto failed: ${response.body?.string()}")
+            val cleanPath = photoUrlOrPath.removePrefix("file://").trim()
+            val localFile = File(cleanPath)
+            if (localFile.exists() && localFile.isFile) {
+                val url = "${API_BASE}${token}/sendPhoto"
+                val requestBody = MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart("chat_id", chatId.toString())
+                    .addFormDataPart("photo", localFile.name, localFile.asRequestBody(null))
+                    .apply { caption?.let { addFormDataPart("caption", it) } }
+                    .build()
+                val request = Request.Builder().url(url).post(requestBody).build()
+                var success = false
+                client.newCall(request).execute().use { response ->
+                    val body = response.body?.string()
+                    if (response.isSuccessful) {
+                        success = try { gson.fromJson(body, JsonObject::class.java).get("ok")?.asBoolean == true } catch (_: Exception) { false }
+                    } else {
+                        AppLogger.e(TAG, "sendPhoto (multipart) failed: $body")
+                    }
                 }
+                if (success) return true
+
+                AppLogger.w(TAG, "sendPhoto failed, falling back to sendDocument for: $cleanPath")
+                return sendDocument(token, chatId, localFile, caption)
+            } else if (photoUrlOrPath.startsWith("http://", ignoreCase = true) || photoUrlOrPath.startsWith("https://", ignoreCase = true)) {
+                val url = "${API_BASE}${token}/sendPhoto"
+                val payload = JsonObject().apply {
+                    addProperty("chat_id", chatId)
+                    addProperty("photo", photoUrlOrPath)
+                    caption?.let { addProperty("caption", it) }
+                }
+                val request = Request.Builder()
+                    .url(url)
+                    .post(gson.toJson(payload).toRequestBody(jsonMediaType))
+                    .build()
+                var remoteSuccess = false
+                client.newCall(request).execute().use { response ->
+                    val body = response.body?.string()
+                    if (response.isSuccessful) {
+                        remoteSuccess = try { gson.fromJson(body, JsonObject::class.java).get("ok")?.asBoolean == true } catch (_: Exception) { false }
+                    } else {
+                        AppLogger.w(TAG, "sendPhoto (URL) failed: $body, will attempt download & upload")
+                    }
+                }
+                if (remoteSuccess) return true
+
+                try {
+                    val downloadReq = Request.Builder().url(photoUrlOrPath).build()
+                    val downloadedFile = client.newCall(downloadReq).execute().use { dlResp ->
+                        if (dlResp.isSuccessful && dlResp.body != null) {
+                            val tempFile = File.createTempFile("tg_photo_", ".png", cacheDir)
+                            tempFile.outputStream().use { out ->
+                                dlResp.body!!.byteStream().copyTo(out)
+                            }
+                            tempFile
+                        } else null
+                    }
+                    if (downloadedFile != null && downloadedFile.exists()) {
+                        try {
+                            val mpUrl = "${API_BASE}${token}/sendPhoto"
+                            val mpBody = MultipartBody.Builder()
+                                .setType(MultipartBody.FORM)
+                                .addFormDataPart("chat_id", chatId.toString())
+                                .addFormDataPart("photo", downloadedFile.name, downloadedFile.asRequestBody(null))
+                                .apply { caption?.let { addFormDataPart("caption", it) } }
+                                .build()
+                            val mpReq = Request.Builder().url(mpUrl).post(mpBody).build()
+                            var mpSuccess = false
+                            client.newCall(mpReq).execute().use { resp ->
+                                val body = resp.body?.string()
+                                if (resp.isSuccessful) {
+                                    mpSuccess = try { gson.fromJson(body, JsonObject::class.java).get("ok")?.asBoolean == true } catch (_: Exception) { false }
+                                }
+                            }
+                            if (mpSuccess) return true
+                            return sendDocument(token, chatId, downloadedFile, caption)
+                        } finally {
+                            downloadedFile.delete()
+                        }
+                    }
+                } catch (dlEx: Exception) {
+                    AppLogger.e(TAG, "Failed to download and upload remote photo: ${dlEx.message}")
+                }
+            } else {
+                AppLogger.e(TAG, "sendPhoto: file does not exist or URL is invalid: $photoUrlOrPath")
             }
         } catch (e: Exception) {
             AppLogger.e(TAG, "sendPhoto error", e)
         }
+        return false
     }
 
-    private fun sendVideo(token: String, chatId: Long, videoUrl: String, caption: String? = null) {
+    private fun sendVideo(token: String, chatId: Long, videoUrlOrPath: String, caption: String? = null): Boolean {
         try {
-            val url = "${API_BASE}${token}/sendVideo"
-            val payload = JsonObject().apply {
-                addProperty("chat_id", chatId)
-                addProperty("video", videoUrl)
-                caption?.let { addProperty("caption", it) }
-            }
-            val request = Request.Builder()
-                .url(url)
-                .post(gson.toJson(payload).toRequestBody(jsonMediaType))
-                .build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    AppLogger.e(TAG, "sendVideo failed: ${response.body?.string()}")
+            val cleanPath = videoUrlOrPath.removePrefix("file://").trim()
+            val localFile = File(cleanPath)
+            if (localFile.exists() && localFile.isFile) {
+                val url = "${API_BASE}${token}/sendVideo"
+                val requestBody = MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart("chat_id", chatId.toString())
+                    .addFormDataPart("video", localFile.name, localFile.asRequestBody(null))
+                    .apply { caption?.let { addFormDataPart("caption", it) } }
+                    .build()
+                val request = Request.Builder().url(url).post(requestBody).build()
+                var success = false
+                client.newCall(request).execute().use { response ->
+                    val body = response.body?.string()
+                    if (response.isSuccessful) {
+                        success = try { gson.fromJson(body, JsonObject::class.java).get("ok")?.asBoolean == true } catch (_: Exception) { false }
+                    } else {
+                        AppLogger.e(TAG, "sendVideo (multipart) failed: $body")
+                    }
                 }
+                if (success) return true
+
+                AppLogger.w(TAG, "sendVideo failed, falling back to sendDocument for: $cleanPath")
+                return sendDocument(token, chatId, localFile, caption)
+            } else if (videoUrlOrPath.startsWith("http://", ignoreCase = true) || videoUrlOrPath.startsWith("https://", ignoreCase = true)) {
+                val url = "${API_BASE}${token}/sendVideo"
+                val payload = JsonObject().apply {
+                    addProperty("chat_id", chatId)
+                    addProperty("video", videoUrlOrPath)
+                    caption?.let { addProperty("caption", it) }
+                }
+                val request = Request.Builder()
+                    .url(url)
+                    .post(gson.toJson(payload).toRequestBody(jsonMediaType))
+                    .build()
+                var remoteSuccess = false
+                client.newCall(request).execute().use { response ->
+                    val body = response.body?.string()
+                    if (response.isSuccessful) {
+                        remoteSuccess = try { gson.fromJson(body, JsonObject::class.java).get("ok")?.asBoolean == true } catch (_: Exception) { false }
+                    } else {
+                        AppLogger.w(TAG, "sendVideo (URL) failed: $body, will attempt download & upload")
+                    }
+                }
+                if (remoteSuccess) return true
+
+                try {
+                    val downloadReq = Request.Builder().url(videoUrlOrPath).build()
+                    val downloadedFile = client.newCall(downloadReq).execute().use { dlResp ->
+                        if (dlResp.isSuccessful && dlResp.body != null) {
+                            val tempFile = File.createTempFile("tg_video_", ".mp4", cacheDir)
+                            tempFile.outputStream().use { out ->
+                                dlResp.body!!.byteStream().copyTo(out)
+                            }
+                            tempFile
+                        } else null
+                    }
+                    if (downloadedFile != null && downloadedFile.exists()) {
+                        try {
+                            val mpUrl = "${API_BASE}${token}/sendVideo"
+                            val mpBody = MultipartBody.Builder()
+                                .setType(MultipartBody.FORM)
+                                .addFormDataPart("chat_id", chatId.toString())
+                                .addFormDataPart("video", downloadedFile.name, downloadedFile.asRequestBody(null))
+                                .apply { caption?.let { addFormDataPart("caption", it) } }
+                                .build()
+                            val mpReq = Request.Builder().url(mpUrl).post(mpBody).build()
+                            var mpSuccess = false
+                            client.newCall(mpReq).execute().use { resp ->
+                                val body = resp.body?.string()
+                                if (resp.isSuccessful) {
+                                    mpSuccess = try { gson.fromJson(body, JsonObject::class.java).get("ok")?.asBoolean == true } catch (_: Exception) { false }
+                                }
+                            }
+                            if (mpSuccess) return true
+                            return sendDocument(token, chatId, downloadedFile, caption)
+                        } finally {
+                            downloadedFile.delete()
+                        }
+                    }
+                } catch (dlEx: Exception) {
+                    AppLogger.e(TAG, "Failed to download and upload remote video: ${dlEx.message}")
+                }
+            } else {
+                AppLogger.e(TAG, "sendVideo: file does not exist or URL is invalid: $videoUrlOrPath")
             }
         } catch (e: Exception) {
             AppLogger.e(TAG, "sendVideo error", e)
         }
+        return false
     }
 
-    private fun sendDocument(token: String, chatId: Long, file: File, caption: String? = null) {
+    private fun sendDocument(token: String, chatId: Long, file: File, caption: String? = null): Boolean {
         try {
             val url = "${API_BASE}${token}/sendDocument"
             val requestBody = MultipartBody.Builder()
@@ -2635,13 +2875,18 @@ class TelegramBridgeService : Service() {
                 .url(url)
                 .post(requestBody)
                 .build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    AppLogger.e(TAG, "sendDocument failed: ${response.body?.string()}")
+            return client.newCall(request).execute().use { response ->
+                val body = response.body?.string()
+                if (response.isSuccessful) {
+                    try { gson.fromJson(body, JsonObject::class.java).get("ok")?.asBoolean == true } catch (_: Exception) { false }
+                } else {
+                    AppLogger.e(TAG, "sendDocument failed: $body")
+                    false
                 }
             }
         } catch (e: Exception) {
             AppLogger.e(TAG, "sendDocument error", e)
+            return false
         }
     }
 

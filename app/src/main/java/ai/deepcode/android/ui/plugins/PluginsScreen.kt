@@ -82,20 +82,20 @@ fun PluginsScreen(onBack: () -> Unit) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
-                    tint = Color.White
+                    tint = AppWhite
                 )
             }
             Spacer(modifier = Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Plugins",
-                    color = Color.White,
+                    color = AppWhite,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     text = "$enabledCount of $totalCount enabled",
-                    color = Color(0xFF8E8E93),
+                    color = AppMuted,
                     fontSize = 13.sp
                 )
             }
@@ -105,8 +105,8 @@ fun PluginsScreen(onBack: () -> Unit) {
                 modifier = Modifier
                     .size(42.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFF1B1610))
-                    .border(1.dp, Color(0xFF5E411B), CircleShape)
+                    .background(if (isDarkThemeActive) Color(0xFF1B1610) else AppPrimary.copy(alpha = 0.12f))
+                    .border(1.dp, if (isDarkThemeActive) Color(0xFF5E411B) else AppPrimary.copy(alpha = 0.35f), CircleShape)
                     .clickable { importLauncher.launch("*/*") },
                 contentAlignment = Alignment.Center
             ) {
@@ -123,12 +123,12 @@ fun PluginsScreen(onBack: () -> Unit) {
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("Search plugins...", color = Color(0xFF636366), fontSize = 14.sp) },
+            placeholder = { Text("Search plugins...", color = AppMuted, fontSize = 14.sp) },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.Search,
                     contentDescription = null,
-                    tint = Color(0xFF636366),
+                    tint = AppMuted,
                     modifier = Modifier.size(20.dp)
                 )
             },
@@ -138,8 +138,8 @@ fun PluginsScreen(onBack: () -> Unit) {
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = AppBorder,
                 unfocusedBorderColor = AppDivider,
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
+                focusedTextColor = AppWhite,
+                unfocusedTextColor = AppWhite,
                 focusedContainerColor = AppField,
                 unfocusedContainerColor = AppField
             ),
@@ -170,7 +170,7 @@ fun PluginsScreen(onBack: () -> Unit) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = category.name.uppercase(),
-                            color = Color(0xFF636366),
+                            color = AppMuted,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp
@@ -246,7 +246,7 @@ fun PluginGridCard(
                 modifier = Modifier
                     .size(38.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0xFF261D12)),
+                    .background(if (isDarkThemeActive) Color(0xFF261D12) else AppPrimary.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -262,7 +262,7 @@ fun PluginGridCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = plugin.displayName,
-                    color = Color.White,
+                    color = AppWhite,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
@@ -270,7 +270,7 @@ fun PluginGridCard(
                 )
                 Text(
                     text = "v${plugin.version}",
-                    color = Color(0xFF636366),
+                    color = AppMuted,
                     fontSize = 11.sp
                 )
             }
@@ -282,7 +282,7 @@ fun PluginGridCard(
                     checkedThumbColor = Color.White,
                     checkedTrackColor = AppPrimary,
                     uncheckedTrackColor = AppDivider,
-                    uncheckedThumbColor = Color(0xFF636366),
+                    uncheckedThumbColor = if (isDarkThemeActive) Color(0xFF636366) else Color(0xFFA1A1AA),
                     uncheckedBorderColor = Color.Transparent
                 ),
                 modifier = Modifier.scale(0.82f)
@@ -293,7 +293,7 @@ fun PluginGridCard(
 
         Text(
             text = plugin.description,
-            color = Color(0xFF8E8E93),
+            color = AppMuted,
             fontSize = 11.sp,
             maxLines = 3,
             overflow = TextOverflow.Ellipsis,
@@ -320,29 +320,29 @@ fun PluginDetailDialog(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
-                    Text(plugin.displayName, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text("Version ${plugin.version}", color = Color(0xFF8E8E93), fontSize = 12.sp)
+                    Text(plugin.displayName, color = AppWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("Version ${plugin.version}", color = AppMuted, fontSize = 12.sp)
                 }
             }
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(plugin.description, color = Color.LightGray, fontSize = 13.sp)
+                Text(plugin.description, color = AppWhite.copy(alpha = 0.85f), fontSize = 13.sp)
 
                 HorizontalDivider(color = AppDivider)
 
-                Text("Tools Provided (${plugin.getTools().size}):", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text("Tools Provided (${plugin.getTools().size}):", color = AppWhite, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 for (tool in plugin.getTools()) {
                     Column(modifier = Modifier.padding(start = 4.dp)) {
                         Text("• ${tool.name}", color = AppPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        Text(tool.description, color = Color(0xFF8E8E93), fontSize = 11.sp)
+                        Text(tool.description, color = AppMuted, fontSize = 11.sp)
                     }
                 }
 
                 val configFields = plugin.getConfigFields()
                 if (configFields.isNotEmpty()) {
                     HorizontalDivider(color = AppDivider)
-                    Text("Configuration:", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("Configuration:", color = AppWhite, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     for (field in configFields) {
                         var valState by remember { mutableStateOf(PluginRegistry.getConfigValue(plugin.id, field.key, field.defaultValue)) }
                         OutlinedTextField(
@@ -352,13 +352,13 @@ fun PluginDetailDialog(
                                 PluginRegistry.setConfigValue(plugin.id, field.key, it)
                                 onConfigChanged()
                             },
-                            label = { Text(field.label, color = Color(0xFF8E8E93)) },
+                            label = { Text(field.label, color = AppMuted) },
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = AppPrimary,
                                 unfocusedBorderColor = AppDivider,
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
+                                focusedTextColor = AppWhite,
+                                unfocusedTextColor = AppWhite,
                                 focusedContainerColor = AppField,
                                 unfocusedContainerColor = AppField
                             )

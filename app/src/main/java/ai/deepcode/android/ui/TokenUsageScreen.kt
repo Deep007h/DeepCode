@@ -72,7 +72,7 @@ fun TokenUsageScreen(
             Box(
                 modifier = Modifier
                     .size(36.dp)
-                    .depthPill(shape = CircleShape, elevation = 2.dp, isDark = true)
+                    .depthPill(shape = CircleShape, elevation = 2.dp, isDark = isDarkThemeActive)
                     .bouncyClickable(provideHaptic = true) { onClose() },
                 contentAlignment = Alignment.Center
             ) {
@@ -104,7 +104,7 @@ fun TokenUsageScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .depthCard(shape = RoundedCornerShape(16.dp), elevation = 3.dp, isDark = true)
+                            .depthCard(shape = RoundedCornerShape(16.dp), elevation = 3.dp, isDark = isDarkThemeActive)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("Lifetime Usage", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = AppWhite)
@@ -119,7 +119,7 @@ fun TokenUsageScreen(
                                 Stat(label = "Turns", value = "${totals.totalTurns}")
                             }
                             Spacer(Modifier.height(12.dp))
-                            HorizontalDivider(color = AppDarkGray.copy(alpha = 0.5f))
+                            HorizontalDivider(color = AppDivider)
                             Spacer(Modifier.height(8.dp))
                             Text("Input: ${formatTokenCount(totals.totalInput)}", fontSize = 12.sp, color = AppMuted)
                             Text("Output: ${formatTokenCount(totals.totalOutput)}", fontSize = 12.sp, color = AppMuted)
@@ -175,7 +175,7 @@ private fun SessionUsageCard(session: TokenUsageEntity) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .depthCard(shape = RoundedCornerShape(12.dp), elevation = 2.dp, isDark = true)
+            .depthCard(shape = RoundedCornerShape(12.dp), elevation = 2.dp, isDark = isDarkThemeActive)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

@@ -357,7 +357,7 @@ fun ConnectionsScreen(
                 }
                 Text(
                     text = "${activeConnections.size} connected",
-                    color = Color(0xFF9E9E9E),
+                    color = AppMuted,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -390,7 +390,7 @@ fun ConnectionsScreen(
                     modifier = Modifier
                         .animateItem()
                         .fillMaxWidth()
-                        .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.5.dp, isDark = true)
+                        .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.5.dp, isDark = isDarkThemeActive)
                         .clickable(enabled = connection.appId == "chatgpt") {
                             showChatGPTDialog = true
                         }
@@ -406,7 +406,7 @@ fun ConnectionsScreen(
                                 .depthPill(
                                     shape = RoundedCornerShape(12.dp),
                                     elevation = 1.5.dp,
-                                    isDark = true,
+                                    isDark = isDarkThemeActive,
                                     customGradient = listOf(getBrandColor(connection.appId).copy(alpha = 0.25f), getBrandColor(connection.appId).copy(alpha = 0.10f)),
                                     customBorderColor = getBrandColor(connection.appId).copy(alpha = 0.4f)
                                 ),
@@ -504,7 +504,7 @@ fun ConnectionsScreen(
                 modifier = Modifier
                     .animateItem()
                     .fillMaxWidth()
-                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = true)
+                    .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = isDarkThemeActive)
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -520,7 +520,7 @@ fun ConnectionsScreen(
                             .depthPill(
                                 shape = RoundedCornerShape(12.dp),
                                 elevation = 1.5.dp,
-                                isDark = true,
+                                isDark = isDarkThemeActive,
                                 customGradient = listOf(brandColor.copy(alpha = 0.25f), brandColor.copy(alpha = 0.10f)),
                                 customBorderColor = brandColor.copy(alpha = 0.4f)
                             ),
@@ -558,7 +558,7 @@ fun ConnectionsScreen(
                         .depthPill(
                             shape = RoundedCornerShape(10.dp),
                             elevation = 2.dp,
-                            isDark = true,
+                            isDark = isDarkThemeActive,
                             customGradient = listOf(brandColor.copy(alpha = 0.25f), brandColor.copy(alpha = 0.10f)),
                             customBorderColor = brandColor.copy(alpha = 0.6f)
                         )
@@ -1270,7 +1270,7 @@ fun ConnectionsScreen(
                                 viewModel.dismissNoGoogleAccountDialog()
                             }
                         ) {
-                            Text("Add Account", color = Color.Black)
+                            Text("Add Account", color = MaterialTheme.colorScheme.onPrimary)
                         }
                     }
                 }

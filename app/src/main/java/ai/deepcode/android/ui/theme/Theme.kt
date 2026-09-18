@@ -1,5 +1,10 @@
 package ai.deepcode.android.ui.theme
 
+import android.app.Activity
+import android.content.ContextWrapper
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.spring
@@ -17,11 +22,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 
 // ─────────────────────────────────────────────────────────────
 //  THEME SYSTEM
@@ -71,13 +78,17 @@ var AppAccentId: String
     }
 
 /** True when the current palette is the dark one. */
-val isDarkThemeActive: Boolean get() = _darkActive
+val isDarkThemeActive: Boolean
+    get() = when (_themeMode) {
+        "light" -> false
+        "dark" -> true
+        else -> _darkActive
+    }
 
 /** The active accent theme. */
 val ActiveAccent: AccentTheme
     get() = AccentThemes.firstOrNull { it.id == _accentId } ?: AccentThemes.first()
 
-// ─────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────
 //  SEMANTIC / STATUS COLORS (fixed across themes)
 // ─────────────────────────────────────────────────────────────
@@ -93,27 +104,27 @@ val AppBackgroundLight = Color(0xFFFAFAF5)
 //  DYNAMIC PALETTE (driven by mode + accent)
 //  Each getter evaluates the active theme so Compose tracks it.
 // ─────────────────────────────────────────────────────────────
-val AppBackground: Color get() = if (isDarkThemeActive) Color(0xFF0D0D0D) else Color(0xFFFAFAF5)
+val AppBackground: Color get() = if (isDarkThemeActive) Color(0xFF0D0D0D) else Color(0xFFF6F6F8)
 val AppSurface: Color get() = if (isDarkThemeActive) Color(0xFF131316) else Color.White
-val AppSurfaceVariant: Color get() = if (isDarkThemeActive) Color(0xFF222226) else Color(0xFFE8E8E3)
-val AppMuted: Color get() = if (isDarkThemeActive) Color(0xFF9E9E9E) else Color(0xFF6B7280)
-val AppWhite: Color get() = if (isDarkThemeActive) Color.White else Color(0xFF1C1C1E)
-val AppDarkGray: Color get() = if (isDarkThemeActive) Color(0xFF26262A) else Color(0xFFD4D4D0)
+val AppSurfaceVariant: Color get() = if (isDarkThemeActive) Color(0xFF222226) else Color(0xFFF0F0F3)
+val AppMuted: Color get() = if (isDarkThemeActive) Color(0xFF9E9E9E) else Color(0xFF71717A)
+val AppWhite: Color get() = if (isDarkThemeActive) Color.White else Color(0xFF18181B)
+val AppDarkGray: Color get() = if (isDarkThemeActive) Color(0xFF26262A) else Color(0xFFE4E4E7)
 
 /** Full-screen background (screens that use their own darker canvas). */
-val AppScreenBg: Color get() = if (isDarkThemeActive) Color(0xFF0D0D0D) else Color(0xFFFAFAF5)
+val AppScreenBg: Color get() = if (isDarkThemeActive) Color(0xFF0D0D0D) else Color(0xFFF6F6F8)
 
 /** Card / grouped-surface background. */
 val AppCard: Color get() = if (isDarkThemeActive) Color(0xFF131316) else Color.White
 
 /** Subtle divider line color. */
-val AppDivider: Color get() = if (isDarkThemeActive) Color(0xFF1C1C1F) else Color(0xFFE8E8E3)
+val AppDivider: Color get() = if (isDarkThemeActive) Color(0xFF1C1C1F) else Color(0xFFEEEEF0)
 
 /** Border / outline color. */
-val AppBorder: Color get() = if (isDarkThemeActive) Color(0xFF232326) else Color(0xFFD4D4D0)
+val AppBorder: Color get() = if (isDarkThemeActive) Color(0xFF232326) else Color(0xFFE4E4E7)
 
 /** Input / field background color. */
-val AppField: Color get() = if (isDarkThemeActive) Color(0xFF0D0D0D) else Color(0xFFF5F5F0)
+val AppField: Color get() = if (isDarkThemeActive) Color(0xFF0D0D0D) else Color(0xFFF4F4F6)
 
 /** Primary accent color (themeable). */
 val AppPrimary: Color get() = ActiveAccent.primary
@@ -148,16 +159,16 @@ fun appLightColorScheme(accent: AccentTheme) = lightColorScheme(
     onPrimary = Color.White,
     secondary = AppIntegrationPurple,
     onSecondary = Color.White,
-    background = Color(0xFFFAFAF5),
-    onBackground = Color(0xFF1C1C1E),
+    background = Color(0xFFF6F6F8),
+    onBackground = Color(0xFF18181B),
     surface = Color.White,
-    onSurface = Color(0xFF1C1C1E),
-    surfaceVariant = Color(0xFFE8E8E3),
-    onSurfaceVariant = Color(0xFF6B7280),
+    onSurface = Color(0xFF18181B),
+    surfaceVariant = Color(0xFFF0F0F3),
+    onSurfaceVariant = Color(0xFF71717A),
     error = Color(0xFFE53935),
     onError = Color.White,
-    outline = Color(0xFFD4D4D0),
-    outlineVariant = Color(0xFFE8E8E3),
+    outline = Color(0xFFE4E4E7),
+    outlineVariant = Color(0xFFEEEEF0),
     tertiary = Color(0xFF4CAF50),
     onTertiary = Color.White
 )
@@ -220,6 +231,47 @@ fun DeepCodeTheme(
         if (AppThemeMode != themeMode) AppThemeMode = themeMode
         if (AppAccentId != accentId) AppAccentId = accentId
         if (_darkActive != dark) _darkActive = dark
+    }
+
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            var ctx = view.context
+            var activity: Activity? = null
+            while (ctx is ContextWrapper) {
+                if (ctx is Activity) {
+                    activity = ctx
+                    break
+                }
+                ctx = ctx.baseContext
+            }
+            val window = activity?.window
+            if (window != null) {
+                val insetsController = WindowCompat.getInsetsController(window, view)
+                insetsController.isAppearanceLightStatusBars = !dark
+                insetsController.isAppearanceLightNavigationBars = !dark
+            }
+            if (activity is ComponentActivity) {
+                activity.enableEdgeToEdge(
+                    statusBarStyle = if (dark) {
+                        SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                    } else {
+                        SystemBarStyle.light(
+                            android.graphics.Color.TRANSPARENT,
+                            android.graphics.Color.TRANSPARENT
+                        )
+                    },
+                    navigationBarStyle = if (dark) {
+                        SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                    } else {
+                        SystemBarStyle.light(
+                            android.graphics.Color.TRANSPARENT,
+                            android.graphics.Color.TRANSPARENT
+                        )
+                    }
+                )
+            }
+        }
     }
 
     CompositionLocalProvider(LocalAppColors provides AppColors()) {

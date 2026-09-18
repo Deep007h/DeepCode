@@ -4,6 +4,24 @@ All notable changes and milestones for **DeepCode for Android** are documented b
 
 ---
 
+## [1.3.0] - 2026-09-18
+
+### Added
+- **Telegram Bot Image Generation & Context Persistence**:
+  - Multipart form-data uploads for local images with automatic document fallback if Telegram CDN rejects dimensions or formats.
+  - Full conversational history persistence in Room DB for direct tool runs (image gen, image search, audio, video) and system bypasses (music, automations, github, gmail), enabling multi-turn follow-ups and retry inquiries.
+  - Multi-tier image generation fallback cascade: OpenAI DALL-E 3 → Google Gemini Imagen 3 → Cloudflare Flux → Pollinations Flux.
+- **ChatGPT & Automation ChatScreen Deduplication**:
+  - Filter out repeated automation input prompts in `ChatScreen` so only the first scheduled prompt is shown at the top, followed strictly by AI replies.
+  - Prevent duplicate prompt insertion in `AutomationRunner` for scheduled executions while retaining session provider tagging.
+
+### Fixed & Improved
+- **Theme System & Visual Polish**:
+  - Theme consistency for thinking indicators, pulsating icons, blinking cursors, and audio players across light and dark themes.
+  - Scheduled task markdown blockquote and formatting adjustments.
+
+---
+
 ## [1.2.0] - 2026-09-09
 
 ### Added
