@@ -64,6 +64,19 @@ object ApiKeyRotator {
         return false
     }
 
+    private fun getStorageAliases(storageId: String): List<String> {
+        val clean = storageId.trim().lowercase()
+        return when (clean) {
+            "zen", "opencode-zen", "opencode" -> listOf(clean, if (clean == "zen") "opencode-zen" else "zen", "opencode").distinct()
+            "together", "together-ai" -> listOf("together", "together-ai")
+            "fireworks", "fireworks-ai" -> listOf("fireworks", "fireworks-ai")
+            "nvidia", "nvidia-nim" -> listOf("nvidia", "nvidia-nim")
+            "cerebras", "cerebrus" -> listOf("cerebras", "cerebrus")
+            "gmi", "gmi-cloud" -> listOf("gmi", "gmi-cloud")
+            else -> listOf(clean)
+        }
+    }
+
     /**
      * Finds the 1-based slot index (1..6) matching [apiKey] for [storageId].
      * Returns 0 if not found in configured slots.
@@ -71,10 +84,13 @@ object ApiKeyRotator {
     fun findSlotForKey(prefs: EncryptedPrefs, storageId: String, apiKey: String): Int {
         val cleanKey = apiKey.trim()
         if (cleanKey.isEmpty()) return 0
-        for (slot in 1..EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER) {
-            val slotKey = prefs.getApiKeySlot(storageId, slot).trim()
-            if (slotKey.isNotEmpty() && (slotKey == cleanKey || cleanKey.startsWith(slotKey))) {
-                return slot
+        val aliases = getStorageAliases(storageId)
+        for (targetId in aliases) {
+            for (slot in 1..EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER) {
+                val slotKey = prefs.getApiKeySlot(targetId, slot).trim()
+                if (slotKey.isNotEmpty() && (slotKey == cleanKey || cleanKey.startsWith(slotKey))) {
+                    return slot
+                }
             }
         }
         return 0
@@ -86,10 +102,6 @@ object ApiKeyRotator {
      */
     fun isRotatableError(error: Throwable? = null, httpCode: Int? = null, responseBody: String? = null): Boolean {
         if (error is RateLimitException) return true
-
-        if (httpCode != null && httpCode in listOf(401, 402, 403, 429)) {
-            return true
-        }
 
         val textToInspect = buildString {
             if (httpCode != null) append("HTTP $httpCode ")
@@ -103,9 +115,19 @@ object ApiKeyRotator {
             }
         }.lowercase()
 
-        // Missing session headers or console usage restrictions are NOT rate limits / key exhaustion
-        if (textToInspect.contains("missingsessionid") || textToInspect.contains("can only be used in opencode")) {
+        // Missing session headers, free tier gateway restrictions, or payment method errors are NOT rotatable rate limits
+        if (textToInspect.contains("missingsessionid") ||
+            textToInspect.contains("can only be used from within opencode") ||
+            textToInspect.contains("can only be used in opencode") ||
+            textToInspect.contains("freetiererror") ||
+            textToInspect.contains("creditserror") ||
+            textToInspect.contains("no payment method")
+        ) {
             return false
+        }
+
+        if (httpCode != null && httpCode in listOf(401, 402, 403, 429)) {
+            return true
         }
 
         return textToInspect.contains("429") ||
@@ -162,16 +184,22 @@ object ApiKeyRotator {
      * @return Pair(apiKey, slotIndex) or null if no keys are configured.
      */
     fun getNextAvailableKey(prefs: EncryptedPrefs, storageId: String): Pair<String, Int>? {
-        var firstConfiguredKey: Pair<String, Int>? = null
-        for (slot in 1..EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER) {
-            val key = prefs.getApiKeySlot(storageId, slot)
-            if (key.isNotEmpty()) {
-                if (firstConfiguredKey == null) firstConfiguredKey = key to slot
-                if (!isKeyExhausted(storageId, slot, key)) return key to slot
+        val aliases = getStorageAliases(storageId)
+        for (targetId in aliases) {
+            var firstConfiguredKey: Pair<String, Int>? = null
+            for (slot in 1..EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER) {
+                val key = prefs.getApiKeySlot(targetId, slot)
+                if (key.isNotEmpty()) {
+                    if (firstConfiguredKey == null) firstConfiguredKey = key to slot
+                    if (!isKeyExhausted(targetId, slot, key)) return key to slot
+                }
+            }
+            if (firstConfiguredKey != null) {
+                // Fallback: If all are in cooldown for this provider, return first configured key
+                return firstConfiguredKey
             }
         }
-        // Fallback: If all are in cooldown, return the first configured key to keep trying
-        return firstConfiguredKey
+        return null
     }
 
     /**
@@ -181,31 +209,41 @@ object ApiKeyRotator {
      */
     fun getAvailableKeyAfter(prefs: EncryptedPrefs, storageId: String, afterSlot: Int): Pair<String, Int>? {
         val max = EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER
-        var nextConfiguredKey: Pair<String, Int>? = null
+        val aliases = getStorageAliases(storageId)
+        for (targetId in aliases) {
+            var nextConfiguredKey: Pair<String, Int>? = null
 
-        // Pass 1: Look for a non-exhausted non-empty key
-        for (offset in 1..max) {
-            val slot = ((afterSlot - 1 + offset) % max) + 1
-            val key = prefs.getApiKeySlot(storageId, slot)
-            if (key.isNotEmpty()) {
-                if (nextConfiguredKey == null) nextConfiguredKey = key to slot
-                if (!isKeyExhausted(storageId, slot, key)) return key to slot
+            // Pass 1: Look for a non-exhausted non-empty key
+            for (offset in 1..max) {
+                val slot = ((afterSlot - 1 + offset) % max) + 1
+                val key = prefs.getApiKeySlot(targetId, slot)
+                if (key.isNotEmpty()) {
+                    if (nextConfiguredKey == null) nextConfiguredKey = key to slot
+                    if (!isKeyExhausted(targetId, slot, key)) return key to slot
+                }
+            }
+
+            // Pass 2: Fallback to next configured key in ring even if in cooldown
+            if (nextConfiguredKey != null) {
+                return nextConfiguredKey
             }
         }
-
-        // Pass 2: Fallback to next configured key in ring even if in cooldown
-        return nextConfiguredKey
+        return null
     }
 
     /**
      * Returns total number of configured keys for [storageId].
      */
     fun getConfiguredKeyCount(prefs: EncryptedPrefs, storageId: String): Int {
-        var count = 0
-        for (slot in 1..EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER) {
-            if (prefs.getApiKeySlot(storageId, slot).isNotEmpty()) count++
+        val aliases = getStorageAliases(storageId)
+        for (targetId in aliases) {
+            var count = 0
+            for (slot in 1..EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER) {
+                if (prefs.getApiKeySlot(targetId, slot).isNotEmpty()) count++
+            }
+            if (count > 0) return count
         }
-        return count
+        return 0
     }
 
     /**

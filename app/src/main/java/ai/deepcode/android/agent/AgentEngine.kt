@@ -1582,14 +1582,19 @@ class AgentEngine(private val context: Context) {
         var activeProviderName = effectiveProvider
         val agentJob = launch(Dispatchers.IO) {
             try {
-                // Insert user message once
-                repository.insertMessage(Message(
-                    id = UUID.randomUUID().toString(),
-                    sessionId = sessionId,
-                    role = "user",
-                    content = userPrompt,
-                    timestamp = System.currentTimeMillis()
-                ))
+                // Insert user message once (skip duplicate insertion for automation sessions that already have the initial prompt)
+                val isAutomationSession = securePrefs.getSetting("session_is_automation_$sessionId", "") == "true"
+                val existingHistory = if (isAutomationSession) repository.getMessagesListForSession(sessionId) else emptyList()
+                val alreadyHasUserMsg = isAutomationSession && existingHistory.any { it.role == "user" }
+                if (!alreadyHasUserMsg) {
+                    repository.insertMessage(Message(
+                        id = UUID.randomUUID().toString(),
+                        sessionId = sessionId,
+                        role = "user",
+                        content = userPrompt,
+                        timestamp = System.currentTimeMillis()
+                    ))
+                }
 
                 // Bypass AI for email/repo requests (AI can't call the integration tool reliably)
                 val isNewsBriefPrompt = userPrompt.contains("news brief", ignoreCase = true) ||

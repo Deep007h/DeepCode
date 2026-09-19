@@ -151,6 +151,78 @@ class TelegramBridgeService : Service() {
         fun stop(context: Context) {
             context.stopService(Intent(context, TelegramBridgeService::class.java))
         }
+
+        fun registerBotCommands(token: String) {
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val client = OkHttpClient.Builder()
+                        .connectTimeout(12, TimeUnit.SECONDS)
+                        .readTimeout(12, TimeUnit.SECONDS)
+                        .build()
+                    val gson = Gson()
+                    val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+                    val commands = JsonArray().apply {
+                        add(JsonObject().apply {
+                            addProperty("command", "start")
+                            addProperty("description", "Start bot & welcome message")
+                        })
+                        add(JsonObject().apply {
+                            addProperty("command", "tasks")
+                            addProperty("description", "View scheduled tasks & outputs")
+                        })
+                        add(JsonObject().apply {
+                            addProperty("command", "task_output")
+                            addProperty("description", "Show task execution output")
+                        })
+                        add(JsonObject().apply {
+                            addProperty("command", "models")
+                            addProperty("description", "Switch AI provider & model")
+                        })
+                        add(JsonObject().apply {
+                            addProperty("command", "voice")
+                            addProperty("description", "Change voice character & tone")
+                        })
+                        add(JsonObject().apply {
+                            addProperty("command", "language")
+                            addProperty("description", "Set AI & TTS language")
+                        })
+                        add(JsonObject().apply {
+                            addProperty("command", "persona")
+                            addProperty("description", "List available personas")
+                        })
+                        add(JsonObject().apply {
+                            addProperty("command", "clear")
+                            addProperty("description", "Clear conversation history")
+                        })
+                        add(JsonObject().apply {
+                            addProperty("command", "help")
+                            addProperty("description", "Show available commands & guide")
+                        })
+                    }
+
+                    val scopes = listOf(
+                        JsonObject().apply { addProperty("type", "default") },
+                        JsonObject().apply { addProperty("type", "all_private_chats") }
+                    )
+                    for (scope in scopes) {
+                        val payload = JsonObject().apply {
+                            add("commands", commands)
+                            add("scope", scope)
+                        }
+                        val url = "${API_BASE}${token}/setMyCommands"
+                        val request = Request.Builder()
+                            .url(url)
+                            .post(gson.toJson(payload).toRequestBody(jsonMediaType))
+                            .build()
+                        client.newCall(request).execute().use { resp ->
+                            AppLogger.d(TAG, "setMyCommands for scope ${scope.get("type").asString} response: ${resp.code}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    AppLogger.w(TAG, "Failed to register bot commands: ${e.message}")
+                }
+            }
+        }
     }
 
     private lateinit var repository: DeepCodeRepository
@@ -314,59 +386,7 @@ class TelegramBridgeService : Service() {
     }
 
     private fun registerBotCommands(token: String) {
-        try {
-            val commands = JsonArray().apply {
-                add(JsonObject().apply {
-                    addProperty("command", "start")
-                    addProperty("description", "Start bot & welcome message")
-                })
-                add(JsonObject().apply {
-                    addProperty("command", "tasks")
-                    addProperty("description", "View scheduled tasks & outputs")
-                })
-                add(JsonObject().apply {
-                    addProperty("command", "task_output")
-                    addProperty("description", "Show task execution output")
-                })
-                add(JsonObject().apply {
-                    addProperty("command", "models")
-                    addProperty("description", "Switch AI provider & model")
-                })
-                add(JsonObject().apply {
-                    addProperty("command", "voice")
-                    addProperty("description", "Change voice character & tone")
-                })
-                add(JsonObject().apply {
-                    addProperty("command", "language")
-                    addProperty("description", "Set AI & TTS language")
-                })
-                add(JsonObject().apply {
-                    addProperty("command", "persona")
-                    addProperty("description", "List available personas")
-                })
-                add(JsonObject().apply {
-                    addProperty("command", "clear")
-                    addProperty("description", "Clear conversation history")
-                })
-                add(JsonObject().apply {
-                    addProperty("command", "help")
-                    addProperty("description", "Show available commands & guide")
-                })
-            }
-            val payload = JsonObject().apply {
-                add("commands", commands)
-            }
-            val url = "${API_BASE}${token}/setMyCommands"
-            val request = Request.Builder()
-                .url(url)
-                .post(gson.toJson(payload).toRequestBody(jsonMediaType))
-                .build()
-            client.newCall(request).execute().use { resp ->
-                AppLogger.d(TAG, "setMyCommands response: ${resp.code}")
-            }
-        } catch (e: Exception) {
-            AppLogger.w(TAG, "Failed to register bot commands: ${e.message}")
-        }
+        Companion.registerBotCommands(token)
     }
 
     private suspend fun pollBot(token: String) {
@@ -462,11 +482,26 @@ class TelegramBridgeService : Service() {
                             val text = message.get("text")?.asString ?: ""
                             val chat = try { message.getAsJsonObject("chat") } catch (_: Exception) { null } ?: continue
                             val chatId = chat.get("id")?.asLong ?: continue
+                            val chatType = chat.get("type")?.asString ?: "private"
+                            val isPrivateChat = chatType == "private"
 
                             if (text.isNotEmpty()) {
-                                AppLogger.d(TAG, "Message from chat $chatId: ${text.take(100)}")
+                                // Group spam protection: Ignore non-command group messages unless replying to the bot
+                                if (!isPrivateChat && !text.startsWith("/")) {
+                                    val isReplyToBot = try {
+                                        val replyTo = message.getAsJsonObject("reply_to_message")
+                                        val from = replyTo?.getAsJsonObject("from")
+                                        from?.get("is_bot")?.asBoolean == true
+                                    } catch (_: Exception) { false }
+                                    if (!isReplyToBot) {
+                                        AppLogger.d(TAG, "Ignoring non-command group message in chat $chatId: ${text.take(40)}")
+                                        continue
+                                    }
+                                }
+
+                                AppLogger.d(TAG, "Message from chat $chatId ($chatType): ${text.take(100)}")
                                 serviceScope.launch {
-                                    handleMessage(token, chatId, text)
+                                    handleMessage(token, chatId, text, isPrivateChat)
                                 }
                             }
                         } catch (e: Exception) {
@@ -508,6 +543,13 @@ class TelegramBridgeService : Service() {
         if (storageKey == "nvidia") keysToCheck.add("nvidia-nim")
         if (storageKey == "tokenharbor") keysToCheck.add("token-harbor")
         if (storageKey == "token-harbor") keysToCheck.add("tokenharbor")
+        if (storageKey == "zen") {
+            keysToCheck.add("opencode-zen")
+            keysToCheck.add("opencode")
+        }
+        if (storageKey == "opencode-zen" || storageKey == "opencode") {
+            keysToCheck.add("zen")
+        }
 
         for (k in keysToCheck) {
             val hasKey = prefs.getApiKeys(k).isNotEmpty() ||
@@ -523,6 +565,22 @@ class TelegramBridgeService : Service() {
             }
         }
         return false
+    }
+
+    private fun getFirstConfiguredProvider(): String? {
+        val candidates = listOf(
+            "Google Gemini", "Groq", "Cerebras", "Ollama", "OllamaCloud",
+            "OpenAI", "Anthropic", "DeepSeek", "Mistral AI", "Together AI",
+            "Fireworks AI", "NVIDIA NIM", "OpenRouter", "Zen AI"
+        )
+        for (cand in candidates) {
+            val storageKey = providerStorageId(cand)
+            val isFree = cand.contains("Free", ignoreCase = true) || cand == "Google Gemini" || cand == "Groq" || cand == "Cerebras" || cand == "Ollama"
+            if (hasProviderCredentials(storageKey, isFree)) {
+                return cand
+            }
+        }
+        return null
     }
 
     private fun inferProviderForModel(modelId: String): String? {
@@ -640,15 +698,18 @@ class TelegramBridgeService : Service() {
         repository.securePrefs.saveSetting("tg_model_$chatId", modelId)
         val prov = providerName
             ?: inferProviderForModel(modelId)
-            ?: "Zen AI"
+            ?: getFirstConfiguredProvider()
+            ?: "Google Gemini"
         repository.securePrefs.saveSetting("tg_provider_$chatId", prov)
         repository.securePrefs.saveSetting("agent_provider", prov)
         repository.securePrefs.saveSetting("agent_model", modelId)
     }
 
-    private suspend fun handleMessage(token: String, chatId: Long, text: String) {
-        // Save this chat as the default for UI-created automation delivery
-        repository.securePrefs.saveSetting("telegram_default_chat_id", chatId.toString())
+    private suspend fun handleMessage(token: String, chatId: Long, text: String, isPrivateChat: Boolean = true) {
+        // Only save this chat as default from private interactions with the user, never from group/spam chats
+        if (isPrivateChat) {
+            repository.securePrefs.saveSetting("telegram_default_chat_id", chatId.toString())
+        }
 
         if (text.startsWith("/")) {
             handleCommand(token, chatId, text)
@@ -673,7 +734,14 @@ class TelegramBridgeService : Service() {
     private suspend fun _handleMessageLocked(token: String, chatId: Long, text: String) {
         val savedModelId = getSavedModelForChat(chatId)
         val savedProviderName = getSavedProviderForChat(chatId)
-        val effectiveProvider = savedProviderName ?: inferProviderForModel(savedModelId ?: "") ?: "Zen AI"
+        val appConfiguredProvider = repository.securePrefs.getSetting("agent_provider", "")
+            .ifEmpty { repository.securePrefs.getSetting("chat_provider", "") }
+            .takeIf { it.isNotBlank() }
+        val effectiveProvider = savedProviderName
+            ?: inferProviderForModel(savedModelId ?: "")
+            ?: appConfiguredProvider
+            ?: getFirstConfiguredProvider()
+            ?: "Google Gemini"
 
         val providerObj: AIProvider? = AIProviderFactory.providers.firstOrNull { it.name.equals(effectiveProvider, ignoreCase = true) }
             ?: (OPENAI_PROVIDERS.find { it.name.equals(effectiveProvider, ignoreCase = true) }?.let { GenericOpenAIProvider(it) })

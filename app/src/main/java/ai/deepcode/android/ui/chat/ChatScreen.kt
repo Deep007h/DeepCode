@@ -490,7 +490,13 @@ fun ChatScreen(
         sessions.find { it.id == activeSessionId }?.title ?: sessionTitle
     }
 
-    val isChatGptSession = remember(activeModel, currentSessionTitle, activeSessionId) {
+    val isAutomationSession = remember(activeSessionId, currentSessionTitle) {
+        currentSessionTitle.startsWith("⏰") ||
+            currentSessionTitle.contains("[Scheduled Task", ignoreCase = true) ||
+            repository.securePrefs.getSetting("session_is_automation_$activeSessionId", "") == "true"
+    }
+
+    val isChatGptSession = remember(activeModel, currentSessionTitle, activeSessionId, isAutomationSession) {
         activeModel.provider.equals("ChatGPT", ignoreCase = true) ||
             activeModel.id.equals("chatgpt-4o", ignoreCase = true) ||
             activeModel.name.contains("chatgpt", ignoreCase = true) ||
@@ -498,7 +504,9 @@ fun ChatScreen(
             repository.securePrefs.getSetting("session_provider_$activeSessionId", "").equals("ChatGPT", ignoreCase = true)
     }
 
-    val groupedItems = remember(messages, isChatGptSession) { groupChatMessages(messages, isChatGptSession) }
+    val groupedItems = remember(messages, isChatGptSession, isAutomationSession) {
+        groupChatMessages(messages, isChatGptSession, isAutomationSession)
+    }
 
     val activeWallpaperId by repository.securePrefs.wallpaperFlow.collectAsStateWithLifecycle()
     val customWallpaperPath by repository.securePrefs.customWallpaperFlow.collectAsStateWithLifecycle()
@@ -3080,6 +3088,13 @@ fun ModelSelectionOverlay(
         if (storageId == "together") aliasKeys.add("together-ai")
         if (storageId == "fireworks") aliasKeys.add("fireworks-ai")
         if (storageId == "nvidia") aliasKeys.add("nvidia-nim")
+        if (storageId == "zen") {
+            aliasKeys.add("opencode-zen")
+            aliasKeys.add("opencode")
+        }
+        if (storageId == "opencode-zen" || storageId == "opencode") {
+            aliasKeys.add("zen")
+        }
 
         for (k in aliasKeys) {
             val key = ApiKeyRotator.getNextAvailableKey(securePrefs, k)?.first
@@ -3472,7 +3487,11 @@ sealed class ChatItem {
 // ═══════════════════════════════════════════════
 // Group consecutive tool messages into ToolExecutionGroups
 // ═══════════════════════════════════════════════
-private fun groupChatMessages(messages: List<Message>, isChatGptSession: Boolean = false): List<ChatItem> {
+private fun groupChatMessages(
+    messages: List<Message>,
+    isChatGptSession: Boolean = false,
+    isAutomationSession: Boolean = false
+): List<ChatItem> {
     val result = mutableListOf<ChatItem>()
     val currentToolGroup = mutableListOf<Message>()
 
@@ -3489,38 +3508,57 @@ private fun groupChatMessages(messages: List<Message>, isChatGptSession: Boolean
         }
     }
 
-    // Filter out repeated automation input messages
-    // For ChatGPT / automation sessions, the automation input prompt must only be shown once
-    // at the top of the chat screen, and all subsequent repeating automation input prompts are suppressed
-    // so that only the AI replies (and any manual user follow-ups) appear.
-    var hasSeenFirstAutomationPrompt = false
-    var firstUserPromptClean: String? = null
+    // Filter out repeated automation input messages:
+    // In ChatGPT / automation sessions, the input automation message must only appear ONCE at the top.
+    // All subsequent messages must be AI replies (role == "assistant") without repeating the prompt.
+    var hasSeenTopInputMessage = false
+    var topUserPromptClean: String? = null
+
+    fun isAutomationPromptText(text: String): Boolean {
+        val t = text.trim()
+        return t.startsWith("⏰") ||
+            t.contains("[Scheduled Task:", ignoreCase = true) ||
+            t.contains("Scheduled Task:", ignoreCase = true) ||
+            t.startsWith("Execute scheduled task:", ignoreCase = true) ||
+            t.contains("Contextual Instructions:", ignoreCase = true)
+    }
+
+    fun normalizePromptForComparison(text: String): String {
+        return text.lowercase()
+            .replace(Regex("""\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"""), "")
+            .replace(Regex("""\b(january|february|march|april|may|june|july|august|september|october|november|december)\b"""), "")
+            .replace(Regex("""\d+"""), "")
+            .replace(Regex("""[^\w\s]"""), "")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+    }
 
     val displayMessages = messages.filter { msg ->
         if (msg.role == "user") {
             val trimmed = msg.content.trim()
-            val isScheduledTask = trimmed.startsWith("⏰ [Scheduled Task:") ||
-                trimmed.startsWith("⏰ [") ||
-                trimmed.contains("[Scheduled Task:") ||
-                trimmed.startsWith("⏰")
+            val isAuto = isAutomationPromptText(trimmed)
 
-            if (isScheduledTask) {
-                if (!hasSeenFirstAutomationPrompt) {
-                    hasSeenFirstAutomationPrompt = true
-                    if (firstUserPromptClean == null) firstUserPromptClean = trimmed
-                    true // Keep the first automation prompt at the top
+            if (isChatGptSession || isAutomationSession) {
+                if (!hasSeenTopInputMessage) {
+                    hasSeenTopInputMessage = true
+                    topUserPromptClean = normalizePromptForComparison(trimmed)
+                    true // Show once as the very top message
                 } else {
-                    false // Suppress repeating scheduled task input prompts
+                    // Suppress any repeat automation prompt or matching prompt
+                    val isRepeatOfTop = topUserPromptClean != null &&
+                        normalizePromptForComparison(trimmed) == topUserPromptClean
+                    if (isAuto || isRepeatOfTop || isAutomationSession) {
+                        false // Suppress so all following messages are AI replies
+                    } else {
+                        true // Allow distinct manual user follow-ups if any
+                    }
                 }
-            } else if (isChatGptSession) {
-                if (firstUserPromptClean == null) {
-                    firstUserPromptClean = trimmed
+            } else if (isAuto) {
+                if (!hasSeenTopInputMessage) {
+                    hasSeenTopInputMessage = true
                     true
-                } else if (trimmed == firstUserPromptClean && trimmed.length > 20) {
-                    // Suppress exact repeated automation prompts in ChatGPT sessions
-                    false
                 } else {
-                    true
+                    false
                 }
             } else {
                 true
@@ -4095,6 +4133,13 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             if (storageId == "together") aliasKeys.add("together-ai")
             if (storageId == "fireworks") aliasKeys.add("fireworks-ai")
             if (storageId == "nvidia") aliasKeys.add("nvidia-nim")
+            if (storageId == "zen") {
+                aliasKeys.add("opencode-zen")
+                aliasKeys.add("opencode")
+            }
+            if (storageId == "opencode-zen" || storageId == "opencode") {
+                aliasKeys.add("zen")
+            }
 
             for (k in aliasKeys) {
                 val rotatorResult = ApiKeyRotator.getNextAvailableKey(repository.securePrefs, k)
@@ -4522,6 +4567,13 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         if (storageId == "together") aliasKeys.add("together-ai")
         if (storageId == "fireworks") aliasKeys.add("fireworks-ai")
         if (storageId == "nvidia") aliasKeys.add("nvidia-nim")
+        if (storageId == "zen") {
+            aliasKeys.add("opencode-zen")
+            aliasKeys.add("opencode")
+        }
+        if (storageId == "opencode-zen" || storageId == "opencode") {
+            aliasKeys.add("zen")
+        }
 
         for (k in aliasKeys) {
             val rotatorResult = ApiKeyRotator.getNextAvailableKey(repository.securePrefs, k)

@@ -342,7 +342,9 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
                         }
                         val botStore = BotConfigStore(appContext)
                         botStore.saveBots(listOf(BotConfig(token = botToken)))
+                        TelegramBridgeService.registerBotCommands(botToken)
                         TelegramBridgeService.start(appContext)
+                        addLog("Telegram Bot connected & bot commands registered for private chats.")
                     } catch (e: Exception) {
                         addLog("Error saving bot configuration: ${e.message}")
                     }

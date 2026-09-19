@@ -99,8 +99,9 @@ class AutomationRunner(context: Context, params: WorkerParameters) : CoroutineWo
                     automationRepository.insertAutomation(updatedRuleWithSession)
                 }
 
+                val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context)
+                prefs.saveSetting("session_is_automation_$targetSessionId", "true")
                 if (isChatGPT) {
-                    val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context)
                     prefs.saveSetting("session_provider_$targetSessionId", "ChatGPT")
                     prefs.saveSetting("session_model_$targetSessionId", "chatgpt-4o")
                 }

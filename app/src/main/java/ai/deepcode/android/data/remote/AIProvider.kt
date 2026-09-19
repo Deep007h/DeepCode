@@ -607,6 +607,11 @@ class ZenProvider : AIProvider {
                 val responseCode = conn.responseCode
                 if (responseCode != 200) {
                     val errBody = try { conn.errorStream?.bufferedReader()?.readText()?.take(1024) ?: "" } catch (_: Exception) { "" }
+                    val isFreeTierRestriction = errBody.contains("can only be used from within opencode", ignoreCase = true) ||
+                        errBody.contains("FreeTierError", ignoreCase = true)
+                    if (isFreeTierRestriction) {
+                        throw Exception("OpenCode Free Tier can only be accessed from the official OpenCode desktop/CLI binary due to gateway policy. Please switch to Google Gemini, Groq, Cerebras, Ollama Cloud, or configure a paid model in Settings.")
+                    }
                     if (ApiKeyRotator.isRotatableError(null, responseCode, errBody)) {
                         throw RateLimitException("Zen AI", responseCode, "Zen API Error $responseCode: $errBody")
                     }
@@ -662,6 +667,11 @@ class ZenProvider : AIProvider {
             response.use { resp ->
                 if (!resp.isSuccessful) {
                     val errBody = resp.body?.string()?.take(1024) ?: ""
+                    val isFreeTierRestriction = errBody.contains("can only be used from within opencode", ignoreCase = true) ||
+                        errBody.contains("FreeTierError", ignoreCase = true)
+                    if (isFreeTierRestriction) {
+                        throw Exception("OpenCode Free Tier can only be accessed from the official OpenCode desktop/CLI binary due to gateway policy. Please switch to Google Gemini, Groq, Cerebras, Ollama Cloud, or configure a paid model in Settings.")
+                    }
                     if (ApiKeyRotator.isRotatableError(null, resp.code, errBody)) {
                         throw RateLimitException("Zen AI", resp.code, "Zen API Error ${resp.code}: $errBody")
                     }
@@ -2930,7 +2940,7 @@ fun providerStorageId(providerName: String): String {
     val clean = providerName.trim().lowercase()
     return when (clean) {
         "tokenharbor", "token harbor", "token-harbor" -> "tokenharbor"
-        "zen ai", "zen", "zen (free)" -> "zen"
+        "zen ai", "zen", "zen (free)", "opencode-zen", "opencode zen", "opencode" -> "zen"
         "openai" -> "openai"
         "anthropic", "claude" -> "anthropic"
         "google gemini", "gemini" -> "gemini"
