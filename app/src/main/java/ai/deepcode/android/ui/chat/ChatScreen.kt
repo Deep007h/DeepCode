@@ -3612,7 +3612,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
     private val _pendingToolCall = MutableStateFlow<ToolCall?>(null)
     val pendingToolCall = _pendingToolCall.asStateFlow()
 
-    private val _activeModel = MutableStateFlow(AIModel("", "", "Zen AI", false, "1M", "Paid"))
+    private val _activeModel = MutableStateFlow(AIModel("mimo-v2.5-free", "Mimo V2.5 (Free)", "Zen AI", true, "128k", "Free"))
     val activeModel = _activeModel.asStateFlow()
 
     private val _attachedFiles = MutableStateFlow<List<AttachedFile>>(emptyList())
@@ -3669,14 +3669,21 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
     init {
         val prefs = repository.securePrefs
         val savedProvider = prefs.getSetting("chat_provider", "Zen AI")
-        val rawSavedModelId = prefs.getSetting("chat_model", "")
-        val savedModelId = if (rawSavedModelId.isNotEmpty()) DecommissionedModels.sanitize(rawSavedModelId) else ""
+        val defaultModelId = if (savedProvider == "Zen AI" || savedProvider == "Zen") "mimo-v2.5-free" else ""
+        val rawSavedModelId = prefs.getSetting("chat_model", defaultModelId).ifEmpty { defaultModelId }
+        val savedModelId = if (rawSavedModelId.isNotEmpty()) DecommissionedModels.sanitize(rawSavedModelId) else defaultModelId
         if (savedModelId != rawSavedModelId && savedModelId.isNotEmpty()) {
             prefs.saveSetting("chat_model", savedModelId)
         }
         if (savedModelId.isNotEmpty()) {
             val isFree = savedModelId.contains("free", ignoreCase = true)
-            val friendlyName = savedModelId.split("/").lastOrNull()?.replace("-", " ")?.replaceFirstChar { it.uppercase() } ?: savedModelId
+            val friendlyName = when (savedModelId) {
+                "mimo-v2.5-free" -> "Mimo V2.5 (Free)"
+                "ling-3.0-flash-fin-free" -> "Ling 3.0 Flash Fin (Free)"
+                "nemotron-3-ultra-free" -> "Nemotron 3 Ultra (Free)"
+                "nemotron-3.5-lightning-free" -> "Nemotron 3.5 Lightning (Free)"
+                else -> savedModelId.split("/").lastOrNull()?.replace("-", " ")?.replaceFirstChar { it.uppercase() } ?: savedModelId
+            }
             _activeModel.value = AIModel(
                 id = savedModelId,
                 name = friendlyName,
@@ -3716,12 +3723,19 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         }
 
         val targetProvider = sessionProvider.ifEmpty { prefs.getSetting("chat_provider", "Zen AI") }
-        val rawTargetModelId = sessionModelId.ifEmpty { prefs.getSetting("chat_model", "") }
-        val targetModelId = if (rawTargetModelId.isNotEmpty()) DecommissionedModels.sanitize(rawTargetModelId) else ""
+        val defaultTargetModelId = if (targetProvider == "Zen AI" || targetProvider == "Zen") "mimo-v2.5-free" else ""
+        val rawTargetModelId = sessionModelId.ifEmpty { prefs.getSetting("chat_model", defaultTargetModelId) }.ifEmpty { defaultTargetModelId }
+        val targetModelId = if (rawTargetModelId.isNotEmpty()) DecommissionedModels.sanitize(rawTargetModelId) else defaultTargetModelId
 
         if (targetModelId.isNotEmpty()) {
             val isFree = targetModelId.contains("free", ignoreCase = true)
-            val friendlyName = targetModelId.split("/").lastOrNull()?.replace("-", " ")?.replaceFirstChar { it.uppercase() } ?: targetModelId
+            val friendlyName = when (targetModelId) {
+                "mimo-v2.5-free" -> "Mimo V2.5 (Free)"
+                "ling-3.0-flash-fin-free" -> "Ling 3.0 Flash Fin (Free)"
+                "nemotron-3-ultra-free" -> "Nemotron 3 Ultra (Free)"
+                "nemotron-3.5-lightning-free" -> "Nemotron 3.5 Lightning (Free)"
+                else -> targetModelId.split("/").lastOrNull()?.replace("-", " ")?.replaceFirstChar { it.uppercase() } ?: targetModelId
+            }
             _activeModel.value = AIModel(
                 id = targetModelId,
                 name = friendlyName,
@@ -4140,20 +4154,24 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             if (storageId == "zen") {
                 aliasKeys.add("opencode-zen")
                 aliasKeys.add("opencode")
+                aliasKeys.add("zenmux")
+                aliasKeys.add("zenmux-free")
             }
-            if (storageId == "opencode-zen" || storageId == "opencode") {
+            if (storageId == "opencode-zen" || storageId == "opencode" || storageId == "zenmux" || storageId == "zenmux-free") {
                 aliasKeys.add("zen")
+                aliasKeys.add("opencode-zen")
+                aliasKeys.add("opencode")
             }
 
             for (k in aliasKeys) {
                 val rotatorResult = ApiKeyRotator.getNextAvailableKey(repository.securePrefs, k)
-                if (rotatorResult != null && rotatorResult.first.isNotEmpty()) {
+                if (rotatorResult != null && rotatorResult.first.isNotEmpty() && rotatorResult.first != "zen-free") {
                     apiKey = rotatorResult.first
                     currentKeySlot = rotatorResult.second
                     break
                 }
                 val raw = repository.securePrefs.getApiKey(k)
-                if (raw.isNotEmpty()) {
+                if (raw.isNotEmpty() && raw != "zen-free") {
                     apiKey = raw
                     currentKeySlot = 1
                     break
@@ -4171,7 +4189,16 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 }
             }
             if (apiKey.isEmpty() && (model.provider == "Zen AI" || model.provider == "Zen" || model.provider == "Zen (Free)")) {
-                apiKey = repository.securePrefs.getApiKey("zen").ifEmpty { "zen-free" }
+                for (zk in listOf("zen", "opencode-zen", "opencode", "zenmux", "zenmux-free")) {
+                    val k = repository.securePrefs.getApiKey(zk)
+                    if (k.isNotEmpty() && k != "zen-free") {
+                        apiKey = k
+                        break
+                    }
+                }
+            }
+            if (apiKey == "zen-free") {
+                apiKey = ""
             }
             if (apiKey.isEmpty() && (model.provider == "Ollama" || model.provider == "OllamaCloud")) {
                 apiKey = "ollama"
@@ -4181,8 +4208,13 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             }
             if (apiKey.isEmpty()) {
                 _isStreaming.value = false
-                _streamedText.value = "No API key configured for ${model.provider}. Go to Settings to add one."
-                appendAssistantMessage(_streamedText.value)
+                val promptMsg = if (model.provider.contains("Zen", ignoreCase = true)) {
+                    "⚠️ **Zen AI API Key Required**\n\nPlease go to **Settings → API Keys** to add your Zen AI key."
+                } else {
+                    "No API key configured for ${model.provider}. Go to Settings to add one."
+                }
+                _streamedText.value = promptMsg
+                appendAssistantMessage(promptMsg, sessionId)
                 _streamedText.value = ""
                 return@launch
             }
@@ -4603,7 +4635,16 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             if (projectId.isNotEmpty()) apiKey += "||$projectId"
         }
         if (apiKey.isEmpty() && (model.provider == "Zen AI" || model.provider == "Zen" || model.provider == "Zen (Free)")) {
-            apiKey = repository.securePrefs.getApiKey("zen").ifEmpty { "zen-free" }
+            for (zk in listOf("zen", "opencode-zen", "opencode", "zenmux", "zenmux-free")) {
+                val k = repository.securePrefs.getApiKey(zk)
+                if (k.isNotEmpty() && k != "zen-free") {
+                    apiKey = k
+                    break
+                }
+            }
+        }
+        if (apiKey == "zen-free") {
+            apiKey = ""
         }
         if (apiKey.isEmpty() && (model.provider == "Ollama" || model.provider == "OllamaCloud")) {
             apiKey = "ollama"
@@ -4613,7 +4654,12 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         }
         if (apiKey.isEmpty()) {
             _isStreaming.value = false
-            appendAssistantMessage("No API key configured for ${model.provider}.")
+            val promptMsg = if (model.provider.contains("Zen", ignoreCase = true)) {
+                "⚠️ **Zen AI API Key Required**\n\nPlease go to **Settings → API Keys** to add your Zen AI key."
+            } else {
+                "No API key configured for ${model.provider}."
+            }
+            appendAssistantMessage(promptMsg)
             return
         }
         val baseUrl = providerDefaultBaseUrl(model.provider)

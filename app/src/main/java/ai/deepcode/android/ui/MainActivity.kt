@@ -299,8 +299,12 @@ class MainActivity : ComponentActivity() {
                 .collectAsStateWithLifecycle(ai.deepcode.android.ui.theme.AppThemeMode)
             val accentId by (activeRepo?.securePrefs?.accentFlow ?: remember { kotlinx.coroutines.flow.MutableStateFlow(ai.deepcode.android.ui.theme.AppAccentId) })
                 .collectAsStateWithLifecycle(ai.deepcode.android.ui.theme.AppAccentId)
+            val fontSize by (activeRepo?.securePrefs?.fontSizeFlow ?: remember { kotlinx.coroutines.flow.MutableStateFlow("medium") })
+                .collectAsStateWithLifecycle("medium")
+            val uiScale by (activeRepo?.securePrefs?.uiScaleFlow ?: remember { kotlinx.coroutines.flow.MutableStateFlow("default") })
+                .collectAsStateWithLifecycle("default")
 
-            DeepCodeTheme(themeMode = themeMode, accentId = accentId) {
+            DeepCodeTheme(themeMode = themeMode, accentId = accentId, fontSize = fontSize, uiScale = uiScale) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = AppScreenBg

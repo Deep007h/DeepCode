@@ -143,7 +143,8 @@ object DailyGreetingManager {
                 }
 
                 val zenProvider = AIProviderFactory.providers.find { it.name.startsWith("Zen") }
-                val apiKey = prefs.getSetting("api_key_zen", "zen-free")
+                val apiKey = prefs.getSetting("api_key_zen", "").ifEmpty { prefs.getApiKey("zen") }
+                if (apiKey.isEmpty() || apiKey == "zen-free") return@launch
                 val modelId = ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE
 
                 val prompt = "Write exactly ONE short, inspiring, unique developer tip or thought for $firstName. Max 15 words. No quotes, no markdown."

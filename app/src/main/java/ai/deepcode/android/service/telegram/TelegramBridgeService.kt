@@ -349,10 +349,13 @@ class TelegramBridgeService : Service() {
         // Prewarm Zen AI models live from server
         serviceScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                val zenModels = fetchModels("zen-free", providerDefaultBaseUrl("Zen AI"), "Zen AI")
-                if (zenModels.isNotEmpty()) {
-                    ModelCatalog.setModels("Zen AI", zenModels)
-                    AppLogger.i(TAG, "Prewarmed ${zenModels.size} live Zen AI models")
+                val zenKey = repository.securePrefs.getApiKey("zen")
+                if (zenKey.isNotEmpty() && zenKey != "zen-free") {
+                    val zenModels = fetchModels(zenKey, providerDefaultBaseUrl("Zen AI"), "Zen AI")
+                    if (zenModels.isNotEmpty()) {
+                        ModelCatalog.setModels("Zen AI", zenModels)
+                        AppLogger.i(TAG, "Prewarmed ${zenModels.size} live Zen AI models")
+                    }
                 }
             } catch (e: Exception) {
                 AppLogger.w(TAG, "Failed to prewarm Zen AI live models: ${e.message}")
@@ -1749,7 +1752,7 @@ class TelegramBridgeService : Service() {
             }
         }
         if (apiKey.isEmpty() && providerName.contains("Zen", ignoreCase = true)) {
-            apiKey = "zen-free"
+            apiKey = repository.securePrefs.getApiKey("zen")
         }
         val baseUrl = providerDefaultBaseUrl(providerName)
 

@@ -48,14 +48,16 @@ data class AccentTheme(
 
 /** Catalog of available accent themes (Amber is the classic OpenCode accent). */
 val AccentThemes = listOf(
-    AccentTheme("amber", "Amber", Color(0xFFF5A623), Color(0xFFD97706)),
-    AccentTheme("blue", "Ocean Blue", Color(0xFF0A84FF), Color(0xFF0061FE)),
-    AccentTheme("purple", "Violet", Color(0xFFBF5AF2), Color(0xFF8E24AA)),
-    AccentTheme("green", "Emerald", Color(0xFF30D158), Color(0xFF059669)),
-    AccentTheme("red", "Crimson", Color(0xFFFF453A), Color(0xFFC81E1E)),
-    AccentTheme("pink", "Rose", Color(0xFFFF375F), Color(0xFFE01E5A)),
-    AccentTheme("teal", "Teal", Color(0xFF40C8E0), Color(0xFF0E7C8C)),
-    AccentTheme("orange", "Orange", Color(0xFFFF9F0A), Color(0xFFD4880F))
+    AccentTheme("amber", "Amber", Color(0xFFF59E0B), Color(0xFFD97706)),
+    AccentTheme("blue", "Ocean Blue", Color(0xFF3B82F6), Color(0xFF1D4ED8)),
+    AccentTheme("purple", "Violet", Color(0xFF8B5CF6), Color(0xFF6D28D9)),
+    AccentTheme("green", "Emerald", Color(0xFF10B981), Color(0xFF047857)),
+    AccentTheme("red", "Crimson", Color(0xFFEF4444), Color(0xFFB91C1C)),
+    AccentTheme("pink", "Rose", Color(0xFFEC4899), Color(0xFFBE185D)),
+    AccentTheme("cyan", "Cyan", Color(0xFF06B6D4), Color(0xFF0891B2)),
+    AccentTheme("teal", "Teal", Color(0xFF14B8A6), Color(0xFF0F766E)),
+    AccentTheme("indigo", "Indigo", Color(0xFF6366F1), Color(0xFF4338CA)),
+    AccentTheme("gold", "Gold", Color(0xFFEAB308), Color(0xFFA16207))
 )
 
 // ── Global reactive theme state (single source of truth) ──
@@ -217,6 +219,8 @@ val LocalAppColors = staticCompositionLocalOf { AppColors() }
 fun DeepCodeTheme(
     themeMode: String = AppThemeMode,
     accentId: String = AppAccentId,
+    fontSize: String = "medium",
+    uiScale: String = "default",
     content: @Composable () -> Unit
 ) {
     val dark = when (themeMode) {
@@ -274,7 +278,28 @@ fun DeepCodeTheme(
         }
     }
 
-    CompositionLocalProvider(LocalAppColors provides AppColors()) {
+    val currentDensity = androidx.compose.ui.platform.LocalDensity.current
+    val fontScaleMultiplier = when (fontSize) {
+        "small" -> 0.88f
+        "large" -> 1.15f
+        else -> 1.0f
+    }
+    val uiScaleMultiplier = when (uiScale) {
+        "compact" -> 0.90f
+        "large" -> 1.10f
+        else -> 1.0f
+    }
+    val adjustedDensity = androidx.compose.runtime.remember(currentDensity, fontScaleMultiplier, uiScaleMultiplier) {
+        androidx.compose.ui.unit.Density(
+            density = currentDensity.density * uiScaleMultiplier,
+            fontScale = currentDensity.fontScale * fontScaleMultiplier
+        )
+    }
+
+    CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalDensity provides adjustedDensity,
+        LocalAppColors provides AppColors()
+    ) {
         MaterialTheme(
             colorScheme = if (dark) appDarkColorScheme(accent) else appLightColorScheme(accent),
             typography = AppTypography,

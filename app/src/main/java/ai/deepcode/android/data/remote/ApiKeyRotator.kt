@@ -67,7 +67,7 @@ object ApiKeyRotator {
     private fun getStorageAliases(storageId: String): List<String> {
         val clean = storageId.trim().lowercase()
         return when (clean) {
-            "zen", "opencode-zen", "opencode" -> listOf(clean, if (clean == "zen") "opencode-zen" else "zen", "opencode").distinct()
+            "zen", "opencode-zen", "opencode", "zenmux", "zenmux-free" -> listOf(clean, "zen", "opencode-zen", "opencode", "zenmux", "zenmux-free").distinct()
             "together", "together-ai" -> listOf("together", "together-ai")
             "fireworks", "fireworks-ai" -> listOf("fireworks", "fireworks-ai")
             "nvidia", "nvidia-nim" -> listOf("nvidia", "nvidia-nim")
@@ -115,7 +115,7 @@ object ApiKeyRotator {
             }
         }.lowercase()
 
-        // Missing session headers, free tier gateway restrictions, or payment method errors are NOT rotatable rate limits
+        // Missing session headers, free tier gateway restrictions, or model-level errors are NOT rotatable key errors
         if (textToInspect.contains("missingsessionid") ||
             textToInspect.contains("freetiererror") ||
             textToInspect.contains("can only be used from within opencode") ||
@@ -123,7 +123,10 @@ object ApiKeyRotator {
             textToInspect.contains("creditserror") ||
             textToInspect.contains("no payment method") ||
             textToInspect.contains("insufficient account funds") ||
-            textToInspect.contains("model access is disabled")
+            textToInspect.contains("model access is disabled") ||
+            textToInspect.contains("model is disabled") ||
+            textToInspect.contains("modelerror") ||
+            textToInspect.contains("model_not_found")
         ) {
             return false
         }
@@ -136,9 +139,6 @@ object ApiKeyRotator {
                 textToInspect.contains("401") ||
                 textToInspect.contains("402") ||
                 textToInspect.contains("403") ||
-                textToInspect.contains("model is disabled") ||
-                textToInspect.contains("model disabled") ||
-                textToInspect.contains("modelerror") ||
                 textToInspect.contains("rate limit") ||
                 textToInspect.contains("rate_limit") ||
                 textToInspect.contains("ratelimit") ||

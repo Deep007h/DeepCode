@@ -517,20 +517,23 @@ class ZenProvider : AIProvider {
             }
 
             val errStr = lastException?.message ?: ""
+            val isModelError = errStr.contains("model is disabled", ignoreCase = true) ||
+                errStr.contains("model disabled", ignoreCase = true) ||
+                errStr.contains("modelerror", ignoreCase = true) ||
+                errStr.contains("model_not_found", ignoreCase = true) ||
+                errStr.contains("Endpoint is unavailable", ignoreCase = true)
 
-            // Check if key is rotatable (429 / rate limit / quota / model error)
-            val isAuthOrRateLimit = ApiKeyRotator.isRotatableError(lastException, null, errStr)
+            // Check if key is rotatable (429 / rate limit / quota / invalid key)
+            val isAuthOrRateLimit = !isModelError && ApiKeyRotator.isRotatableError(lastException, null, errStr)
             if (isAuthOrRateLimit) {
                 val ex = (lastException as? RateLimitException) ?: RateLimitException("Zen AI", 429, errStr)
-                try { onError(ex) } catch (_: Throwable) {}
                 throw ex
             }
 
             val isTimeout = lastException is java.net.SocketTimeoutException || errStr.contains("timeout", ignoreCase = true)
-            val isHttpError = errStr.contains("503") || errStr.contains("502") ||
+            val isHttpError = isModelError || errStr.contains("503") || errStr.contains("502") ||
                 errStr.contains("500") || errStr.contains("400") || errStr.contains("404") ||
-                errStr.contains("Endpoint is unavailable") || errStr.contains("server_error") ||
-                errStr.contains("model_not_found", ignoreCase = true)
+                errStr.contains("server_error")
 
             // 2. Only try HttpURLConnection backup if it was a transport/connection error, NOT server refusal or timeout
             if (!isHttpError && !isTimeout) {
@@ -544,9 +547,14 @@ class ZenProvider : AIProvider {
             }
 
             val errStr2 = lastException?.message ?: errStr
-            if (ApiKeyRotator.isRotatableError(lastException, null, errStr2)) {
+            val isModelError2 = isModelError || errStr2.contains("model is disabled", ignoreCase = true) ||
+                errStr2.contains("model disabled", ignoreCase = true) ||
+                errStr2.contains("modelerror", ignoreCase = true) ||
+                errStr2.contains("model_not_found", ignoreCase = true) ||
+                errStr2.contains("Endpoint is unavailable", ignoreCase = true)
+
+            if (!isModelError2 && ApiKeyRotator.isRotatableError(lastException, null, errStr2)) {
                 val ex = (lastException as? RateLimitException) ?: RateLimitException("Zen AI", 429, errStr2)
-                try { onError(ex) } catch (_: Throwable) {}
                 throw ex
             }
 

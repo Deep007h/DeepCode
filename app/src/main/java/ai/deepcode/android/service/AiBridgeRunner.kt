@@ -180,8 +180,8 @@ object AiBridgeRunner {
                     val projectId = prefs.getSetting("oauth_project_$storageId", "")
                     if (projectId.isNotEmpty()) apiKey += "||$projectId"
                 }
-                if (apiKey.isEmpty() && (provider.isFree || provider.name.startsWith("Zen"))) {
-                    apiKey = "zen-free"
+                if (apiKey.isEmpty() && (provider.name.startsWith("Zen"))) {
+                    apiKey = prefs.getApiKey("zen")
                 }
                 if (apiKey.isEmpty()) {
                     AdbCommandBridge.respond(reqId, "error",

@@ -69,6 +69,12 @@ class EncryptedPrefs private constructor(context: Context) {
     private val _refreshRateModeFlow = MutableStateFlow("dynamic")
     val refreshRateModeFlow: StateFlow<String> = _refreshRateModeFlow
 
+    private val _fontSizeFlow = MutableStateFlow("medium")
+    val fontSizeFlow: StateFlow<String> = _fontSizeFlow
+
+    private val _uiScaleFlow = MutableStateFlow("default")
+    val uiScaleFlow: StateFlow<String> = _uiScaleFlow
+
     init {
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             _themeFlow.value = getSetting("theme", "system")
@@ -76,6 +82,8 @@ class EncryptedPrefs private constructor(context: Context) {
             _wallpaperFlow.value = getSetting("chat_wallpaper", "default")
             _customWallpaperFlow.value = getSetting("chat_wallpaper_custom", "")
             _refreshRateModeFlow.value = getSetting("refresh_rate_mode", "dynamic")
+            _fontSizeFlow.value = getSetting("font_size", "medium")
+            _uiScaleFlow.value = getSetting("ui_scale", "default")
         }
     }
 
@@ -144,6 +152,8 @@ class EncryptedPrefs private constructor(context: Context) {
             "chat_wallpaper" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_wallpaperFlow, value)
             "chat_wallpaper_custom" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_customWallpaperFlow, value)
             "refresh_rate_mode" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_refreshRateModeFlow, value)
+            "font_size" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_fontSizeFlow, value)
+            "ui_scale" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_uiScaleFlow, value)
         }
     }
 
