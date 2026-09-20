@@ -3,6 +3,7 @@ package ai.deepcode.android.ui.settings
 import android.graphics.Bitmap
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -10,6 +11,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -61,6 +64,19 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val securePrefs = repository.securePrefs
+
+    val coroutineScope = rememberCoroutineScope()
+    val personaEnabled by securePrefs.personaEnabledFlow.collectAsStateWithLifecycle()
+    val activeCustomPersona by securePrefs.customPersonaFlow.collectAsStateWithLifecycle()
+    val rootMode by securePrefs.rootModeFlow.collectAsStateWithLifecycle()
+
+    val isRootAvailable by ai.deepcode.android.util.RootSystem.isRootAvailable.collectAsStateWithLifecycle()
+    val isRootGranted by ai.deepcode.android.util.RootSystem.isRootGranted.collectAsStateWithLifecycle()
+    val rootFlavor by ai.deepcode.android.util.RootSystem.rootFlavor.collectAsStateWithLifecycle()
+
+    var showRootDialog by remember { mutableStateOf(false) }
+    var isRequestingRoot by remember { mutableStateOf(false) }
+    var rootTestOutput by remember { mutableStateOf("") }
 
     var showEditProfileDialog by remember { mutableStateOf(false) }
     var showTurnsDialog by remember { mutableStateOf(false) }
@@ -205,9 +221,9 @@ fun SettingsScreen(
             }
         }
 
-        // Section: Appearance (Separate dedicated page tile)
+        // Section: Appearance & Display
         item {
-            SettingsSectionHeader(icon = Icons.Default.Palette, title = "Appearance")
+            SettingsSectionHeader(icon = Icons.Default.Palette, title = "Appearance & Display")
         }
 
         item {
@@ -218,37 +234,64 @@ fun SettingsScreen(
             ) {
                 SettingsNavRow(
                     icon = Icons.Default.Palette,
-                    title = "Themes & Wallpapers",
-                    subtitle = "Accent colors, dark mode, and chat wallpaper choice",
+                    title = "Theme & Display",
+                    subtitle = "Themes, accents, wallpapers, UI scale & 144Hz variable display rate",
                     onClick = onNavigateToThemesAndWallpapers
-                )
-                HorizontalDivider(color = AppDivider, thickness = 1.dp)
-                SettingsNavRow(
-                    icon = Icons.Default.Speed,
-                    title = "Display & Refresh Rate",
-                    subtitle = when (refreshRateMode) {
-                        "144" -> "Locked 144 Hz (Ultra High)"
-                        "120" -> "Locked 120 Hz (High)"
-                        "90" -> "Locked 90 Hz (Smooth)"
-                        "60" -> "Standard 60 Hz"
-                        else -> "Variable 60 - 144 Hz (Adaptive)"
-                    },
-                    onClick = { showRefreshRateDialog = true }
                 )
             }
         }
 
-        // Card group 1: Manage Agents, Chat History Memory Limit, Manage Templates
+        // Section: AI & Intelligence
+        item {
+            SettingsSectionHeader(icon = Icons.Default.Psychology, title = "AI & Intelligence")
+        }
+
         item {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = isDarkThemeActive)
             ) {
+                // Custom Persona Row
+                val activePersonaName = if (personaEnabled && activeCustomPersona.isNotEmpty()) {
+                    val custom = try {
+                        val raw = securePrefs.getSetting("saved_personas", "[]")
+                        val json = org.json.JSONArray(raw)
+                        (0 until json.length()).map { i ->
+                            val obj = json.getJSONObject(i)
+                            obj.getString("name") to obj.getString("content")
+                        }
+                    } catch (_: Exception) { emptyList() }
+                    val all = ai.deepcode.android.ui.settings.builtInPersonas.map { it.name to it.content } + custom
+                    all.find { it.second == activeCustomPersona }?.first ?: "Custom"
+                } else "Default Assistant"
+
+                SettingsNavRow(
+                    icon = Icons.Default.Face,
+                    title = "Custom Persona & Tone",
+                    subtitle = "Active: $activePersonaName",
+                    onClick = onManagePersonas
+                )
+                HorizontalDivider(color = AppDivider, thickness = 1.dp)
+
+                // Root & Terminal Access Row
+                SettingsNavRow(
+                    icon = Icons.Default.Shield,
+                    title = "Root & Terminal Access",
+                    subtitle = when {
+                        rootMode && isRootGranted -> "Active (${rootFlavor.displayName} - uid=0) • Native ADB & Shell"
+                        isRootAvailable -> "${rootFlavor.displayName} detected • Tap to grant Superuser"
+                        else -> "Standard terminal • Tap to check/request root"
+                    },
+                    onClick = { showRootDialog = true }
+                )
+                HorizontalDivider(color = AppDivider, thickness = 1.dp)
+
                 // Manage Agents Row
                 SettingsNavRow(
                     icon = Icons.Default.Group,
                     title = "Manage Agents",
+                    subtitle = "System instructions and custom autonomous agents",
                     onClick = onViewAgents
                 )
                 HorizontalDivider(color = AppDivider, thickness = 1.dp)
@@ -270,12 +313,20 @@ fun SettingsScreen(
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "Chat History Memory Limit",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = AppWhite
-                        )
+                        Column {
+                            Text(
+                                text = "Chat History Memory Limit",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = AppWhite
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Max conversation context turns preserved",
+                                fontSize = 11.sp,
+                                color = AppMuted
+                            )
+                        }
                     }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -288,7 +339,8 @@ fun SettingsScreen(
                                 else -> "$maxTurns turns"
                             },
                             fontSize = 13.sp,
-                            color = AppMuted
+                            fontWeight = FontWeight.Bold,
+                            color = AppPrimary
                         )
                         Icon(
                             imageVector = Icons.Default.ArrowDropDown,
@@ -300,22 +352,25 @@ fun SettingsScreen(
                 }
                 HorizontalDivider(color = AppDivider, thickness = 1.dp)
 
+                // Cross-Chat Memory Row
+                SettingsNavRow(
+                    icon = Icons.Default.Psychology,
+                    title = "Cross-Chat Memory",
+                    subtitle = "Manage shared long-term memory between in-app and Telegram chats",
+                    onClick = onNavigateToMemory
+                )
+                HorizontalDivider(color = AppDivider, thickness = 1.dp)
+
                 // Manage Templates Row
                 SettingsNavRow(
                     icon = Icons.AutoMirrored.Filled.Article,
                     title = "Manage Templates",
+                    subtitle = "Reusable prompt shortcuts and code starters",
                     onClick = onManageTemplates
                 )
                 HorizontalDivider(color = AppDivider, thickness = 1.dp)
 
-                // Custom Persona Row
-                SettingsNavRow(
-                    icon = Icons.Default.Face,
-                    title = "Custom Persona",
-                    onClick = onManagePersonas
-                )
-                HorizontalDivider(color = AppDivider, thickness = 1.dp)
-
+                // Plugins Row
                 SettingsSubscreenRow(
                     icon = Icons.Default.Extension,
                     title = "Plugins",
@@ -325,9 +380,9 @@ fun SettingsScreen(
             }
         }
 
-        // Section: Security
+        // Section: Network & Security
         item {
-            SettingsSectionHeader(icon = Icons.Default.Lock, title = "Security")
+            SettingsSectionHeader(icon = Icons.Default.Lock, title = "Network & Security")
         }
 
         item {
@@ -337,59 +392,45 @@ fun SettingsScreen(
                     .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = isDarkThemeActive)
             ) {
                 SettingsSubscreenRow(
-                    icon = Icons.Default.Shield,
-                    title = "Security Settings",
-                    subtitle = "Manage authentication, API keys, and security preferences.",
-                    onClick = { Toast.makeText(context, "Security settings sub-page", Toast.LENGTH_SHORT).show() }
-                )
-                HorizontalDivider(color = AppDivider, thickness = 1.dp)
-                SettingsSubscreenRow(
-                    icon = Icons.Default.Link,
-                    title = "Connection Settings",
-                    subtitle = "Configure sync, bridge behavior, and external connections.",
-                    onClick = { Toast.makeText(context, "Connection settings sub-page", Toast.LENGTH_SHORT).show() }
-                )
-                HorizontalDivider(color = AppDivider, thickness = 1.dp)
-                SettingsSubscreenRow(
-                    icon = Icons.Default.Public,
-                    title = "VPN Settings",
-                    subtitle = "Manage VPN tunnel, mode, and connection status.",
-                    onClick = onNavigateToVpn
-                )
-                HorizontalDivider(color = AppDivider, thickness = 1.dp)
-                SettingsSubscreenRow(
                     icon = Icons.Default.Key,
                     title = "API Keys",
-                    subtitle = "Manage your API keys and external service credentials.",
+                    subtitle = "Manage your provider keys and credentials",
                     onClick = onNavigateToApiKeys
                 )
                 HorizontalDivider(color = AppDivider, thickness = 1.dp)
                 SettingsSubscreenRow(
                     icon = Icons.Default.Cloud,
                     title = "Cloudflare Settings",
-                    subtitle = "Configure Cloudflare for image generation.",
+                    subtitle = "Configure Cloudflare for AI image and video generation",
                     onClick = onNavigateToCloudflare
                 )
                 HorizontalDivider(color = AppDivider, thickness = 1.dp)
                 SettingsSubscreenRow(
-                    icon = Icons.Default.Psychology,
-                    title = "Cross-Chat Memory",
-                    subtitle = "Manage shared long-term memory between in-app and Telegram chats.",
-                    onClick = onNavigateToMemory
+                    icon = Icons.Default.Public,
+                    title = "VPN Settings",
+                    subtitle = "Manage VPN tunnel, proxy mode, and connection status",
+                    onClick = onNavigateToVpn
                 )
                 HorizontalDivider(color = AppDivider, thickness = 1.dp)
                 SettingsSubscreenRow(
-                    icon = Icons.Default.SettingsSuggest,
-                    title = "Google API Settings",
-                    subtitle = "Manage your Google API credentials and services.",
-                    onClick = { Toast.makeText(context, "Google API credentials settings sub-page", Toast.LENGTH_SHORT).show() }
+                    icon = Icons.Default.Shield,
+                    title = "Security Settings",
+                    subtitle = "Manage authentication, API keys, and security preferences",
+                    onClick = { Toast.makeText(context, "Security settings sub-page", Toast.LENGTH_SHORT).show() }
+                )
+                HorizontalDivider(color = AppDivider, thickness = 1.dp)
+                SettingsSubscreenRow(
+                    icon = Icons.Default.Link,
+                    title = "Connection Settings",
+                    subtitle = "Configure sync, bridge behavior, and external connections",
+                    onClick = { Toast.makeText(context, "Connection settings sub-page", Toast.LENGTH_SHORT).show() }
                 )
             }
         }
 
-        // Section: About
+        // Section: App & System
         item {
-            SettingsSectionHeader(icon = Icons.Default.Info, title = "About")
+            SettingsSectionHeader(icon = Icons.Default.Info, title = "App & System")
         }
 
         item {
@@ -399,9 +440,16 @@ fun SettingsScreen(
                     .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = isDarkThemeActive)
             ) {
                 SettingsSubscreenRow(
+                    icon = Icons.Default.Terminal,
+                    title = "View Logs",
+                    subtitle = "Real-time system, network, and crash logs",
+                    onClick = onViewLogs
+                )
+                HorizontalDivider(color = AppDivider, thickness = 1.dp)
+                SettingsSubscreenRow(
                     icon = Icons.Default.Info,
-                    title = "About",
-                    subtitle = "App information, version, policies, and legal.",
+                    title = "About DeepCode",
+                    subtitle = "v${ai.deepcode.android.BuildConfig.VERSION_NAME} (Build ${ai.deepcode.android.BuildConfig.VERSION_CODE})",
                     onClick = { Toast.makeText(context, "DeepCode v${ai.deepcode.android.BuildConfig.VERSION_NAME} (Build ${ai.deepcode.android.BuildConfig.VERSION_CODE})", Toast.LENGTH_SHORT).show() }
                 )
             }
@@ -539,6 +587,38 @@ fun SettingsScreen(
             },
             containerColor = AppSurface,
             shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    if (showRootDialog) {
+        RootAccessDialog(
+            isRootAvailable = isRootAvailable,
+            isRootGranted = isRootGranted,
+            rootFlavor = rootFlavor,
+            rootMode = rootMode,
+            onToggleRootMode = { enabled ->
+                securePrefs.saveBooleanSetting("root_mode", enabled)
+            },
+            onRequestRoot = {
+                isRequestingRoot = true
+                coroutineScope.launch {
+                    val result = ai.deepcode.android.util.RootSystem.requestRootAccess(context)
+                    isRequestingRoot = false
+                    rootTestOutput = result.uidInfo.ifEmpty { result.message }
+                    Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                }
+            },
+            isRequesting = isRequestingRoot,
+            onRunTest = { cmd ->
+                coroutineScope.launch(Dispatchers.IO) {
+                    val out = ai.deepcode.android.util.RootSystem.executeAsRoot(cmd)
+                    withContext(Dispatchers.Main) {
+                        rootTestOutput = "$ $cmd\n$out"
+                    }
+                }
+            },
+            testOutput = rootTestOutput,
+            onDismiss = { showRootDialog = false }
         )
     }
 
@@ -972,6 +1052,190 @@ fun RefreshRateDialog(
                                 modifier = Modifier.size(20.dp)
                             )
                         }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            FilledAppButton(
+                onClick = onDismiss,
+                text = "Close",
+                backgroundColor = AppPrimary
+            )
+        },
+        containerColor = AppSurface,
+        shape = RoundedCornerShape(20.dp)
+    )
+}
+
+@Composable
+fun RootAccessDialog(
+    isRootAvailable: Boolean,
+    isRootGranted: Boolean,
+    rootFlavor: ai.deepcode.android.util.RootFlavor,
+    rootMode: Boolean,
+    onToggleRootMode: (Boolean) -> Unit,
+    onRequestRoot: () -> Unit,
+    isRequesting: Boolean,
+    onRunTest: (String) -> Unit,
+    testOutput: String,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Shield,
+                        contentDescription = null,
+                        tint = if (isRootGranted) AppPrimary else AppMuted,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = "Root & Superuser",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AppWhite
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isRootGranted) AppSuccess.copy(alpha = 0.2f) else AppDarkGray.copy(alpha = 0.4f))
+                        .border(1.dp, if (isRootGranted) AppSuccess.copy(alpha = 0.5f) else AppBorder, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = if (isRootGranted) "👑 Granted" else if (isRootAvailable) "⚠️ Detected" else "Not Rooted",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isRootGranted) AppSuccess else if (isRootAvailable) Color(0xFFFFA000) else AppMuted
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Info Card
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(AppField)
+                        .padding(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Root Environment:", fontSize = 12.sp, color = AppMuted)
+                        Text(rootFlavor.displayName, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AppWhite)
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Superuser Status:", fontSize = 12.sp, color = AppMuted)
+                        Text(
+                            if (isRootGranted) "Granted (uid=0)" else if (isRootAvailable) "Pending Approval" else "No su binary found",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isRootGranted) AppSuccess else if (isRootAvailable) Color(0xFFFFA000) else AppMuted
+                        )
+                    }
+                }
+
+                // Grant / Request Button
+                FilledAppButton(
+                    onClick = onRequestRoot,
+                    text = if (isRequesting) "Requesting from ${rootFlavor.displayName}..." else if (isRootGranted) "Re-verify Superuser Access" else "Request Superuser Grant",
+                    backgroundColor = if (isRootGranted) AppSurface else AppPrimary,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Root Mode Toggle for AI & Terminal
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(AppField)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Enable Root for AI & Terminal", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AppWhite)
+                        Spacer(Modifier.height(2.dp))
+                        Text("Executes shell and native ADB commands with uid=0", fontSize = 11.sp, color = AppMuted)
+                    }
+                    Switch(
+                        checked = rootMode,
+                        onCheckedChange = onToggleRootMode,
+                        enabled = isRootGranted || isRootAvailable,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = AppWhite,
+                            checkedTrackColor = AppPrimary,
+                            uncheckedThumbColor = AppMuted,
+                            uncheckedTrackColor = AppDarkGray
+                        )
+                    )
+                }
+
+                // Test Actions
+                Text("Test Commands", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AppMuted)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedAppButton(
+                        onClick = { onRunTest("id") },
+                        text = "Test 'id'",
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedAppButton(
+                        onClick = { onRunTest("adb shell pm list features | head -n 5") },
+                        text = "Test ADB Shell",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                // Terminal Output Viewer
+                if (testOutput.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF0D1117))
+                            .border(1.dp, AppBorder, RoundedCornerShape(8.dp))
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = "Terminal Output:",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AppPrimary,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = testOutput,
+                            fontSize = 11.sp,
+                            color = Color(0xFF58A6FF),
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            lineHeight = 16.sp
+                        )
                     }
                 }
             }

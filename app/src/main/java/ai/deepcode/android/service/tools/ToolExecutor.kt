@@ -302,9 +302,10 @@ class ToolExecutor(private val context: Context? = null) {
                     val path = args.get("path")?.asString ?: "."
                     listDirectory(path, workingDir, useRoot)
                 }
-                "run_command", "shell", "git_operations", "node_exec", "npm_exec", "curl" -> {
-                    val command = args.get("command")?.asString ?: return "Missing command argument"
-                    TerminalRunner.runCommand(command, workingDir, useRoot)
+                "run_command", "shell", "git_operations", "node_exec", "npm_exec", "curl", "adb_command", "adb", "terminal_command", "terminal_exec" -> {
+                    val command = args.get("command")?.asString ?: args.get("cmd")?.asString ?: return "Missing command argument"
+                    val effectiveRoot = useRoot || (context != null && ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context).getBooleanSetting("root_mode", false))
+                    TerminalRunner.runCommand(command, workingDir, effectiveRoot)
                 }
                 "grep_search", "grep" -> {
                     val query = args.get("query")?.asString ?: return "Missing query argument"
@@ -3947,10 +3948,17 @@ class ToolExecutor(private val context: Context? = null) {
                 ),
                 "required" to emptyList<String>()
             )),
-            Tool("run_command", "Run a shell command locally on the device", mapOf(
+            Tool("run_command", "Run a shell/terminal command locally on the device. Runs with root privileges if granted via KernelSU/Magisk/APatch.", mapOf(
                 "type" to "object",
                 "properties" to mapOf(
-                    "command" to mapOf("type" to "string", "description" to "The shell command line to run")
+                    "command" to mapOf("type" to "string", "description" to "The shell or terminal command line to run")
+                ),
+                "required" to listOf("command")
+            )),
+            Tool("adb_command", "Run an ADB or ADB shell command natively on this device using root privileges (e.g. 'adb shell pm list packages', 'adb shell dumpsys battery', 'adb shell input tap x y'). No PC or USB cable needed.", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "command" to mapOf("type" to "string", "description" to "The ADB or ADB shell command to run")
                 ),
                 "required" to listOf("command")
             )),

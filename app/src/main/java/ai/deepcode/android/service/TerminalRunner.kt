@@ -32,7 +32,7 @@ class TerminalRunner {
             if (process != null) return
             scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-            val shellCmd = if (useRoot) "/system/bin/su" else "/system/bin/sh"
+            val shellCmd = if (useRoot) ai.deepcode.android.util.RootSystem.getSuBinaryPath() else "/system/bin/sh"
             try {
                 val workingDirFile = File(workingDir)
                 if (!workingDirFile.exists()) {
@@ -44,7 +44,7 @@ class TerminalRunner {
 
                 val env = pb.environment()
                 env["TERM"] = "screen"
-                env["PATH"] = (env["PATH"] ?: "") + ":/sbin:/system/sbin:/system/bin:/system/xbin:/odm/bin:/vendor/bin"
+                env["PATH"] = (env["PATH"] ?: "") + ":/sbin:/system/sbin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/data/adb/ksu/bin:/data/adb/ap/bin"
 
                 val proc = pb.start()
                 process = proc
@@ -130,15 +130,19 @@ class TerminalRunner {
                 if (!workingDirFile.exists()) {
                     workingDirFile.mkdirs()
                 }
+                val translatedCmd = ai.deepcode.android.util.RootSystem.translateAdbOrShellCommand(command)
                 val shellCmd = if (useRoot) {
-                    arrayOf("/system/bin/su", "-c", command)
+                    val suBin = ai.deepcode.android.util.RootSystem.getSuBinaryPath()
+                    arrayOf(suBin, "-c", translatedCmd)
                 } else {
-                    arrayOf("/system/bin/sh", "-c", command)
+                    arrayOf("/system/bin/sh", "-c", translatedCmd)
                 }
-                val proc = ProcessBuilder(*shellCmd)
+                val pb = ProcessBuilder(*shellCmd)
                     .directory(workingDirFile)
                     .redirectErrorStream(true)
-                    .start()
+                val env = pb.environment()
+                env["PATH"] = (env["PATH"] ?: "") + ":/sbin:/system/sbin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/data/adb/ksu/bin:/data/adb/ap/bin"
+                val proc = pb.start()
                 try {
                     // Read output in chunks with a hard cap (prevents OOM from
                     // infinite-output commands like `yes` or `cat /dev/urandom`).

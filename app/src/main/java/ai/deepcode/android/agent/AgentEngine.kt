@@ -622,10 +622,11 @@ class AgentEngine(private val context: Context) {
                     val description = args.get("description")?.asString
                     executeUpdateBotProfile(name, description)
                 }
-                "shell" -> {
-                    val command = args.get("command")?.asString ?: return@withContext "Error: Missing command"
+                "shell", "run_command", "adb_command", "adb", "terminal_command" -> {
+                    val command = args.get("command")?.asString ?: args.get("cmd")?.asString ?: return@withContext "Error: Missing command"
                     val executor = ToolExecutor(context)
-                    executor.executeTool("shell", """{"command":${gson.toJson(command)}}""", "", false)
+                    val useRoot = securePrefs.getBooleanSetting("root_mode", false)
+                    executor.executeTool(name, """{"command":${gson.toJson(command)}}""", "", useRoot)
                 }
                 "create_pdf" -> {
                     val title = args.get("title")?.takeIf { !it.isJsonNull }?.asString ?: return@withContext "Error: Missing title"
@@ -1770,10 +1771,20 @@ class AgentEngine(private val context: Context) {
                             } else {
                                 basePrompt
                             }
+                            val rootMode = securePrefs.getBooleanSetting("root_mode", false)
+                            val rootFlavor = securePrefs.getSetting("root_flavor", "su")
+                            val rootPromptAddition = if (rootMode) {
+                                "\n\n[ROOT & NATIVE TERMINAL / ADB ACCESS ENABLED]\n" +
+                                "The user has granted this app Superuser / Root access via $rootFlavor (uid=0).\n" +
+                                "You have native access to run terminal, shell, and ADB commands on this Android device using the 'run_command' or 'adb_command' tool.\n" +
+                                "Commands run directly with root (uid=0) privileges without needing a PC. You can inspect system state, package manager (pm), activity manager (am), dumpsys, settings, logs, and files."
+                            } else ""
+                            val promptWithRoot = promptWithMemory + rootPromptAddition
+
                             val finalSystemPrompt = if (personaEnabled && customPersona.isNotEmpty()) {
-                                "$promptWithMemory\n\nCUSTOM PERSONA:\nYou must adhere to the following persona rules:\n$customPersona"
+                                "$promptWithRoot\n\nCUSTOM PERSONA:\nYou must adhere to the following persona rules:\n$customPersona"
                             } else {
-                                promptWithMemory
+                                promptWithRoot
                             }
                             val baseSystemMsg = Message(
                                 id = UUID.randomUUID().toString(),

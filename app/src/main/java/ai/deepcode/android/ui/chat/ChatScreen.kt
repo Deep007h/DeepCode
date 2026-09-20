@@ -320,12 +320,12 @@ fun ChatScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val personaState = remember {
+    val personaEnabledPref by repository.securePrefs.personaEnabledFlow.collectAsStateWithLifecycle()
+    val customPersonaPref by repository.securePrefs.customPersonaFlow.collectAsStateWithLifecycle()
+    val personaState = remember(personaEnabledPref, customPersonaPref) {
         mutableStateOf(run {
             val prefs = repository.securePrefs
-            val enabled = prefs.getSetting("persona_enabled", "false") == "true"
-            val content = prefs.getSetting("custom_persona", "")
-            if (enabled && content.isNotEmpty()) {
+            if (personaEnabledPref && customPersonaPref.isNotEmpty()) {
                 val custom = try {
                     val raw = prefs.getSetting("saved_personas", "[]")
                     val json = org.json.JSONArray(raw)
@@ -335,7 +335,7 @@ fun ChatScreen(
                     }
                 } catch (_: Exception) { emptyList() }
                 val all = builtInPersonas.map { it.name to it.content } + custom
-                all.find { it.second == content }?.first ?: "Default"
+                all.find { it.second == customPersonaPref }?.first ?: "Default"
             } else "Default"
         })
     }
@@ -5099,6 +5099,16 @@ Available tools: github_get_user, github_list_repos, github_get_repo, github_cre
             "- GitHub Integration: Not connected. If the user asks for GitHub data, instruct them to connect GitHub in the Connections screen."
         }
 
+        val isRootMode = prefs.getBooleanSetting("root_mode", false)
+        val rootFlavor = prefs.getSetting("root_flavor", "su")
+        val rootSection = if (isRootMode) {
+            """
+- Root & Native Terminal / ADB Execution: ACTIVE & GRANTED ($rootFlavor, uid=0).
+The user has granted this app Superuser / Root access via $rootFlavor.
+You have native access to execute shell, terminal, and ADB commands on this Android device using the 'run_command' or 'adb_command' tool.
+Commands execute with root (Superuser) privileges without needing a PC. You can inspect system state, package manager (pm), activity manager (am), dumpsys, settings, logs, and files."""
+        } else ""
+
         val memoryPart = if (memoryBlock.isNotBlank()) "\n$memoryBlock\n" else ""
 
         return """
@@ -5113,6 +5123,7 @@ CRITICAL INSTRUCTIONS:
 - Image Generation (generate_image): When the user asks for an image, picture, photo, illustration, drawing, or artwork, ALWAYS call the `generate_image` tool with a detailed prompt describing what to render. NEVER fabricate, hallucinate, or make up local file paths or [image:...] tags yourself.
 - Documents (generate_chatgpt_document): When asked to generate a document or specification with ChatGPT, call `generate_chatgpt_document`.
 - Video Generation (generate_video): Call `generate_video` with a prompt describing the scene.
+$rootSection
 $githubSection
 """.trim()
     }

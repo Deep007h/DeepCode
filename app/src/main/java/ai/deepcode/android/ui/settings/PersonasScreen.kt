@@ -1,9 +1,8 @@
 package ai.deepcode.android.ui.settings
 
+import android.widget.Toast
 import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,9 +17,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ai.deepcode.android.data.repository.DeepCodeRepository
 import ai.deepcode.android.ui.components.*
 import java.util.UUID
@@ -33,12 +34,16 @@ fun PersonasScreen(
     onPersonaClick: (Persona) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val securePrefs = repository.securePrefs
+    val personaEnabled by securePrefs.personaEnabledFlow.collectAsStateWithLifecycle()
+    val activeCustomPersona by securePrefs.customPersonaFlow.collectAsStateWithLifecycle()
+    val isDefaultActive = !personaEnabled || activeCustomPersona.isEmpty()
+
     val systemPersonas = remember { builtInPersonas }
     var customPersonas by remember { mutableStateOf(loadCustomPersonas(securePrefs)) }
     var showAddDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf<Persona?>(null) }
-    val allPersonas = remember(systemPersonas, customPersonas) { systemPersonas + customPersonas }
 
     Column(
         modifier = modifier
@@ -74,44 +79,55 @@ fun PersonasScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
             item {
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(2.dp))
             }
 
-            if (allPersonas.isEmpty()) {
-                item {
-                    AppCard {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(Icons.Default.Face, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
-                            Spacer(Modifier.height(12.dp))
-                            Text("No personas yet", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
-                            Spacer(Modifier.height(4.dp))
-                            Text("Tap + to create one", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
-                        }
+            // Default Assistant Option (cleanly disables custom persona)
+            item {
+                Text(
+                    text = "System Default",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp, start = 4.dp)
+                )
+            }
+            item {
+                DefaultPersonaCard(
+                    isActive = isDefaultActive,
+                    onActivate = {
+                        securePrefs.saveSetting("persona_enabled", "false")
+                        securePrefs.saveSetting("custom_persona", "")
+                        Toast.makeText(context, "Default AI Assistant activated", Toast.LENGTH_SHORT).show()
                     }
-                }
+                )
             }
 
             if (systemPersonas.isNotEmpty()) {
                 item {
                     Text(
-                        text = "System Personas",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp, start = 4.dp)
+                        text = "Prebuilt Personas",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 10.dp, bottom = 2.dp, start = 4.dp)
                     )
                 }
                 items(systemPersonas, key = { it.id }) { persona ->
+                    val isActive = personaEnabled && activeCustomPersona == persona.content
                     PersonaCard(
                         persona = persona,
+                        isActive = isActive,
                         onClick = { onPersonaClick(persona) },
+                        onActivate = {
+                            securePrefs.saveSetting("custom_persona", persona.content)
+                            securePrefs.saveSetting("persona_enabled", "true")
+                            Toast.makeText(context, "\"${persona.name}\" activated", Toast.LENGTH_SHORT).show()
+                        },
                         onDelete = null
                     )
                 }
@@ -120,17 +136,24 @@ fun PersonasScreen(
             if (customPersonas.isNotEmpty()) {
                 item {
                     Text(
-                        text = "Custom Personas",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        text = "Your Custom Personas",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp, start = 4.dp)
+                        modifier = Modifier.padding(top = 10.dp, bottom = 2.dp, start = 4.dp)
                     )
                 }
                 items(customPersonas, key = { it.id }) { persona ->
+                    val isActive = personaEnabled && activeCustomPersona == persona.content
                     PersonaCard(
                         persona = persona,
+                        isActive = isActive,
                         onClick = { onPersonaClick(persona) },
+                        onActivate = {
+                            securePrefs.saveSetting("custom_persona", persona.content)
+                            securePrefs.saveSetting("persona_enabled", "true")
+                            Toast.makeText(context, "\"${persona.name}\" activated", Toast.LENGTH_SHORT).show()
+                        },
                         onDelete = { showDeleteConfirm = persona }
                     )
                 }
@@ -162,8 +185,13 @@ fun PersonasScreen(
             text = { Text("Are you sure you want to delete \"${persona.name}\"?", color = MaterialTheme.colorScheme.onSurfaceVariant) },
             confirmButton = {
                 TextButton(onClick = {
+                    val wasActive = personaEnabled && activeCustomPersona == persona.content
                     customPersonas = customPersonas.filter { it.id != persona.id }
                     saveCustomPersonas(securePrefs, customPersonas)
+                    if (wasActive) {
+                        securePrefs.saveSetting("persona_enabled", "false")
+                        securePrefs.saveSetting("custom_persona", "")
+                    }
                     showDeleteConfirm = null
                 }) {
                     Text("Delete", color = MaterialTheme.colorScheme.error)
@@ -181,72 +209,181 @@ fun PersonasScreen(
 }
 
 @Composable
-private fun PersonaCard(
-    persona: Persona,
-    onClick: () -> Unit,
-    onDelete: (() -> Unit)?
+private fun DefaultPersonaCard(
+    isActive: Boolean,
+    onActivate: () -> Unit
 ) {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        visible = true
-    }
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(animationSpec = tween(300)) + slideInVertically(
-            initialOffsetY = { 40 },
-            animationSpec = tween(300)
-        )
-    ) {
-        AppCard(onClick = onClick) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+    AppCard(onClick = onActivate) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = if (isActive) 0.25f else 0.12f)),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (persona.isSystem) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        if (persona.isSystem) Icons.Default.SmartToy else Icons.Default.Person,
-                        null,
-                        tint = if (persona.isSystem) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
+                Icon(
+                    Icons.Default.AutoAwesome,
+                    null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = persona.name,
-                        fontWeight = FontWeight.SemiBold,
+                        text = "Default AI Assistant",
+                        fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    if (persona.isSystem) {
-                        Text(
-                            text = "System persona",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                    if (isActive) {
+                        Spacer(Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "ACTIVE",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
-                if (onDelete != null) {
-                    IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
-                    }
-                }
-                Icon(
-                    Icons.Default.ChevronRight,
-                    null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(18.dp)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "Standard DeepCode AI without persona tone modification",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            if (isActive) {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    "Active",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp)
+                )
+            } else {
+                FilledTonalButton(
+                    onClick = onActivate,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Text("Activate", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PersonaCard(
+    persona: Persona,
+    isActive: Boolean,
+    onClick: () -> Unit,
+    onActivate: () -> Unit,
+    onDelete: (() -> Unit)?
+) {
+    AppCard(onClick = onClick) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (persona.isSystem) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (persona.isSystem) Icons.Default.SmartToy else Icons.Default.Face,
+                    null,
+                    tint = if (persona.isSystem) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = persona.name,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (isActive) {
+                        Spacer(Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "ACTIVE",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = if (persona.isSystem) "Prebuilt system persona" else "Custom persona",
+                    fontSize = 11.sp,
+                    color = if (persona.isSystem) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (isActive) {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    "Active",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp)
+                )
+            } else {
+                FilledTonalButton(
+                    onClick = onActivate,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Text("Activate", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            if (onDelete != null) {
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                }
+            }
+            Spacer(Modifier.width(2.dp))
+            Icon(
+                Icons.Default.ChevronRight,
+                null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }

@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ai.deepcode.android.data.repository.DeepCodeRepository
 import ai.deepcode.android.ui.components.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,9 +102,9 @@ fun PersonaDetailPage(
         ) {
             Spacer(Modifier.height(4.dp))
 
-            val activePersona = securePrefs.getSetting("custom_persona", "")
-            val personaEnabled = securePrefs.getSetting("persona_enabled", "false") == "true"
-            val isActive = personaEnabled && activePersona == persona.content
+            val personaEnabled by securePrefs.personaEnabledFlow.collectAsStateWithLifecycle()
+            val activeCustomPersona by securePrefs.customPersonaFlow.collectAsStateWithLifecycle()
+            val isActive = personaEnabled && activeCustomPersona == persona.content
 
             if (isActive) {
                 AppCard {
@@ -121,34 +122,61 @@ fun PersonaDetailPage(
                         )
                     }
                 }
-            }
 
-            Button(
-                onClick = {
-                    securePrefs.saveSetting("custom_persona", persona.content)
-                    securePrefs.saveSetting("persona_enabled", "true")
-                    Toast.makeText(context, "\"${persona.name}\" applied as active persona", Toast.LENGTH_SHORT).show()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f) else MaterialTheme.colorScheme.primary
-                ),
-                enabled = !isActive
-            ) {
-                Icon(
-                    if (isActive) Icons.Default.CheckCircle else Icons.Default.Check,
-                    null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    if (isActive) "Already Active" else "Apply Persona",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
+                OutlinedButton(
+                    onClick = {
+                        securePrefs.saveSetting("persona_enabled", "false")
+                        securePrefs.saveSetting("custom_persona", "")
+                        Toast.makeText(context, "Persona deactivated. Using Default Assistant.", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Deactivate Persona (Revert to Default)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+            } else {
+                Button(
+                    onClick = {
+                        securePrefs.saveSetting("custom_persona", persona.content)
+                        securePrefs.saveSetting("persona_enabled", "true")
+                        Toast.makeText(context, "\"${persona.name}\" applied as active persona", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(
+                        Icons.Default.Check,
+                        null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Apply Persona",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
             }
 
             AppCard {

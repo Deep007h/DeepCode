@@ -75,6 +75,15 @@ class EncryptedPrefs private constructor(context: Context) {
     private val _uiScaleFlow = MutableStateFlow("default")
     val uiScaleFlow: StateFlow<String> = _uiScaleFlow
 
+    private val _rootModeFlow = MutableStateFlow(false)
+    val rootModeFlow: StateFlow<Boolean> = _rootModeFlow
+
+    private val _personaEnabledFlow = MutableStateFlow(false)
+    val personaEnabledFlow: StateFlow<Boolean> = _personaEnabledFlow
+
+    private val _customPersonaFlow = MutableStateFlow("")
+    val customPersonaFlow: StateFlow<String> = _customPersonaFlow
+
     init {
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             _themeFlow.value = getSetting("theme", "system")
@@ -84,6 +93,9 @@ class EncryptedPrefs private constructor(context: Context) {
             _refreshRateModeFlow.value = getSetting("refresh_rate_mode", "dynamic")
             _fontSizeFlow.value = getSetting("font_size", "medium")
             _uiScaleFlow.value = getSetting("ui_scale", "default")
+            _rootModeFlow.value = getBooleanSetting("root_mode", false)
+            _personaEnabledFlow.value = getSetting("persona_enabled", "false") == "true"
+            _customPersonaFlow.value = getSetting("custom_persona", "")
         }
     }
 
@@ -154,6 +166,13 @@ class EncryptedPrefs private constructor(context: Context) {
             "refresh_rate_mode" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_refreshRateModeFlow, value)
             "font_size" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_fontSizeFlow, value)
             "ui_scale" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_uiScaleFlow, value)
+            "persona_enabled" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_personaEnabledFlow, value == "true")
+            "custom_persona" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_customPersonaFlow, value)
+            "root_mode" -> {
+                val b = value == "true"
+                sharedPrefs.edit().putBoolean("setting_bool_root_mode", b).apply()
+                ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_rootModeFlow, b)
+            }
         }
     }
 
@@ -163,6 +182,9 @@ class EncryptedPrefs private constructor(context: Context) {
 
     fun saveBooleanSetting(key: String, value: Boolean) {
         sharedPrefs.edit().putBoolean("setting_bool_$key", value).apply()
+        if (key == "root_mode") {
+            ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_rootModeFlow, value)
+        }
     }
 
     fun getChatGPTAccessToken(): String = getSetting("chatgpt_access_token", "")
