@@ -628,6 +628,11 @@ class AgentEngine(private val context: Context) {
                     val useRoot = securePrefs.getBooleanSetting("root_mode", false)
                     executor.executeTool(name, """{"command":${gson.toJson(command)}}""", "", useRoot)
                 }
+                "android_system_control", "system_control", "root_system_control" -> {
+                    val executor = ToolExecutor(context)
+                    val useRoot = securePrefs.getBooleanSetting("root_mode", false)
+                    executor.executeTool(name, argsJson, "", useRoot)
+                }
                 "create_pdf" -> {
                     val title = args.get("title")?.takeIf { !it.isJsonNull }?.asString ?: return@withContext "Error: Missing title"
                     val content = args.get("content")?.takeIf { !it.isJsonNull }?.asString ?: return@withContext "Error: Missing content"
@@ -1776,7 +1781,7 @@ class AgentEngine(private val context: Context) {
                             val rootPromptAddition = if (rootMode) {
                                 "\n\n[ROOT & NATIVE TERMINAL / ADB ACCESS ENABLED]\n" +
                                 "The user has granted this app Superuser / Root access via $rootFlavor (uid=0).\n" +
-                                "You have native access to run terminal, shell, and ADB commands on this Android device using the 'run_command' or 'adb_command' tool.\n" +
+                                "You have native access to run terminal, shell, and ADB commands on this Android device using 'run_command', 'adb_command', or 'android_system_control' (for battery, memory, app freezing/control, and instant screenshots).\n" +
                                 "Commands run directly with root (uid=0) privileges without needing a PC. You can inspect system state, package manager (pm), activity manager (am), dumpsys, settings, logs, and files."
                             } else ""
                             val promptWithRoot = promptWithMemory + rootPromptAddition

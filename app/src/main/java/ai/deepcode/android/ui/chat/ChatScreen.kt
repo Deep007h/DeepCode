@@ -1519,6 +1519,10 @@ private fun TopBar(
     onOpenApiKeys: () -> Unit = {}
 ) {
     var expandedSelectorDropdown by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val isRootGranted by ai.deepcode.android.util.RootSystem.isRootGranted.collectAsStateWithLifecycle()
+    val rootFlavor by ai.deepcode.android.util.RootSystem.rootFlavor.collectAsStateWithLifecycle()
+    val rootMode by repository.securePrefs.rootModeFlow.collectAsStateWithLifecycle()
 
     Row(
         modifier = Modifier
@@ -1538,78 +1542,122 @@ private fun TopBar(
             MenuTwoBarsIcon(color = AppWhite)
         }
 
-        // Right: Model selection capsule pill [ deepseek v4 flash  ⋮ ]
-        Box {
-            val isGpt = activeModel.provider.equals("ChatGPT", ignoreCase = true) ||
-                    activeModel.id.equals("chatgpt-4o", ignoreCase = true) ||
-                    activeModel.name.contains("chatgpt", ignoreCase = true)
-            val modelDisplayName = if (isGpt) "chatgpt" else activeModel.name.lowercase().ifEmpty { "deepseek v4 flash" }
-            Row(
-                modifier = Modifier
-                    .depthPill(
-                        shape = RoundedCornerShape(24.dp),
-                        elevation = 3.dp,
-                        customGradient = if (isGpt) {
-                            if (isDarkThemeActive) listOf(Color(0xFF1B3D34), Color(0xFF0F2620))
-                            else listOf(Color(0xFFE6F7F2), Color(0xFFD0F0E6))
-                        } else null,
-                        highlightAlpha = if (isGpt) 0.35f else 0.22f,
-                        isDark = isDarkThemeActive
-                    )
-                    .bouncyClickable(provideHaptic = true) { expandedSelectorDropdown = !expandedSelectorDropdown }
-                    .padding(horizontal = 16.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (isGpt) {
-                    Icon(
-                        painter = androidx.compose.ui.res.painterResource(id = ai.deepcode.android.R.drawable.ic_chatgpt),
-                        contentDescription = "ChatGPT",
-                        tint = Color.Unspecified,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(6.dp))
+        // Right Group: [👑 ROOT] badge + [Model Selection Capsule Pill]
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (isRootGranted && rootMode) {
+                val flavorLabel = when (rootFlavor) {
+                    ai.deepcode.android.util.RootFlavor.KERNEL_SU -> "KSU"
+                    ai.deepcode.android.util.RootFlavor.MAGISK -> "MAGISK"
+                    ai.deepcode.android.util.RootFlavor.APATCH -> "APATCH"
+                    else -> "ROOT"
                 }
-                Text(
-                    text = modelDisplayName,
-                    color = if (isGpt) Color(0xFF10A37F) else AppWhite,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 15.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 170.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = "Select model",
-                    tint = if (isGpt) Color(0xFF10A37F) else AppWhite,
-                    modifier = Modifier.size(18.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .depthPill(
+                            shape = RoundedCornerShape(20.dp),
+                            elevation = 2.dp,
+                            isDark = isDarkThemeActive
+                        )
+                        .bouncyClickable(provideHaptic = true) {
+                            Toast.makeText(context, "👑 Superuser Active: $flavorLabel (uid=0)", Toast.LENGTH_SHORT).show()
+                        }
+                        .padding(horizontal = 9.dp, vertical = 7.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "👑",
+                            fontSize = 11.sp
+                        )
+                        Text(
+                            text = flavorLabel,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AppSuccess
+                        )
+                    }
+                }
             }
 
-            if (expandedSelectorDropdown) {
-                // Fixed anchor below the pill. Previously offset was
-                // 44.dp - imeBottom, so opening the picker while the keyboard
-                // was up pushed it far off-screen (unusable while typing).
-                val density = LocalDensity.current
-                val offsetPx = with(density) { 52.dp.roundToPx() }
-                Popup(
-                    alignment = Alignment.TopEnd,
-                    offset = IntOffset(0, offsetPx),
-                    onDismissRequest = { expandedSelectorDropdown = false }
+            // Model selection capsule pill [ deepseek v4 flash  ⋮ ]
+            Box {
+                val isGpt = activeModel.provider.equals("ChatGPT", ignoreCase = true) ||
+                        activeModel.id.equals("chatgpt-4o", ignoreCase = true) ||
+                        activeModel.name.contains("chatgpt", ignoreCase = true)
+                val modelDisplayName = if (isGpt) "chatgpt" else activeModel.name.lowercase().ifEmpty { "deepseek v4 flash" }
+                Row(
+                    modifier = Modifier
+                        .depthPill(
+                            shape = RoundedCornerShape(24.dp),
+                            elevation = 3.dp,
+                            customGradient = if (isGpt) {
+                                if (isDarkThemeActive) listOf(Color(0xFF1B3D34), Color(0xFF0F2620))
+                                else listOf(Color(0xFFE6F7F2), Color(0xFFD0F0E6))
+                            } else null,
+                            highlightAlpha = if (isGpt) 0.35f else 0.22f,
+                            isDark = isDarkThemeActive
+                        )
+                        .bouncyClickable(provideHaptic = true) { expandedSelectorDropdown = !expandedSelectorDropdown }
+                        .padding(horizontal = 16.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    ModelSelectionOverlay(
-                        repository = repository,
-                        activeModel = activeModel,
-                        onModelSelected = { model ->
-                            onModelSelected(model)
-                            expandedSelectorDropdown = false
-                        },
-                        onOpenApiKeys = {
-                            expandedSelectorDropdown = false
-                            onOpenApiKeys()
-                        }
+                    if (isGpt) {
+                        Icon(
+                            painter = androidx.compose.ui.res.painterResource(id = ai.deepcode.android.R.drawable.ic_chatgpt),
+                            contentDescription = "ChatGPT",
+                            tint = Color.Unspecified,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(
+                        text = modelDisplayName,
+                        color = if (isGpt) Color(0xFF10A37F) else AppWhite,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 15.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 170.dp)
                     )
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Select model",
+                        tint = if (isGpt) Color(0xFF10A37F) else AppWhite,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                if (expandedSelectorDropdown) {
+                    // Fixed anchor below the pill. Previously offset was
+                    // 44.dp - imeBottom, so opening the picker while the keyboard
+                    // was up pushed it far off-screen (unusable while typing).
+                    val density = LocalDensity.current
+                    val offsetPx = with(density) { 52.dp.roundToPx() }
+                    Popup(
+                        alignment = Alignment.TopEnd,
+                        offset = IntOffset(0, offsetPx),
+                        onDismissRequest = { expandedSelectorDropdown = false }
+                    ) {
+                        ModelSelectionOverlay(
+                            repository = repository,
+                            activeModel = activeModel,
+                            onModelSelected = { model ->
+                                onModelSelected(model)
+                                expandedSelectorDropdown = false
+                            },
+                            onOpenApiKeys = {
+                                expandedSelectorDropdown = false
+                                onOpenApiKeys()
+                            }
+                        )
+                    }
                 }
             }
         }

@@ -338,4 +338,67 @@ object RootSystem {
             "Error executing root command: ${e.message}"
         }
     }
+
+    /**
+     * Retrieves battery telemetry including percentage, health, temperature, and charging status.
+     */
+    fun getBatteryInfo(): String {
+        return executeAsRoot("dumpsys battery")
+    }
+
+    /**
+     * Retrieves memory stats (/proc/meminfo) and filesystem storage usage (df -h).
+     */
+    fun getMemoryInfo(): String {
+        return executeAsRoot("cat /proc/meminfo | head -n 12 && echo '\n--- STORAGE USAGE ---' && df -h /data /storage/emulated/0")
+    }
+
+    /**
+     * Retrieves hardware model, manufacturer, Android SDK, kernel release, uptime, and SELinux status.
+     */
+    fun getDeviceInfo(): String {
+        return executeAsRoot("echo 'Model:' \$(getprop ro.product.model) && echo 'Manufacturer:' \$(getprop ro.product.manufacturer) && echo 'Android:' \$(getprop ro.build.version.release) '(SDK ' \$(getprop ro.build.version.sdk)')' && echo 'Kernel:' \$(uname -a) && echo 'SELinux:' \$(getenforce) && echo 'Uptime:' \$(uptime)")
+    }
+
+    /**
+     * Lists third-party installed packages, optionally filtered.
+     */
+    fun listInstalledPackages(filter: String = ""): String {
+        val filterCmd = if (filter.isNotBlank()) "| grep -i '${filter.trim()}'" else "| head -n 40"
+        return executeAsRoot("pm list packages -3 $filterCmd")
+    }
+
+    /**
+     * Manages app lifecycle: freeze (disable-user), unfreeze (enable), force-stop, clear-cache, or launch.
+     */
+    fun appControl(action: String, packageName: String): String {
+        val pkg = packageName.trim()
+        if (pkg.isEmpty() && !action.equals("clear_cache", ignoreCase = true)) {
+            return "Error: packageName is required for appControl action: $action"
+        }
+        return when (action.lowercase().trim()) {
+            "freeze", "disable" -> executeAsRoot("pm disable-user --user 0 $pkg")
+            "unfreeze", "enable" -> executeAsRoot("pm enable $pkg")
+            "force_stop", "stop" -> executeAsRoot("am force-stop $pkg")
+            "clear_cache" -> executeAsRoot("pm trim-caches 1000M")
+            "launch", "open" -> executeAsRoot("monkey -p $pkg -c android.intent.category.LAUNCHER 1")
+            else -> "Unknown action: '$action'. Supported: freeze, unfreeze, force_stop, clear_cache, launch"
+        }
+    }
+
+    /**
+     * Captures an instant device screenshot via `screencap -p` and returns the file/image markdown marker.
+     */
+    fun takeScreenshot(outputDir: String = "/storage/emulated/0/Download"): String {
+        val dir = File(outputDir)
+        if (!dir.exists()) dir.mkdirs()
+        val filename = "screenshot_${System.currentTimeMillis()}.png"
+        val fullPath = File(dir, filename).absolutePath
+        val out = executeAsRoot("screencap -p '$fullPath'")
+        return if (File(fullPath).exists() && File(fullPath).length() > 0) {
+            "[image:$fullPath]\nScreenshot captured successfully: $fullPath"
+        } else {
+            "Failed to capture screenshot. Output: $out"
+        }
+    }
 }

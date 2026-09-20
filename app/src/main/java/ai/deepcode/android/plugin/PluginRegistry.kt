@@ -53,6 +53,7 @@ object PluginRegistry {
         register(ai.deepcode.android.plugin.builtin.CalendarExportPlugin())
         register(ai.deepcode.android.plugin.builtin.ContactCardPlugin())
         register(ai.deepcode.android.plugin.builtin.MarkdownToPdfPlugin())
+        register(ai.deepcode.android.plugin.builtin.SystemToolkitPlugin())
 
         // Google Workspace connector plugins
         appContext?.let { ctx ->

@@ -307,6 +307,20 @@ class ToolExecutor(private val context: Context? = null) {
                     val effectiveRoot = useRoot || (context != null && ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context).getBooleanSetting("root_mode", false))
                     TerminalRunner.runCommand(command, workingDir, effectiveRoot)
                 }
+                "android_system_control", "system_control", "root_system_control" -> {
+                    val action = args.get("action")?.asString ?: "device_info"
+                    val target = args.get("target")?.asString ?: ""
+                    val subAction = args.get("sub_action")?.asString ?: ""
+                    when (action.lowercase().trim()) {
+                        "battery_info", "battery" -> ai.deepcode.android.util.RootSystem.getBatteryInfo()
+                        "memory_info", "memory", "ram" -> ai.deepcode.android.util.RootSystem.getMemoryInfo()
+                        "device_info", "device", "specs" -> ai.deepcode.android.util.RootSystem.getDeviceInfo()
+                        "list_apps", "apps" -> ai.deepcode.android.util.RootSystem.listInstalledPackages(target)
+                        "app_control" -> ai.deepcode.android.util.RootSystem.appControl(subAction, target)
+                        "screenshot", "screencap" -> ai.deepcode.android.util.RootSystem.takeScreenshot()
+                        else -> "Unknown action '$action'. Supported: battery_info, memory_info, device_info, list_apps, app_control, screenshot"
+                    }
+                }
                 "grep_search", "grep" -> {
                     val query = args.get("query")?.asString ?: return "Missing query argument"
                     val path = args.get("path")?.asString ?: "."
@@ -3961,6 +3975,25 @@ class ToolExecutor(private val context: Context? = null) {
                     "command" to mapOf("type" to "string", "description" to "The ADB or ADB shell command to run")
                 ),
                 "required" to listOf("command")
+            )),
+            Tool("android_system_control", "Inspect and control Android hardware, battery, memory, packages, and capture screenshots directly on device using native Root privileges (KernelSU/Magisk/APatch).", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "action" to mapOf(
+                        "type" to "string",
+                        "description" to "The system action: 'battery_info', 'memory_info', 'device_info', 'list_apps', 'app_control', 'screenshot'",
+                        "enum" to listOf("battery_info", "memory_info", "device_info", "list_apps", "app_control", "screenshot")
+                    ),
+                    "target" to mapOf(
+                        "type" to "string",
+                        "description" to "Package name for app_control, or search filter for list_apps"
+                    ),
+                    "sub_action" to mapOf(
+                        "type" to "string",
+                        "description" to "Sub-action for app_control: 'freeze', 'unfreeze', 'force_stop', 'clear_cache', 'launch'"
+                    )
+                ),
+                "required" to listOf("action")
             )),
             Tool("grep_search", "Grep search file contents for a pattern", mapOf(
                 "type" to "object",

@@ -82,6 +82,8 @@ fun SettingsScreen(
     var showTurnsDialog by remember { mutableStateOf(false) }
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
     var showRefreshRateDialog by remember { mutableStateOf(false) }
+    var showSecurityDialog by remember { mutableStateOf(false) }
+    var showConnectionDialog by remember { mutableStateOf(false) }
 
     val refreshRateMode by ai.deepcode.android.util.RefreshRateManager.currentMode.collectAsStateWithLifecycle()
     val appliedHz by ai.deepcode.android.util.RefreshRateManager.appliedRefreshRate.collectAsStateWithLifecycle()
@@ -415,15 +417,15 @@ fun SettingsScreen(
                 SettingsSubscreenRow(
                     icon = Icons.Default.Shield,
                     title = "Security Settings",
-                    subtitle = "Manage authentication, API keys, and security preferences",
-                    onClick = { Toast.makeText(context, "Security settings sub-page", Toast.LENGTH_SHORT).show() }
+                    subtitle = "App lock, safe execution guard & cache cleanup",
+                    onClick = { showSecurityDialog = true }
                 )
                 HorizontalDivider(color = AppDivider, thickness = 1.dp)
                 SettingsSubscreenRow(
                     icon = Icons.Default.Link,
                     title = "Connection Settings",
-                    subtitle = "Configure sync, bridge behavior, and external connections",
-                    onClick = { Toast.makeText(context, "Connection settings sub-page", Toast.LENGTH_SHORT).show() }
+                    subtitle = "Command timeout, offline mode & Telegram sync",
+                    onClick = { showConnectionDialog = true }
                 )
             }
         }
@@ -640,6 +642,20 @@ fun SettingsScreen(
                 showRefreshRateDialog = false
             },
             onDismiss = { showRefreshRateDialog = false }
+        )
+    }
+
+    if (showSecurityDialog) {
+        SecuritySettingsDialog(
+            securePrefs = securePrefs,
+            onDismiss = { showSecurityDialog = false }
+        )
+    }
+
+    if (showConnectionDialog) {
+        ConnectionSettingsDialog(
+            securePrefs = securePrefs,
+            onDismiss = { showConnectionDialog = false }
         )
     }
 }
@@ -1251,3 +1267,315 @@ fun RootAccessDialog(
         shape = RoundedCornerShape(20.dp)
     )
 }
+
+@Composable
+fun SecuritySettingsDialog(
+    securePrefs: ai.deepcode.android.data.local.EncryptedPrefs,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var biometricLock by remember { mutableStateOf(securePrefs.getBooleanSetting("setting_biometric_lock", false)) }
+    var safeMode by remember { mutableStateOf(securePrefs.getBooleanSetting("setting_safe_mode", false)) }
+    var confirmRootCmds by remember { mutableStateOf(securePrefs.getBooleanSetting("setting_confirm_root_cmds", false)) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Shield,
+                    contentDescription = null,
+                    tint = AppPrimary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = "Security & Protection",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = AppWhite
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Biometric Lock
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(AppField)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Biometric App Lock", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AppWhite)
+                        Spacer(Modifier.height(2.dp))
+                        Text("Require fingerprint or device PIN when opening DeepCode", fontSize = 11.sp, color = AppMuted)
+                    }
+                    Switch(
+                        checked = biometricLock,
+                        onCheckedChange = {
+                            biometricLock = it
+                            securePrefs.saveBooleanSetting("setting_biometric_lock", it)
+                            Toast.makeText(context, if (it) "Biometric Lock enabled" else "Biometric Lock disabled", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = AppWhite,
+                            checkedTrackColor = AppPrimary,
+                            uncheckedThumbColor = AppMuted,
+                            uncheckedTrackColor = AppDarkGray
+                        )
+                    )
+                }
+
+                // Safe Mode Execution
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(AppField)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Safe Execution Guard", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AppWhite)
+                        Spacer(Modifier.height(2.dp))
+                        Text("Prevents destructive write/delete commands without explicit prompt", fontSize = 11.sp, color = AppMuted)
+                    }
+                    Switch(
+                        checked = safeMode,
+                        onCheckedChange = {
+                            safeMode = it
+                            securePrefs.saveBooleanSetting("setting_safe_mode", it)
+                            Toast.makeText(context, if (it) "Safe Mode active" else "Safe Mode disabled", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = AppWhite,
+                            checkedTrackColor = AppPrimary,
+                            uncheckedThumbColor = AppMuted,
+                            uncheckedTrackColor = AppDarkGray
+                        )
+                    )
+                }
+
+                // Confirm Root Commands
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(AppField)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Root Command Audit Log", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AppWhite)
+                        Spacer(Modifier.height(2.dp))
+                        Text("Log all native root/ADB commands with uid=0 execution details", fontSize = 11.sp, color = AppMuted)
+                    }
+                    Switch(
+                        checked = confirmRootCmds,
+                        onCheckedChange = {
+                            confirmRootCmds = it
+                            securePrefs.saveBooleanSetting("setting_confirm_root_cmds", it)
+                            Toast.makeText(context, if (it) "Root command audit enabled" else "Root audit disabled", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = AppWhite,
+                            checkedTrackColor = AppPrimary,
+                            uncheckedThumbColor = AppMuted,
+                            uncheckedTrackColor = AppDarkGray
+                        )
+                    )
+                }
+
+                // Purge Scratch & Cache
+                FilledAppButton(
+                    onClick = {
+                        try {
+                            val cacheDir = context.cacheDir
+                            cacheDir.deleteRecursively()
+                            Toast.makeText(context, "Temporary cache & scratch files purged successfully", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Error clearing cache: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    text = "Purge Scratch & Cache Files",
+                    backgroundColor = AppField,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            FilledAppButton(
+                onClick = onDismiss,
+                text = "Close",
+                backgroundColor = AppPrimary
+            )
+        },
+        containerColor = AppSurface,
+        shape = RoundedCornerShape(20.dp)
+    )
+}
+
+@Composable
+fun ConnectionSettingsDialog(
+    securePrefs: ai.deepcode.android.data.local.EncryptedPrefs,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var commandTimeout by remember { mutableStateOf(securePrefs.getSetting("setting_command_timeout", "45")) }
+    var offlineMode by remember { mutableStateOf(securePrefs.getBooleanSetting("setting_offline_mode", false)) }
+    var telegramSync by remember { mutableStateOf(securePrefs.getBooleanSetting("setting_tg_bg_sync", true)) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Link,
+                    contentDescription = null,
+                    tint = AppPrimary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = "Connection & Sync",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = AppWhite
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Command Execution Timeout
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(AppField)
+                        .padding(12.dp)
+                ) {
+                    Text("Command Execution Timeout", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AppWhite)
+                    Spacer(Modifier.height(4.dp))
+                    Text("Maximum seconds allowed for local terminal and ADB root commands", fontSize = 11.sp, color = AppMuted)
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("15", "30", "45", "90").forEach { sec ->
+                            val isSel = commandTimeout == sec
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSel) AppPrimary else AppDarkGray.copy(alpha = 0.5f))
+                                    .clickable {
+                                        commandTimeout = sec
+                                        securePrefs.saveSetting("setting_command_timeout", sec)
+                                        Toast.makeText(context, "Command timeout set to ${sec}s", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "${sec}s",
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSel) AppWhite else AppMuted
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Offline-First Mode
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(AppField)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Offline-First Mode", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AppWhite)
+                        Spacer(Modifier.height(2.dp))
+                        Text("Blocks external network calls when local models or scripts are used", fontSize = 11.sp, color = AppMuted)
+                    }
+                    Switch(
+                        checked = offlineMode,
+                        onCheckedChange = {
+                            offlineMode = it
+                            securePrefs.saveBooleanSetting("setting_offline_mode", it)
+                            Toast.makeText(context, if (it) "Offline-First enabled" else "Offline-First disabled", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = AppWhite,
+                            checkedTrackColor = AppPrimary,
+                            uncheckedThumbColor = AppMuted,
+                            uncheckedTrackColor = AppDarkGray
+                        )
+                    )
+                }
+
+                // Telegram Sync
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(AppField)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Telegram Background Sync", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AppWhite)
+                        Spacer(Modifier.height(2.dp))
+                        Text("Enable automatic polling for Telegram Drive and shared memory", fontSize = 11.sp, color = AppMuted)
+                    }
+                    Switch(
+                        checked = telegramSync,
+                        onCheckedChange = {
+                            telegramSync = it
+                            securePrefs.saveBooleanSetting("setting_tg_bg_sync", it)
+                            Toast.makeText(context, if (it) "Telegram sync enabled" else "Telegram sync disabled", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = AppWhite,
+                            checkedTrackColor = AppPrimary,
+                            uncheckedThumbColor = AppMuted,
+                            uncheckedTrackColor = AppDarkGray
+                        )
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            FilledAppButton(
+                onClick = onDismiss,
+                text = "Close",
+                backgroundColor = AppPrimary
+            )
+        },
+        containerColor = AppSurface,
+        shape = RoundedCornerShape(20.dp)
+    )
+}
+
