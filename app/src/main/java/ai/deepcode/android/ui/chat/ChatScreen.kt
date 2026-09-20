@@ -469,6 +469,7 @@ fun ChatScreen(
 
     // Follow streaming text gently without micro-jitter by scrolling to bottom edge
     LaunchedEffect(isStreaming) {
+        ai.deepcode.android.util.RefreshRateManager.setStreamingActive(isStreaming)
         if (!isStreaming) return@LaunchedEffect
         var lastScrollTime = 0L
         viewModel.streamedText.collect {

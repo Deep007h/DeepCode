@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import ai.deepcode.android.data.repository.DeepCodeRepository
 import ai.deepcode.android.ui.components.*
 import ai.deepcode.android.ui.theme.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -64,6 +65,11 @@ fun SettingsScreen(
     var showEditProfileDialog by remember { mutableStateOf(false) }
     var showTurnsDialog by remember { mutableStateOf(false) }
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
+    var showRefreshRateDialog by remember { mutableStateOf(false) }
+
+    val refreshRateMode by ai.deepcode.android.util.RefreshRateManager.currentMode.collectAsStateWithLifecycle()
+    val appliedHz by ai.deepcode.android.util.RefreshRateManager.appliedRefreshRate.collectAsStateWithLifecycle()
+    val supportedRates by ai.deepcode.android.util.RefreshRateManager.supportedRates.collectAsStateWithLifecycle()
 
     var profileName by remember { mutableStateOf(securePrefs.getSetting("profile_name", "Deep Patel")) }
     var profileEmail by remember { mutableStateOf(securePrefs.getSetting("profile_email", "deep@deepcode.ai")) }
@@ -215,6 +221,19 @@ fun SettingsScreen(
                     title = "Themes & Wallpapers",
                     subtitle = "Accent colors, dark mode, and chat wallpaper choice",
                     onClick = onNavigateToThemesAndWallpapers
+                )
+                HorizontalDivider(color = AppDivider, thickness = 1.dp)
+                SettingsNavRow(
+                    icon = Icons.Default.Speed,
+                    title = "Display & Refresh Rate",
+                    subtitle = when (refreshRateMode) {
+                        "144" -> "Locked 144 Hz (Ultra High)"
+                        "120" -> "Locked 120 Hz (High)"
+                        "90" -> "Locked 90 Hz (Smooth)"
+                        "60" -> "Standard 60 Hz"
+                        else -> "Variable 60 - 144 Hz (Adaptive)"
+                    },
+                    onClick = { showRefreshRateDialog = true }
                 )
             }
         }
@@ -522,6 +541,27 @@ fun SettingsScreen(
             shape = RoundedCornerShape(16.dp)
         )
     }
+
+    if (showRefreshRateDialog) {
+        RefreshRateDialog(
+            currentMode = refreshRateMode,
+            appliedHz = appliedHz,
+            supportedRates = supportedRates,
+            onSelectMode = { mode ->
+                ai.deepcode.android.util.RefreshRateManager.setMode(mode)
+                val label = when (mode) {
+                    "144" -> "144 Hz (Ultra High)"
+                    "120" -> "120 Hz (High)"
+                    "90" -> "90 Hz (Smooth)"
+                    "60" -> "60 Hz (Standard)"
+                    else -> "Variable 60 - 144 Hz (Adaptive)"
+                }
+                Toast.makeText(context, "Refresh rate set to $label", Toast.LENGTH_SHORT).show()
+                showRefreshRateDialog = false
+            },
+            onDismiss = { showRefreshRateDialog = false }
+        )
+    }
 }
 
 @Composable
@@ -776,5 +816,174 @@ fun EditProfileDialog(
         },
         containerColor = AppSurface,
         shape = RoundedCornerShape(16.dp)
+    )
+}
+
+@Composable
+fun RefreshRateDialog(
+    currentMode: String,
+    appliedHz: Float,
+    supportedRates: List<Float>,
+    onSelectMode: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val modes = listOf(
+        Triple(
+            ai.deepcode.android.util.RefreshRateManager.MODE_DYNAMIC,
+            "Variable (60 - 90 - 120 - 144 Hz)",
+            "Adaptive: 144Hz during gestures & AI streaming, steps down to 60Hz when idle"
+        ),
+        Triple(
+            ai.deepcode.android.util.RefreshRateManager.MODE_144,
+            "Ultra High (144 Hz Max)",
+            "Locks display to 144Hz max for ultra-high frame rate"
+        ),
+        Triple(
+            ai.deepcode.android.util.RefreshRateManager.MODE_120,
+            "High (120 Hz Max)",
+            "Locks display to 120Hz smooth rate"
+        ),
+        Triple(
+            ai.deepcode.android.util.RefreshRateManager.MODE_90,
+            "Smooth (90 Hz Max)",
+            "Balances responsiveness and power efficiency"
+        ),
+        Triple(
+            ai.deepcode.android.util.RefreshRateManager.MODE_60,
+            "Standard (60 Hz)",
+            "Fixed 60Hz for maximum battery endurance"
+        )
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Speed,
+                        contentDescription = null,
+                        tint = AppPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = "Display Refresh Rate",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AppWhite
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(AppPrimary.copy(alpha = 0.2f))
+                        .border(1.dp, AppPrimary.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "⚡ ${appliedHz.toInt()} Hz",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AppPrimary
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (supportedRates.isNotEmpty()) {
+                    Text(
+                        text = "Hardware modes detected: ${supportedRates.map { "${it.toInt()}Hz" }.distinct().joinToString(", ")}",
+                        fontSize = 11.sp,
+                        color = AppMuted
+                    )
+                    Spacer(Modifier.height(2.dp))
+                }
+
+                modes.forEach { (modeKey, title, subtitle) ->
+                    val isSelected = currentMode == modeKey
+                    val isDynamic = modeKey == ai.deepcode.android.util.RefreshRateManager.MODE_DYNAMIC
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .depthCard(
+                                shape = RoundedCornerShape(12.dp),
+                                elevation = if (isSelected) 3.dp else 1.dp,
+                                customGradient = if (isSelected) listOf(
+                                    AppPrimary.copy(alpha = 0.25f),
+                                    AppPrimary.copy(alpha = 0.10f)
+                                ) else null,
+                                customBorderColor = if (isSelected) AppPrimary else AppBorder
+                            )
+                            .bouncyClickable(provideHaptic = true) {
+                                onSelectMode(modeKey)
+                            }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = title,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isSelected) AppPrimary else AppWhite
+                                )
+                                if (isDynamic) {
+                                    Spacer(Modifier.width(6.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(AppSuccess.copy(alpha = 0.2f))
+                                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                                    ) {
+                                        Text(
+                                            text = "Adaptive",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = AppSuccess
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = subtitle,
+                                fontSize = 11.sp,
+                                color = AppMuted,
+                                lineHeight = 14.sp
+                            )
+                        }
+                        if (isSelected) {
+                            Spacer(Modifier.width(8.dp))
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Selected",
+                                tint = AppPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            FilledAppButton(
+                onClick = onDismiss,
+                text = "Close",
+                backgroundColor = AppPrimary
+            )
+        },
+        containerColor = AppSurface,
+        shape = RoundedCornerShape(20.dp)
     )
 }

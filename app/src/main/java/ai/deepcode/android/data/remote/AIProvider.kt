@@ -475,11 +475,7 @@ class ZenProvider : AIProvider {
         onError: (Throwable) -> Unit,
         onUsage: ((TurnTokenUsage) -> Unit)?
     ) {
-        val effectiveApiKey = if (apiKey.isNotBlank() && apiKey != "zen-free") {
-            apiKey.trim()
-        } else {
-            ai.deepcode.android.data.local.EncryptedPrefs.DEFAULT_ZEN_KEYS[0]
-        }
+        val effectiveApiKey = apiKey.trim()
 
         // 0. Fast-path failover if Zen AI is currently in cooldown from an upstream restriction
         if (RateLimitTracker.isInCooldown("Zen AI")) {
@@ -633,11 +629,7 @@ class ZenProvider : AIProvider {
         onUsage: ((TurnTokenUsage) -> Unit)?
     ) {
         withContext(Dispatchers.IO) {
-            val effectiveKey = if (token.isNotBlank() && token != "zen-free") {
-                token.trim()
-            } else {
-                ai.deepcode.android.data.local.EncryptedPrefs.DEFAULT_ZEN_KEYS[0]
-            }
+            val effectiveKey = token.trim()
             val url = java.net.URL("$baseUrl/chat/completions")
             val conn = url.openConnection() as java.net.HttpURLConnection
             try {
@@ -702,11 +694,7 @@ class ZenProvider : AIProvider {
         onUsage: ((TurnTokenUsage) -> Unit)?
     ) {
         withContext(Dispatchers.IO) {
-            val effectiveKey = if (token.isNotBlank() && token != "zen-free") {
-                token.trim()
-            } else {
-                ai.deepcode.android.data.local.EncryptedPrefs.DEFAULT_ZEN_KEYS[0]
-            }
+            val effectiveKey = token.trim()
             val reqBuilder = Request.Builder()
                 .url("$baseUrl/chat/completions")
                 .post(payloadJson.toRequestBody("application/json".toMediaType()))
@@ -766,7 +754,7 @@ class ZenProvider : AIProvider {
 
             val sessionId = ZenModels.generateSessionId()
             val requestId = ZenModels.generateRequestId()
-            val effectiveKey = if (token.isNotBlank() && token != "zen-free") token.trim() else ai.deepcode.android.data.local.EncryptedPrefs.DEFAULT_ZEN_KEYS[0]
+            val effectiveKey = token.trim()
             val url = java.net.URL("$baseUrl/chat/completions")
             val conn = url.openConnection() as java.net.HttpURLConnection
             try {
@@ -3354,8 +3342,10 @@ suspend fun fetchModels(apiKey: String, baseUrl: String, providerName: String): 
                 reqBuilder.addHeader(ZenModels.PROJECT_HEADER_NAME, ZenModels.PROJECT_HEADER_VALUE)
                 reqBuilder.addHeader(ZenModels.HEADER_SESSION_ID, sId)
                 reqBuilder.addHeader(ZenModels.HEADER_SESSION_AFFINITY, sId)
-                val effectiveKey = if (apiKey.isNotBlank() && apiKey != "zen-free") apiKey else ai.deepcode.android.data.local.EncryptedPrefs.DEFAULT_ZEN_KEYS[0]
-                reqBuilder.addHeader("Authorization", "Bearer $effectiveKey")
+                val effectiveKey = apiKey.trim()
+                if (effectiveKey.isNotEmpty() && effectiveKey != "zen-free") {
+                    reqBuilder.addHeader("Authorization", "Bearer $effectiveKey")
+                }
             } else if (!isGemini && apiKey.isNotBlank()) {
                 reqBuilder.addHeader("Authorization", "Bearer $apiKey")
             }

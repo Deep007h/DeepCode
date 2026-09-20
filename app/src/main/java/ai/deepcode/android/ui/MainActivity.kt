@@ -146,8 +146,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent?): Boolean {
+        ai.deepcode.android.util.RefreshRateManager.onUserInteraction()
+        return super.dispatchTouchEvent(ev)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        ai.deepcode.android.util.RefreshRateManager.applyMode(
+            ai.deepcode.android.util.RefreshRateManager.currentMode.value
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        try {
+            val securePrefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(this)
+            ai.deepcode.android.util.RefreshRateManager.init(this, securePrefs)
+        } catch (e: Exception) {
+            AppLogger.e("MainActivity", "Failed to initialize RefreshRateManager", e)
+        }
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             val stackTraceStr = android.util.Log.getStackTraceString(throwable)
