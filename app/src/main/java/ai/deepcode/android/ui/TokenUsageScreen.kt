@@ -157,8 +157,10 @@ fun TokenUsageScreen(
 @Composable
 private fun SessionUsageCard(session: TokenUsageEntity) {
     val totalTokens = session.tokensInput + session.tokensOutput + session.tokensReasoning
-    val date = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
-        .format(java.util.Date(session.timeCreated))
+    val date = remember(session.timeCreated) {
+        java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(session.timeCreated))
+    }
 
     // Calculate cost based on model's listed price if session has 0.0
     val sessionCost = if (session.costUsd > 0.0) session.costUsd else {

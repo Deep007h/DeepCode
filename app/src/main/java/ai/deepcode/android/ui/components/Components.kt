@@ -434,13 +434,15 @@ fun BottomNavBar(
     activeTab: Int,
     onTabSelected: (Int) -> Unit
 ) {
-    val tabs = listOf(
-        BottomNavTab("Dashboard", Icons.Default.Home, 0),
-        BottomNavTab("Chat", Icons.AutoMirrored.Filled.Chat, 1),
-        BottomNavTab("Automations", Icons.Default.Schedule, 2),
-        BottomNavTab("Connections", Icons.Default.Link, 3),
-        BottomNavTab("Settings", Icons.Default.Settings, 4)
-    )
+    val tabs = remember {
+        listOf(
+            BottomNavTab("Dashboard", Icons.Default.Home, 0),
+            BottomNavTab("Chat", Icons.AutoMirrored.Filled.Chat, 1),
+            BottomNavTab("Automations", Icons.Default.Schedule, 2),
+            BottomNavTab("Connections", Icons.Default.Link, 3),
+            BottomNavTab("Settings", Icons.Default.Settings, 4)
+        )
+    }
     Surface(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), tonalElevation = 0.dp, shadowElevation = 0.dp, modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(top = 0.5.dp, bottom = 12.dp),
@@ -452,7 +454,7 @@ fun BottomNavBar(
                 val tintColor = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 // Animated (was instant 1.0f<->1.15f jump via graphicsLayer,
                 // which read as a pop on every tab switch).
-                val scale by androidx.compose.animation.core.animateFloatAsState(
+                val scale = androidx.compose.animation.core.animateFloatAsState(
                     targetValue = if (isActive) 1.15f else 1.0f,
                     animationSpec = androidx.compose.animation.core.spring(
                         dampingRatio = 0.75f,
@@ -460,7 +462,7 @@ fun BottomNavBar(
                     ),
                     label = "navScale_${tab.index}"
                 )
-                val pillAlpha by androidx.compose.animation.core.animateFloatAsState(
+                val pillAlpha = androidx.compose.animation.core.animateFloatAsState(
                     targetValue = if (isActive) 1f else 0f,
                     animationSpec = androidx.compose.animation.core.tween(180),
                     label = "navPill_${tab.index}"
@@ -469,7 +471,7 @@ fun BottomNavBar(
                 Column(
                     modifier = Modifier
                         .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
+                            interactionSource = remember(tab.index) { MutableInteractionSource() },
                             indication = null
                         ) { onTabSelected(tab.index) }
                         .padding(vertical = 8.dp)
@@ -482,7 +484,7 @@ fun BottomNavBar(
                         Box(
                             modifier = Modifier
                                 .size(width = 46.dp, height = 28.dp)
-                                .graphicsLayer { alpha = pillAlpha }
+                                .graphicsLayer { alpha = pillAlpha.value }
                                 .depthPill(
                                     shape = RoundedCornerShape(14.dp),
                                     elevation = 2.dp,
@@ -502,8 +504,8 @@ fun BottomNavBar(
                             modifier = Modifier
                                 .size(20.dp)
                                 .graphicsLayer {
-                                    scaleX = scale
-                                    scaleY = scale
+                                    scaleX = scale.value
+                                    scaleY = scale.value
                                 }
                         )
                     }
@@ -1488,10 +1490,16 @@ fun MarkdownText(
                         trimmedLine.startsWith("- ") || trimmedLine.startsWith("* ") || trimmedLine.startsWith("+ ") || trimmedLine == "-" || trimmedLine == "*" || trimmedLine == "+" -> {
                             Row(
                                 modifier = Modifier.padding(start = indentDp).padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.Top
                             ) {
-                                Text("•  ", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = AppWhite)
-                                Text(styledText, fontSize = 15.sp, lineHeight = 23.sp, color = AppWhite)
+                                Text("•  ", fontSize = 15.sp, lineHeight = 23.sp, fontWeight = FontWeight.Bold, color = AppWhite)
+                                Text(
+                                    styledText,
+                                    fontSize = 15.sp,
+                                    lineHeight = 23.sp,
+                                    color = AppWhite,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
                                 if (isStreaming && isLastLine) {
                                     Spacer(Modifier.width(4.dp))
                                     StreamingActiveCursor(color = AppPrimary)
@@ -1501,10 +1509,16 @@ fun MarkdownText(
                         isNumberedList -> {
                             Row(
                                 modifier = Modifier.padding(start = indentDp).padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.Top
                             ) {
-                                Text(trimmedLine.substring(0, dotIdx + 2), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = AppWhite)
-                                Text(styledText, fontSize = 15.sp, lineHeight = 23.sp, color = AppWhite)
+                                Text(trimmedLine.substring(0, dotIdx + 2), fontSize = 15.sp, lineHeight = 23.sp, fontWeight = FontWeight.Bold, color = AppWhite)
+                                Text(
+                                    styledText,
+                                    fontSize = 15.sp,
+                                    lineHeight = 23.sp,
+                                    color = AppWhite,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
                                 if (isStreaming && isLastLine) {
                                     Spacer(Modifier.width(4.dp))
                                     StreamingActiveCursor(color = AppPrimary)
@@ -1905,7 +1919,7 @@ fun WelcomeSuggestionCard(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by androidx.compose.animation.core.animateFloatAsState(
+    val scale = androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (isPressed) 0.95f else 1f,
         label = "suggestionScale"
     )
@@ -1913,7 +1927,7 @@ fun WelcomeSuggestionCard(
     Card(
         modifier = modifier
             .width(160.dp)
-            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),

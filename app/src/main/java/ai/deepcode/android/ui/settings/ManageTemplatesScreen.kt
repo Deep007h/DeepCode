@@ -79,6 +79,7 @@ fun ManageTemplatesScreen(
             .background(MaterialTheme.colorScheme.background)
     ) {
         TopAppBar(
+            windowInsets = WindowInsets(0.dp),
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))

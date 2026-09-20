@@ -172,7 +172,7 @@ fun BreathingSparkleIcon(
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "SparkleBreath")
 
-    val scale by infiniteTransition.animateFloat(
+    val scale = infiniteTransition.animateFloat(
         initialValue = 0.90f,
         targetValue = 1.12f,
         animationSpec = infiniteRepeatable(
@@ -182,7 +182,7 @@ fun BreathingSparkleIcon(
         label = "SparkleScale"
     )
 
-    val rotation by infiniteTransition.animateFloat(
+    val rotation = infiniteTransition.animateFloat(
         initialValue = -7f,
         targetValue = 7f,
         animationSpec = infiniteRepeatable(
@@ -199,9 +199,9 @@ fun BreathingSparkleIcon(
         modifier = modifier
             .size(18.dp)
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                rotationZ = rotation
+                scaleX = scale.value
+                scaleY = scale.value
+                rotationZ = rotation.value
             }
     )
 }
@@ -216,7 +216,7 @@ fun TravelingWaveLoader(
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "WavePhase")
-    val phase by infiniteTransition.animateFloat(
+    val phase = infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = (2 * Math.PI).toFloat(),
         animationSpec = infiniteRepeatable(
@@ -232,16 +232,14 @@ fun TravelingWaveLoader(
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         for (i in 0..2) {
-            val waveOffset = sin(phase - (i * Math.PI / 2.5)).toFloat()
-            val normalizedAlpha = 0.40f + (0.60f * ((waveOffset + 1f) / 2f))
-            val translationY = -3.5f * ((waveOffset + 1f) / 2f)
-
             Box(
                 modifier = Modifier
                     .size(5.5.dp)
                     .graphicsLayer {
-                        this.translationY = translationY
-                        this.alpha = normalizedAlpha
+                        val currentPhase = phase.value
+                        val waveOffset = sin(currentPhase - (i * Math.PI / 2.5)).toFloat()
+                        this.translationY = -3.5f * ((waveOffset + 1f) / 2f)
+                        this.alpha = 0.40f + (0.60f * ((waveOffset + 1f) / 2f))
                     }
                     .background(dotColor, CircleShape)
             )
@@ -260,7 +258,7 @@ fun StreamingActiveCursor(
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "StreamingCursorPulse")
 
-    val auraScale by infiniteTransition.animateFloat(
+    val auraScale = infiniteTransition.animateFloat(
         initialValue = 0.85f,
         targetValue = 1.15f,
         animationSpec = infiniteRepeatable(
@@ -270,7 +268,7 @@ fun StreamingActiveCursor(
         label = "AuraScale"
     )
 
-    val cursorAlpha by infiniteTransition.animateFloat(
+    val cursorAlpha = infiniteTransition.animateFloat(
         initialValue = 0.70f,
         targetValue = 1.0f,
         animationSpec = infiniteRepeatable(
@@ -291,9 +289,11 @@ fun StreamingActiveCursor(
             modifier = Modifier
                 .size(width = 6.dp, height = 16.dp)
                 .graphicsLayer {
-                    scaleX = auraScale * 1.6f
-                    scaleY = auraScale * 1.3f
-                    alpha = cursorAlpha * 0.35f
+                    val s = auraScale.value
+                    val a = cursorAlpha.value
+                    scaleX = s * 1.6f
+                    scaleY = s * 1.3f
+                    alpha = a * 0.35f
                 }
                 .background(color.copy(alpha = 0.5f), RoundedCornerShape(3.dp))
         )
@@ -303,7 +303,7 @@ fun StreamingActiveCursor(
                 .width(2.2.dp)
                 .height(16.dp)
                 .graphicsLayer {
-                    alpha = cursorAlpha
+                    alpha = cursorAlpha.value
                 }
                 .background(color, RoundedCornerShape(1.dp))
         )
@@ -323,17 +323,15 @@ fun ReasoningAccordion(
     isLiveStreaming: Boolean = false,
     accentColor: Color = Color(0xFFFF6D00)
 ) {
-    val chevronRotation by animateFloatAsState(
+    val chevronRotation = animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
         animationSpec = MotionTokens.SnappySpring,
         label = "AccordionChevron"
     )
 
-    // Only run a pulse loop while actually live-streaming. Previously this
-    // rememberInfiniteTransition ran unconditionally (even with identical
-    // 1.0f->1.0f bounds), keeping a choreographer callback alive for every
-    // collapsed thought card in history.
-    val railAlpha: Float = if (isLiveStreaming) {
+    // Only run a pulse loop while actually live-streaming. Reading is deferred
+    // to draw phase so composition does not thrash at 60/120fps.
+    val railAlphaState = if (isLiveStreaming) {
         rememberInfiniteTransition(label = "RailPulse").animateFloat(
             initialValue = 0.4f,
             targetValue = 1.0f,
@@ -342,9 +340,9 @@ fun ReasoningAccordion(
                 repeatMode = RepeatMode.Reverse
             ),
             label = "LiveRailAlpha"
-        ).value
+        )
     } else {
-        1f
+        null
     }
 
     val isDark = isDarkThemeActive
@@ -411,7 +409,7 @@ fun ReasoningAccordion(
                     Box(
                         modifier = Modifier
                             .size(6.dp)
-                            .graphicsLayer { alpha = railAlpha }
+                            .graphicsLayer { alpha = railAlphaState?.value ?: 1f }
                             .background(accentColor, CircleShape)
                     )
                 }
@@ -423,7 +421,7 @@ fun ReasoningAccordion(
                     modifier = Modifier
                         .size(18.dp)
                         .graphicsLayer {
-                            rotationZ = chevronRotation
+                            rotationZ = chevronRotation.value
                         }
                 )
             }
@@ -436,7 +434,7 @@ fun ReasoningAccordion(
                         modifier = Modifier
                             .width(2.dp)
                             .height(18.dp)
-                            .graphicsLayer { alpha = railAlpha }
+                            .graphicsLayer { alpha = railAlphaState?.value ?: 1f }
                             .background(accentColor.copy(alpha = 0.6f), RoundedCornerShape(1.dp))
                     )
                     Spacer(Modifier.width(10.dp))

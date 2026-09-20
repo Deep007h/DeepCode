@@ -1,8 +1,11 @@
 package ai.deepcode.android.ui.settings
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.widget.Toast
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -144,12 +147,14 @@ fun ThemesAndWallpapersScreen(
                         if (customWallpaperPath.isNotEmpty()) File(customWallpaperPath) else null
                     }
                     if (isDarkThemeActive && selectedWallpaper == "custom" && customFile != null && customFile.exists()) {
-                        val bm = remember(customFile.absolutePath, refreshKey) {
-                            try { BitmapFactory.decodeFile(customFile.absolutePath) } catch (_: Exception) { null }
+                        val bm by produceState<Bitmap?>(initialValue = null, key1 = customFile.absolutePath, key2 = refreshKey) {
+                            value = withContext(Dispatchers.IO) {
+                                try { BitmapFactory.decodeFile(customFile.absolutePath) } catch (_: Exception) { null }
+                            }
                         }
                         if (bm != null) {
                             Image(
-                                bitmap = bm.asImageBitmap(),
+                                bitmap = bm!!.asImageBitmap(),
                                 contentDescription = "Wallpaper",
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop
@@ -396,10 +401,21 @@ fun ThemesAndWallpapersScreen(
                                             .background(AppCard),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        val f = File(customWallpaperPath)
-                                        val bm = if (f.exists()) try { BitmapFactory.decodeFile(f.absolutePath) } catch (_: Exception) { null } else null
+                                        val f = remember(customWallpaperPath, refreshKey) {
+                                            if (customWallpaperPath.isNotEmpty()) File(customWallpaperPath) else null
+                                        }
+                                        val bm by produceState<Bitmap?>(initialValue = null, key1 = customWallpaperPath, key2 = refreshKey) {
+                                            if (f != null && f.exists()) {
+                                                value = withContext(Dispatchers.IO) {
+                                                    try {
+                                                        val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                                                        BitmapFactory.decodeFile(f.absolutePath, opts)
+                                                    } catch (_: Exception) { null }
+                                                }
+                                            }
+                                        }
                                         if (bm != null) {
-                                            Image(bitmap = bm.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                            Image(bitmap = bm!!.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                                         } else {
                                             Icon(Icons.Default.Image, null, tint = AppPrimary, modifier = Modifier.size(20.dp))
                                         }

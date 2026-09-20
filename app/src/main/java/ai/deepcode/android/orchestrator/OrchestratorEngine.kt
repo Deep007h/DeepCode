@@ -249,17 +249,24 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
             val body = JsonObject().apply {
                 addProperty("model", ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE)
                 add("messages", gson.toJsonTree(messages))
+                addProperty("stream", true)
                 addProperty("temperature", 0.3)
                 addProperty("max_tokens", 512)
             }
+            ai.deepcode.android.data.remote.ZenModels.applyDecoyTools(body, hasCallerTools = false)
+
             val sessionId = ai.deepcode.android.data.remote.ZenModels.generateSessionId()
+            val requestId = ai.deepcode.android.data.remote.ZenModels.generateRequestId()
             val request = okhttp3.Request.Builder()
                 .url("${ai.deepcode.android.data.remote.ZenModels.BASE_URL}/chat/completions")
                 .header("Content-Type", "application/json")
+                .header("Accept", "text/event-stream")
                 .header("Authorization", "Bearer $zenApiKey")
                 .header("User-Agent", ai.deepcode.android.data.remote.ZenModels.USER_AGENT)
                 .header(ai.deepcode.android.data.remote.ZenModels.CLIENT_HEADER_NAME, ai.deepcode.android.data.remote.ZenModels.CLIENT_HEADER_VALUE)
+                .header(ai.deepcode.android.data.remote.ZenModels.PROJECT_HEADER_NAME, ai.deepcode.android.data.remote.ZenModels.PROJECT_HEADER_VALUE)
                 .header(ai.deepcode.android.data.remote.ZenModels.HEADER_SESSION_ID, sessionId)
+                .header(ai.deepcode.android.data.remote.ZenModels.HEADER_REQUEST_ID, requestId)
                 .header(ai.deepcode.android.data.remote.ZenModels.HEADER_SESSION_AFFINITY, sessionId)
                 .post(body.toString().toRequestBody("application/json".toMediaType()))
                 .build()
@@ -271,10 +278,27 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
             val respBody = response.body?.string()
             response.close()
             if (response.isSuccessful && respBody != null) {
-                val json = JsonParser.parseString(respBody).asJsonObject
-                val content = json.getAsJsonArray("choices")?.get(0)?.asJsonObject
-                    ?.getAsJsonObject("message")?.get("content")?.asString
-                content?.trim()
+                val fullText = StringBuilder()
+                for (line in respBody.lines()) {
+                    val trimmed = line.trim()
+                    if (trimmed.startsWith("data: ") && !trimmed.endsWith("[DONE]")) {
+                        try {
+                            val json = JsonParser.parseString(trimmed.substring(6)).asJsonObject
+                            val delta = json.getAsJsonArray("choices")?.get(0)?.asJsonObject
+                                ?.getAsJsonObject("delta")?.get("content")?.asString
+                            if (!delta.isNullOrEmpty()) fullText.append(delta)
+                        } catch (_: Exception) {}
+                    }
+                }
+                if (fullText.isNotEmpty()) {
+                    fullText.toString().trim()
+                } else {
+                    try {
+                        val json = JsonParser.parseString(respBody).asJsonObject
+                        json.getAsJsonArray("choices")?.get(0)?.asJsonObject
+                            ?.getAsJsonObject("message")?.get("content")?.asString?.trim()
+                    } catch (_: Exception) { null }
+                }
             } else null
         } catch (e: Exception) {
             AppLogger.e("Orchestrator", "Error analysis failed", e)

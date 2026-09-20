@@ -94,6 +94,9 @@ private val RE_THOUGHT_FINAL_ANSWER_MARKER = Regex(
 private val RE_INNER_THOUGHT_PREFIX = Regex(
     """(?is)\A(?:\s*(?:thought|thinking|reasoning|internal thoughts?|plan):\s*[^\n]*\n*|\s*(?:that's|that is|this is)\s+(?:a|an)\s+[^.!?\n]*[.!?\n]*|\s*(?:the\s+)?user\s+(?:is|wants|asked|said|just)\b[^.!?\n]*[.!?\n]*|\s*i\s+(?:should|will|need\s+to|must|'ll)\s+(?:respond|reply|answer|greet|help|ask|follow)\b[^.!?\n]*[.!?\n]*|\s*(?:ensure|keep)\s+(?:no\s+thinking|no\s+internal|final\s+response)\b[^.!?\n]*[.!?\n]*|\s*(?:just\s+)?direct\s+answer[.!?\n]*|\s*no\s+tools\s+needed\b[^.!?\n]*[.!?\n]*)+"""
 )
+private val RE_TOOL_CALLS = Regex("""<tool_calls?>.*?</tool_calls?>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+private val RE_INVOKE = Regex("""<invoke\s+name=[^>]*>.*?</invoke>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+private val RE_QUOTED_TEXT = Regex(""""([^"\n]{3,120})"""")
 
 fun stripThinkingProcess(raw: String, isStreaming: Boolean = false): String {
     if (raw.isBlank()) return ""
@@ -109,8 +112,8 @@ fun stripThinkingProcess(raw: String, isStreaming: Boolean = false): String {
     if (isStreaming) {
         text = text.replace(RE_PARTIAL_THINK_OPEN, "")
     } else {
-        text = text.replace(Regex("""<tool_calls?>.*?</tool_calls?>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
-            .replace(Regex("""<invoke\s+name=[^>]*>.*?</invoke>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+        text = text.replace(RE_TOOL_CALLS, "")
+            .replace(RE_INVOKE, "")
     }
 
     // 3. Untagged thinking process (e.g. "Here's a thinking process: ...")
@@ -147,7 +150,7 @@ fun stripThinkingProcess(raw: String, isStreaming: Boolean = false): String {
             } else if (isStreaming) {
                 text = ""
             } else {
-                val quoted = Regex(""""([^"\n]{3,120})"""").findAll(text).lastOrNull()?.groups?.get(1)?.value?.trim()
+                val quoted = RE_QUOTED_TEXT.findAll(text).lastOrNull()?.groups?.get(1)?.value?.trim()
                 text = if (!quoted.isNullOrEmpty() && !quoted.contains("analyze", ignoreCase = true)) quoted else ""
             }
         }
@@ -207,7 +210,7 @@ fun PlaceholderFeatureCard(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
+    val scale = animateFloatAsState(
         targetValue = if (isPressed) 0.96f else 1f,
         label = "cardScale"
     )
@@ -216,7 +219,7 @@ fun PlaceholderFeatureCard(
         modifier = modifier
             .width(168.dp)
             .height(160.dp)
-            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
             .depthCard(
                 shape = RoundedCornerShape(22.dp),
                 elevation = 3.5.dp,
@@ -3106,7 +3109,7 @@ fun ModelSelectionOverlay(
         return false
     }
 
-    val configuredProviders = remember {
+    val configuredProviders = remember(activeModel.provider, securePrefs) {
         AIProviderFactory.providers.filter { isProviderConfigured(it) }
     }
 

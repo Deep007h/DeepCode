@@ -117,11 +117,13 @@ object ApiKeyRotator {
 
         // Missing session headers, free tier gateway restrictions, or payment method errors are NOT rotatable rate limits
         if (textToInspect.contains("missingsessionid") ||
+            textToInspect.contains("freetiererror") ||
             textToInspect.contains("can only be used from within opencode") ||
             textToInspect.contains("can only be used in opencode") ||
-            textToInspect.contains("freetiererror") ||
             textToInspect.contains("creditserror") ||
-            textToInspect.contains("no payment method")
+            textToInspect.contains("no payment method") ||
+            textToInspect.contains("insufficient account funds") ||
+            textToInspect.contains("model access is disabled")
         ) {
             return false
         }

@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ai.deepcode.android.ui.components.AppCard
@@ -685,7 +686,10 @@ fun DashboardScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     Box(
                                         modifier = Modifier
                                             .size(38.dp)
@@ -715,21 +719,26 @@ fun DashboardScreen(
                                         }
                                     }
                                     Spacer(modifier = Modifier.width(12.dp))
-                                    Column {
+                                    Column(modifier = Modifier.weight(1f, fill = false)) {
                                         Text(
                                             text = session.title,
                                             color = MaterialTheme.colorScheme.onSurface,
                                             fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = (if (isGptSession) "ChatGPT • " else "Local • ") + formatTimeAgo(now, session.createdAt),
                                             color = if (isGptSession) Color(0xFF10A37F).copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontSize = 10.sp
+                                            fontSize = 10.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Icon(
                                     imageVector = Icons.Default.ChevronRight,
                                     contentDescription = null,

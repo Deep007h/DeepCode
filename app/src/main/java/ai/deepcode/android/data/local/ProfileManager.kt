@@ -21,6 +21,10 @@ data class Profile(
 )
 
 class ProfileManager(private val context: Context) {
+    companion object {
+        private val avatarCache = object : android.util.LruCache<String, Bitmap>(20) {}
+    }
+
     private val prefs = EncryptedPrefs.getInstance(context)
     private val gson = com.google.gson.Gson()
     private val profilesDir = File(context.filesDir, "profiles").also { it.mkdirs() }
@@ -61,6 +65,7 @@ class ProfileManager(private val context: Context) {
         saveProfiles(profiles)
         File(profilesDir, "${id}.jpg").delete()
         File(profilesDir, "${id}.png").delete()
+        avatarCache.remove(id)
         if (getActiveProfileId() == id) {
             val next = profiles.firstOrNull()
             if (next != null) setActiveProfile(next.id) else setActiveProfile("")
@@ -85,17 +90,23 @@ class ProfileManager(private val context: Context) {
         val cropped = centerCropToSquare(bitmap)
         val file = File(profilesDir, "${profileId}.png")
         file.outputStream().use { cropped.compress(Bitmap.CompressFormat.PNG, 90, it) }
+        avatarCache.put(profileId, cropped)
         return file.absolutePath
     }
 
     fun getAvatarBitmap(profileId: String): Bitmap? {
+        avatarCache.get(profileId)?.let { return it }
         val file = File(profilesDir, "${profileId}.png")
-        if (!file.exists()) {
+        val bmp = if (file.exists()) {
+            BitmapFactory.decodeFile(file.absolutePath)
+        } else {
             val jpgFile = File(profilesDir, "${profileId}.jpg")
-            if (!jpgFile.exists()) return null
-            return BitmapFactory.decodeFile(jpgFile.absolutePath)
+            if (jpgFile.exists()) BitmapFactory.decodeFile(jpgFile.absolutePath) else null
         }
-        return BitmapFactory.decodeFile(file.absolutePath)
+        if (bmp != null) {
+            avatarCache.put(profileId, bmp)
+        }
+        return bmp
     }
 
     fun ensureFirstProfile(): Profile {

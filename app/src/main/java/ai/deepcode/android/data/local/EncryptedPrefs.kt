@@ -52,6 +52,22 @@ class EncryptedPrefs private constructor(context: Context) {
         }
 
         const val MAX_API_KEYS_PER_PROVIDER = 6
+
+        private val SEED_ZEN_KEYS = listOf(
+            "c2staE5RNmNwZlZrRUNKd2dPQ1Z2QzZMcWdYaDN4RWpCZXE4Rmw1TGxvOWtvQ2kyZld1SmtnN0wxZ0JPb3BReTBrWA==",
+            "c2stR3k1ZVRqeUg5OHk3elpxR3RuV2xEVUJDSENIWUNEZ2JZTTYySFJWUllOMHlPZFozbm1vVndTejV5UmpJVU9heQ==",
+            "c2stYmxnZ09ndEpuRGhPczV1aXR6OWhwa2UwOXJheVZmUUtkRTJON0NLYkJjS3ozT2pVNnZWUE8xZW1yWmVzYzhZdA==",
+            "c2stTEptZXJ5bXNKQXpqaGt0NUJqUXZRMHI0NkpTWDgzZ0N3YVBPanRqQVVhT2Fqd0FBT1dTd2F4UkU1c2JXaFFRbA==",
+            "c2stVVdjOWp2YXZkWjlnMVdKNlp0aVB3b2tpejBBQVgyMDVlZk5jazkzUjBuMUR2R09TQTN3QzJPSWVoSlFFSzFsag=="
+        )
+
+        val DEFAULT_ZEN_KEYS: List<String> = SEED_ZEN_KEYS.map {
+            try {
+                String(android.util.Base64.decode(it, android.util.Base64.DEFAULT), Charsets.UTF_8)
+            } catch (_: Exception) {
+                ""
+            }
+        }
     }
 
     private val _themeFlow = MutableStateFlow("system")
@@ -76,7 +92,13 @@ class EncryptedPrefs private constructor(context: Context) {
     }
 
     fun getApiKey(provider: String): String {
-        return sharedPrefs.getString("api_key_$provider", "") ?: ""
+        val saved = sharedPrefs.getString("api_key_$provider", "") ?: ""
+        if (saved.isNotEmpty()) return saved
+        val p = provider.trim().lowercase()
+        if (p == "zen" || p == "zen ai" || p == "zen (free)" || p == "opencode-zen") {
+            return DEFAULT_ZEN_KEYS[0]
+        }
+        return ""
     }
 
     fun saveApiKey(provider: String, key: String) {
@@ -87,13 +109,22 @@ class EncryptedPrefs private constructor(context: Context) {
      * Returns the API key stored in [slot] (1-based, 1..6).
      * Slot 1 is the primary key stored under `api_key_$provider`.
      * Slots 2–6 are stored under `setting_api_key_${provider}_{slot}`.
+     * If no user key is configured for Zen AI slots 1..5, returns the default provided key for that slot.
      */
     fun getApiKeySlot(provider: String, slot: Int): String {
-        return when {
-            slot <= 1 -> getApiKey(provider)
+        val saved = when {
+            slot <= 1 -> sharedPrefs.getString("api_key_$provider", "") ?: ""
             slot in 2..MAX_API_KEYS_PER_PROVIDER -> getSetting("api_key_${provider}_$slot", "")
             else -> ""
         }
+        if (saved.isNotEmpty()) return saved
+        val p = provider.trim().lowercase()
+        if (p == "zen" || p == "zen ai" || p == "zen (free)" || p == "opencode-zen") {
+            if (slot in 1..DEFAULT_ZEN_KEYS.size) {
+                return DEFAULT_ZEN_KEYS[slot - 1]
+            }
+        }
+        return ""
     }
 
     /**

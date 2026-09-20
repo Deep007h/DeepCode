@@ -47,6 +47,7 @@ fun VpnSettingsScreen(
             .background(MaterialTheme.colorScheme.background)
     ) {
         TopAppBar(
+            windowInsets = WindowInsets(0.dp),
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.VpnLock, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))

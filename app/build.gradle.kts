@@ -18,8 +18,8 @@ android {
         applicationId = "ai.deepcode.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.3"
+        versionCode = 9
+        versionName = "1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -124,7 +124,7 @@ dependencies {
 tasks.register<Copy>("copyApkToDownloads") {
     from(layout.buildDirectory.dir("outputs/apk/debug"))
     include("app-debug.apk")
-    into("/home/deep/Downloads")
+    into("${System.getProperty("user.home")}/Downloads")
 }
 
 afterEvaluate {

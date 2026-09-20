@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -46,7 +47,7 @@ fun Modifier.bouncyClickable(
     val isPressed by interactionSource.collectIsPressedAsState()
     val haptic = LocalHapticFeedback.current
 
-    val scale by animateFloatAsState(
+    val scale = animateFloatAsState(
         targetValue = if (isPressed && enabled) pressedScale else 1.0f,
         animationSpec = MotionTokens.SnappySpring,
         label = "BouncyScale"
@@ -62,8 +63,8 @@ fun Modifier.bouncyClickable(
 
     this
         .graphicsLayer {
-            scaleX = scale
-            scaleY = scale
+            scaleX = scale.value
+            scaleY = scale.value
         }
         .clickable(
             interactionSource = interactionSource,
@@ -107,7 +108,7 @@ fun Modifier.shakeOnError(trigger: Boolean): Modifier = composed {
 
 /**
  * High-performance GPU-accelerated gradient shimmer placeholder (transitions.dev P14/P15).
- * Only renders when [visible] is true, drawing a traveling light sweep across the surface.
+ * Only renders when [visible] is true, drawing a traveling light sweep across the surface in the draw phase.
  */
 fun Modifier.shimmerPlaceholder(
     visible: Boolean,
@@ -120,7 +121,7 @@ fun Modifier.shimmerPlaceholder(
     val defaultHighlight = if (highlightColor != Color.Unspecified) highlightColor else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
 
     val transition = rememberInfiniteTransition(label = "ShimmerTransition")
-    val translateAnim by transition.animateFloat(
+    val translateAnim = transition.animateFloat(
         initialValue = -400f,
         targetValue = 1200f,
         animationSpec = infiniteRepeatable(
@@ -130,13 +131,15 @@ fun Modifier.shimmerPlaceholder(
         label = "ShimmerTranslate"
     )
 
-    val brush = Brush.linearGradient(
-        colors = listOf(defaultBase, defaultHighlight, defaultBase),
-        start = Offset(translateAnim, 0f),
-        end = Offset(translateAnim + 400f, 0f)
-    )
-
-    this.background(brush)
+    this.drawBehind {
+        val x = translateAnim.value
+        val brush = Brush.linearGradient(
+            colors = listOf(defaultBase, defaultHighlight, defaultBase),
+            start = Offset(x, 0f),
+            end = Offset(x + 400f, 0f)
+        )
+        drawRect(brush)
+    }
 }
 
 /**
@@ -146,20 +149,20 @@ fun Modifier.popIn(
     visible: Boolean,
     initialScale: Float = 0.3f
 ): Modifier = composed {
-    val scale by animateFloatAsState(
+    val scale = animateFloatAsState(
         targetValue = if (visible) 1.0f else initialScale,
         animationSpec = MotionTokens.BouncySpring,
         label = "PopInScale"
     )
-    val alpha by animateFloatAsState(
+    val alpha = animateFloatAsState(
         targetValue = if (visible) 1.0f else 0.0f,
         animationSpec = tween(MotionTokens.DurationFast, easing = MotionTokens.EaseOutCubic),
         label = "PopInAlpha"
     )
 
     this.graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-        this.alpha = alpha
+        scaleX = scale.value
+        scaleY = scale.value
+        this.alpha = alpha.value
     }
 }

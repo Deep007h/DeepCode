@@ -1,6 +1,9 @@
 package ai.deepcode.android.ui.settings
 
+import android.graphics.Bitmap
 import android.widget.Toast
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -132,12 +135,16 @@ fun SettingsScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         if (p != null) {
-                            val bm = remember(p.id, p.avatarPath) {
-                                p.avatarPath?.let { try { android.graphics.BitmapFactory.decodeFile(it) } catch (_: Exception) { null } }
+                            val bm by produceState<Bitmap?>(initialValue = profileManager.getAvatarBitmap(p.id), key1 = p.id, key2 = p.avatarPath, key3 = profileRefreshKey) {
+                                if (value == null && p.avatarPath != null) {
+                                    value = withContext(Dispatchers.IO) {
+                                        try { android.graphics.BitmapFactory.decodeFile(p.avatarPath) } catch (_: Exception) { null }
+                                    }
+                                }
                             }
                             if (bm != null) {
                                 Image(
-                                    bitmap = bm.asImageBitmap(),
+                                    bitmap = bm!!.asImageBitmap(),
                                     contentDescription = null,
                                     modifier = Modifier.fillMaxSize().clip(CircleShape)
                                 )
