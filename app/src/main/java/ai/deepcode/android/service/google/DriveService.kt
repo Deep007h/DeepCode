@@ -54,23 +54,25 @@ class DriveService(private val context: Context) {
                     .header("Authorization", "Bearer $token")
                     .build()
                 val response = client.newCall(request).execute()
-                val body = response.body?.string() ?: return@withContext Result.failure(Exception("Empty response"))
-                if (!response.isSuccessful) return@withContext Result.failure(Exception("Drive API error: HTTP ${response.code} - $body"))
-                val json = gson.fromJson(body, JsonObject::class.java)
-                val files = json.getAsJsonArray("files") ?: return@withContext Result.success(emptyList())
-                val results = files.mapNotNull { item ->
-                    val obj = item.asJsonObject
-                    val mimeType = obj.get("mimeType")?.asString ?: ""
-                    DriveFile(
-                        id = obj.get("id")?.asString ?: "",
-                        name = obj.get("name")?.asString ?: "",
-                        mimeType = mimeType,
-                        size = obj.get("size")?.asLong ?: 0L,
-                        modifiedTime = obj.get("modifiedTime")?.asString ?: "",
-                        isFolder = mimeType == "application/vnd.google-apps.folder"
-                    )
+                response.use { resp ->
+                    val body = resp.body?.string() ?: return@withContext Result.failure(Exception("Empty response"))
+                    if (!resp.isSuccessful) return@withContext Result.failure(Exception("Drive API error: HTTP ${resp.code} - $body"))
+                    val json = gson.fromJson(body, JsonObject::class.java)
+                    val files = json.getAsJsonArray("files") ?: return@withContext Result.success(emptyList())
+                    val results = files.mapNotNull { item ->
+                        val obj = item.asJsonObject
+                        val mimeType = obj.get("mimeType")?.asString ?: ""
+                        DriveFile(
+                            id = obj.get("id")?.asString ?: "",
+                            name = obj.get("name")?.asString ?: "",
+                            mimeType = mimeType,
+                            size = obj.get("size")?.asLong ?: 0L,
+                            modifiedTime = obj.get("modifiedTime")?.asString ?: "",
+                            isFolder = mimeType == "application/vnd.google-apps.folder"
+                        )
+                    }
+                    Result.success(results)
                 }
-                Result.success(results)
             } catch (e: Exception) {
                 Result.failure(e)
             }
@@ -90,19 +92,54 @@ class DriveService(private val context: Context) {
                     .url(exportUrl)
                     .header("Authorization", "Bearer $token")
                     .build()
-                val exportResponse = client.newCall(exportRequest).execute()
-                if (exportResponse.isSuccessful) {
-                    return@withContext Result.success(exportResponse.body?.string() ?: "")
+                val exportSuccess = client.newCall(exportRequest).execute().use { exportResponse ->
+                    if (exportResponse.isSuccessful) {
+                        exportResponse.body?.string()
+                    } else null
+                }
+                if (exportSuccess != null) {
+                    return@withContext Result.success(exportSuccess)
                 }
 
                 val downloadRequest = Request.Builder()
                     .url(downloadUrl)
                     .header("Authorization", "Bearer $token")
                     .build()
-                val downloadResponse = client.newCall(downloadRequest).execute()
-                val body = downloadResponse.body?.string() ?: return@withContext Result.failure(Exception("Empty response"))
-                if (!downloadResponse.isSuccessful) return@withContext Result.failure(Exception("Drive download error: HTTP ${downloadResponse.code}"))
-                Result.success(body)
+                client.newCall(downloadRequest).execute().use { downloadResponse ->
+                    val body = downloadResponse.body?.string() ?: return@withContext Result.failure(Exception("Empty response"))
+                    if (!downloadResponse.isSuccessful) return@withContext Result.failure(Exception("Drive download error: HTTP ${downloadResponse.code}"))
+                    Result.success(body)
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun downloadFileTo(fileId: String, destinationFile: java.io.File): Result<Long> {
+        val tokenResult = authService.getValidAccessToken("google_drive")
+        if (tokenResult.isFailure) return Result.failure(tokenResult.exceptionOrNull()!!)
+        val token = tokenResult.getOrThrow()
+        return withContext(Dispatchers.IO) {
+            try {
+                val downloadUrl = "https://www.googleapis.com/drive/v3/files/$fileId?alt=media"
+                val request = Request.Builder()
+                    .url(downloadUrl)
+                    .header("Authorization", "Bearer $token")
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        return@withContext Result.failure(Exception("Drive download error: HTTP ${response.code}"))
+                    }
+                    val body = response.body ?: return@withContext Result.failure(Exception("Empty body"))
+                    destinationFile.parentFile?.mkdirs()
+                    val bytesCopied = body.byteStream().use { input ->
+                        java.io.FileOutputStream(destinationFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    Result.success(bytesCopied)
+                }
             } catch (e: Exception) {
                 Result.failure(e)
             }
@@ -128,12 +165,13 @@ class DriveService(private val context: Context) {
                     .header("Content-Type", "multipart/related; boundary=$multipartBoundary")
                     .post(body)
                     .build()
-                val response = client.newCall(request).execute()
-                val respBody = response.body?.string() ?: return@withContext Result.failure(Exception("Empty response"))
-                if (!response.isSuccessful) return@withContext Result.failure(Exception("Drive upload error: HTTP ${response.code} - $respBody"))
-                val json = gson.fromJson(respBody, JsonObject::class.java)
-                val fileId = json.get("id")?.asString ?: return@withContext Result.failure(Exception("No file ID in response"))
-                Result.success(fileId)
+                client.newCall(request).execute().use { response ->
+                    val respBody = response.body?.string() ?: return@withContext Result.failure(Exception("Empty response"))
+                    if (!response.isSuccessful) return@withContext Result.failure(Exception("Drive upload error: HTTP ${response.code} - $respBody"))
+                    val json = gson.fromJson(respBody, JsonObject::class.java)
+                    val fileId = json.get("id")?.asString ?: return@withContext Result.failure(Exception("No file ID in response"))
+                    Result.success(fileId)
+                }
             } catch (e: Exception) {
                 Result.failure(e)
             }

@@ -165,7 +165,64 @@ class ColorPalettePlugin : DeepCodePlugin {
         return a[0] * 0.2126 + a[1] * 0.7152 + a[2] * 0.0722
     }
 
+    private fun parseToRgb(color: String): IntArray {
+        val trimmed = color.trim()
+        if (trimmed.startsWith("rgb", ignoreCase = true)) {
+            val numbers = Regex("\\d+").findAll(trimmed).map { it.value.toInt() }.toList()
+            if (numbers.size >= 3) {
+                return intArrayOf(numbers[0].coerceIn(0, 255), numbers[1].coerceIn(0, 255), numbers[2].coerceIn(0, 255))
+            }
+        } else if (trimmed.startsWith("hsl", ignoreCase = true)) {
+            val numbers = Regex("[0-9.]+").findAll(trimmed).map { it.value.toDouble() }.toList()
+            if (numbers.size >= 3) {
+                val h = numbers[0]
+                val s = (numbers[1] / (if (trimmed.contains("%")) 100.0 else 1.0)).coerceIn(0.0, 1.0)
+                val l = (numbers[2] / (if (trimmed.contains("%")) 100.0 else 1.0)).coerceIn(0.0, 1.0)
+                val hex = hslToHex(doubleArrayOf(h, s, l))
+                return hexToRgb(hex)
+            }
+        }
+        return hexToRgb(trimmed)
+    }
+
+    private fun rgbToHsv(r: Int, g: Int, b: Int): DoubleArray {
+        val rf = r / 255.0
+        val gf = g / 255.0
+        val bf = b / 255.0
+        val max = maxOf(rf, gf, bf)
+        val min = minOf(rf, gf, bf)
+        val delta = max - min
+        val v = max
+        val s = if (max == 0.0) 0.0 else delta / max
+        var h = if (delta == 0.0) 0.0 else when (max) {
+            rf -> (gf - bf) / delta + (if (gf < bf) 6 else 0)
+            gf -> (bf - rf) / delta + 2
+            else -> (rf - gf) / delta + 4
+        }
+        h = (h * 60) % 360
+        if (h < 0) h += 360
+        return doubleArrayOf(h, s, v)
+    }
+
     private fun convertColor(color: String, to: String): String {
-        return "Converted $color to $to"
+        return try {
+            val rgb = parseToRgb(color)
+            when (to.lowercase().trim()) {
+                "hex" -> rgbToHex(rgb[0], rgb[1], rgb[2])
+                "rgb" -> "rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})"
+                "hsl" -> {
+                    val hex = rgbToHex(rgb[0], rgb[1], rgb[2])
+                    val hsl = hexToHsl(hex)
+                    "hsl(${hsl[0].roundToInt()}, ${(hsl[1] * 100).roundToInt()}%, ${(hsl[2] * 100).roundToInt()}%)"
+                }
+                "hsv" -> {
+                    val hsv = rgbToHsv(rgb[0], rgb[1], rgb[2])
+                    "hsv(${hsv[0].roundToInt()}, ${(hsv[1] * 100).roundToInt()}%, ${(hsv[2] * 100).roundToInt()}%)"
+                }
+                else -> "Unsupported format: $to"
+            }
+        } catch (e: Exception) {
+            "Error converting color: ${e.message}"
+        }
     }
 }

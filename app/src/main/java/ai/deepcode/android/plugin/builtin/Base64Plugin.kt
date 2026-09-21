@@ -68,35 +68,55 @@ class Base64Plugin : DeepCodePlugin {
             "base64_file_encode" -> {
                 val filePath = args.get("file_path").asString
                 val file = File(filePath)
-                if (!file.exists()) throw Exception("File not found")
+                if (!file.exists() || !file.isFile) throw Exception("File not found: $filePath")
                 
-                val bytes = FileInputStream(file).readBytes()
-                val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
-                
-                if (encoded.length > 1000) {
+                if (file.length() <= 512 * 1024L) {
+                    val bytes = file.readBytes()
+                    val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    if (encoded.length > 1000) {
+                        val outputDir = File(context.filesDir, "plugins/base64")
+                        if (!outputDir.exists()) outputDir.mkdirs()
+                        val outFile = File(outputDir, "${file.nameWithoutExtension}_base64.txt")
+                        outFile.writeText(encoded)
+                        "[file:${outFile.absolutePath}]"
+                    } else {
+                        encoded
+                    }
+                } else {
                     val outputDir = File(context.filesDir, "plugins/base64")
                     if (!outputDir.exists()) outputDir.mkdirs()
                     val outFile = File(outputDir, "${file.nameWithoutExtension}_base64.txt")
-                    FileOutputStream(outFile).use { it.write(encoded.toByteArray(Charsets.UTF_8)) }
+                    FileInputStream(file).use { fis ->
+                        FileOutputStream(outFile).use { fos ->
+                            android.util.Base64OutputStream(fos, Base64.NO_WRAP).use { b64os ->
+                                fis.copyTo(b64os)
+                            }
+                        }
+                    }
                     "[file:${outFile.absolutePath}]"
-                } else {
-                    encoded
                 }
             }
             "base64_file_decode" -> {
-                var encoded = args.get("encoded").asString
-                val outputPath = args.get("output_path").asString
+                var encoded = args.get("encoded").asString.trim()
+                val rawOutputPath = args.get("output_path").asString.trim()
                 
                 if (encoded.contains(",")) {
                     val parts = encoded.split(",", limit = 2)
                     if (parts[0].startsWith("data:") && parts[0].endsWith(";base64")) {
-                        encoded = parts[1]
+                        encoded = parts[1].trim()
                     }
                 }
                 
-                val bytes = Base64.decode(encoded, Base64.DEFAULT)
-                val outFile = File(outputPath)
+                val outputDir = File(context.filesDir, "plugins/base64")
+                if (!outputDir.exists()) outputDir.mkdirs()
+                val outFile = if (File(rawOutputPath).isAbsolute) {
+                    File(rawOutputPath)
+                } else {
+                    val sanitizedName = rawOutputPath.substringAfterLast("/").substringAfterLast("\\")
+                    File(outputDir, sanitizedName.ifEmpty { "decoded_${System.currentTimeMillis()}" })
+                }
                 outFile.parentFile?.mkdirs()
+                val bytes = Base64.decode(encoded, Base64.DEFAULT)
                 FileOutputStream(outFile).use { it.write(bytes) }
                 
                 "[file:${outFile.absolutePath}]"

@@ -91,11 +91,12 @@ class ZipPlugin : DeepCodePlugin {
                 ZipInputStream(FileInputStream(zipFile)).use { zis ->
                     var entry = zis.nextEntry
                     while (entry != null) {
-                        if (entry.name.contains("../") || entry.name.contains("..\\")) {
-                            throw SecurityException("Zip Slip vulnerability detected: invalid entry name ${entry.name}")
-                        }
-                        
                         val outFile = File(outputDir, entry.name)
+                        val canonOut = outFile.canonicalPath
+                        val canonDir = outputDir.canonicalPath
+                        if (!canonOut.startsWith(canonDir + File.separator) && canonOut != canonDir) {
+                            throw SecurityException("Zip Slip vulnerability detected: entry escapes destination directory: ${entry.name}")
+                        }
                         if (entry.isDirectory) {
                             outFile.mkdirs()
                         } else {

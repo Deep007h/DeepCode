@@ -21,7 +21,10 @@ class QrCodePlugin : DeepCodePlugin {
     override val category: PluginCategory = PluginCategory.UTILITY
     override val iconName: String = "qr_code_2"
 
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
     
     override fun getTools(): List<Tool> {
         return listOf(
@@ -59,13 +62,17 @@ class QrCodePlugin : DeepCodePlugin {
                 val request = Request.Builder().url(url).build()
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) throw Exception("Failed to download QR code: ${response.code}")
-                    val bytes = response.body?.bytes() ?: throw Exception("Empty response body")
+                    val body = response.body ?: throw Exception("Empty response body")
                     
                     val outputDir = File(context.filesDir, "plugins/qr_code")
                     if (!outputDir.exists()) outputDir.mkdirs()
                     
                     val file = File(outputDir, "qr_${System.currentTimeMillis()}.png")
-                    FileOutputStream(file).use { it.write(bytes) }
+                    body.byteStream().use { input ->
+                        FileOutputStream(file).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
                     
                     "[image:${file.absolutePath}]"
                 }

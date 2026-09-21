@@ -93,6 +93,7 @@
         <!-- TESTING BUILD: ADB Command Bridge for AI agent debugging -->
         <receiver
             android:name="ai.deepcode.android.receiver.AdbCommandBridge"
+            android:permission="android.permission.DUMP"
             android:exported="true">
             <intent-filter>
                 <action android:name="ai.deepcode.DEBUG_CMD" />

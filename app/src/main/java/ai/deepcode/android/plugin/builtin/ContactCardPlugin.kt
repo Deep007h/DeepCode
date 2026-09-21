@@ -55,9 +55,10 @@ class ContactCardPlugin : DeepCodePlugin {
 
         val outDir = File(context.filesDir, "plugins/contact_card")
         if (!outDir.exists()) outDir.mkdirs()
-        val outFile = File(outDir, "${name.replace(" ", "_")}.vcf")
+        val safeName = name.replace(Regex("[^a-zA-Z0-9._-]"), "_").trim('_', '.').ifEmpty { "contact" }
+        val outFile = File(outDir, "$safeName.vcf")
         outFile.writeText(sb.toString())
         
-        return "vCard saved to ${outFile.absolutePath}"
+        return "[file:${outFile.absolutePath}]\nvCard saved to ${outFile.absolutePath}"
     }
 }

@@ -378,6 +378,7 @@ fun PluginDetailDialog(
 }
 
 fun getPluginIcon(pluginId: String): ImageVector = when (pluginId) {
+    "system_toolkit" -> Icons.Default.Terminal
     "qr_code" -> Icons.Default.GridOn
     "zip_tools" -> Icons.Default.FolderZip
     "hash_plugin" -> Icons.Default.Shield

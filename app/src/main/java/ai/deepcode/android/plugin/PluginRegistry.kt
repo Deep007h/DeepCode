@@ -16,8 +16,8 @@ import com.google.gson.JsonObject
 object PluginRegistry {
     private const val TAG = "PluginRegistry"
 
-    private val plugins = mutableMapOf<String, DeepCodePlugin>()
-    private val toolToPluginMap = mutableMapOf<String, String>()
+    private val plugins = java.util.concurrent.ConcurrentHashMap<String, DeepCodePlugin>()
+    private val toolToPluginMap = java.util.concurrent.ConcurrentHashMap<String, String>()
     private var manager: PluginManager? = null
     private var initialized = false
 
@@ -72,6 +72,9 @@ object PluginRegistry {
             return
         }
         plugins[plugin.id] = plugin
+        for (tool in plugin.getTools()) {
+            toolToPluginMap[tool.name] = plugin.id
+        }
         AppLogger.d(TAG, "Registered plugin: ${plugin.id} (${plugin.displayName}) with ${plugin.getTools().size} tools")
     }
 
@@ -79,7 +82,8 @@ object PluginRegistry {
      * Rebuild the tool name → plugin ID lookup map.
      * Called after registration or when plugins are enabled/disabled.
      */
-    private fun rebuildToolMap() {
+    @Synchronized
+    fun rebuildToolMap() {
         toolToPluginMap.clear()
         for ((pluginId, plugin) in plugins) {
             for (tool in plugin.getTools()) {

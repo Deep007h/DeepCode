@@ -813,6 +813,8 @@ class SimpleAutomationRunner(private val context: Context) {
                 var success = false
                 val url = URL("https://api.telegram.org/bot${botToken}/sendMessage")
                 val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 15000
+                conn.readTimeout = 15000
                 conn.requestMethod = "POST"
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json")
@@ -833,6 +835,8 @@ class SimpleAutomationRunner(private val context: Context) {
                     // Fallback to plain text if HTML parsing failed
                     val plainText = ai.deepcode.android.service.telegram.TelegramFormatter.stripHtml(chunk)
                     val retryConn = url.openConnection() as HttpURLConnection
+                    retryConn.connectTimeout = 15000
+                    retryConn.readTimeout = 15000
                     retryConn.requestMethod = "POST"
                     retryConn.doOutput = true
                     retryConn.setRequestProperty("Content-Type", "application/json")

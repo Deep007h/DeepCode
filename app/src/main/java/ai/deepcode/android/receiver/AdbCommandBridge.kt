@@ -120,6 +120,13 @@ class AdbCommandBridge : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != ACTION) return
 
+        // Security check: Only allow in DEBUG builds or if caller holds DUMP permission
+        if (!ai.deepcode.android.BuildConfig.DEBUG &&
+            context.checkCallingOrSelfPermission(android.Manifest.permission.DUMP) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, "AdbCommandBridge: unauthorized broadcast rejected")
+            return
+        }
+
         val cmd   = intent.getStringExtra("cmd")?.trim() ?: run {
             Log.w(TAG, "AdbCommandBridge: no 'cmd' extra in intent")
             return

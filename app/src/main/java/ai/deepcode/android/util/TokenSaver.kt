@@ -47,11 +47,11 @@ object TokenSaver {
             }
         }
 
-        val subList = if (cutoffIndex == -1) {
+        val subList = (if (cutoffIndex == -1) {
             messages
         } else {
             messages.subList(cutoffIndex + 1, messages.size)
-        }
+        }).dropWhile { it.role == "tool" }
 
         // Truncate extremely large intermediate history contents to prevent request payload bloat (e.g. Zen API 400 Errors)
         // Never truncate tool outputs or tool calls as that produces broken JSON

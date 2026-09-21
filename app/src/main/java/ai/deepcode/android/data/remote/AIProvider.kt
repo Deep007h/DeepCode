@@ -37,27 +37,7 @@ import java.io.File
 
 
 fun shouldIncludeTools(messages: List<Message>, tools: List<Tool>?): Boolean {
-    if (tools.isNullOrEmpty()) return false
-    // Active multi-turn tool loops must keep tools enabled
-    if (messages.any { it.role == "tool" || it.isToolCall }) return true
-
-    val lastUserMsg = messages.lastOrNull { it.role == "user" }?.content?.lowercase() ?: ""
-    if (lastUserMsg.isBlank()) return false
-
-    // Explicit tool intents — avoid loose generic words like "read", "write", "run", "list", "task"
-    val toolTriggers = listOf(
-        "search", "google", "browse", "web", "fetch", "url", "http://", "https://",
-        "image", "picture", "photo", "draw", "video", "veo",
-        "audio", "tts", "speak", "voice", "read aloud",
-        "pdf",
-        "save file", "write file", "create file", "delete file", "read file", "open file", "list files", "directory",
-        "run command", "run script", "execute", "terminal", "shell", "bash",
-        "qr code", "csv", "zip", "hash", "base64",
-        "calendar", "contact", "vcard", "gmail", "email", "youtube", "play song", "play music",
-        "schedule", "automation", "automate", "cron", "daily at", "remind me",
-        "remember this", "save to memory", "what did i say"
-    )
-    return toolTriggers.any { lastUserMsg.contains(it) }
+    return !tools.isNullOrEmpty()
 }
 interface AIProvider {
     val name: String
@@ -217,7 +197,7 @@ val OPENAI_PROVIDERS = listOf(
         "Meta-Llama-3.3-70B-Instruct" to "Llama 3.3 70B", "DeepSeek-R1" to "DeepSeek R1",
         "DeepSeek-V3" to "DeepSeek V3", "Qwen2.5-Coder-32B-Instruct" to "Qwen 2.5 Coder"
     )),
-    genProvider("Cerebrus", "https://api.cerebrus.com/v1", listOf(
+    genProvider("Cerebrus", "https://api.cerebras.ai/v1", listOf(
         "llama-3.3-70b" to "Llama 3.3 70B", "llama3.1-8b" to "Llama 3.1 8B", "qwen2.5-72b" to "Qwen 2.5 72B"
     )),
     genProvider("Hyperbolic", "https://api.hyperbolic.xyz/v1", listOf(
@@ -446,9 +426,9 @@ class ZenProvider : AIProvider {
                 .socketFactory(KeepAliveSocketFactory())
                 .connectionPool(okhttp3.ConnectionPool(8, 5, TimeUnit.MINUTES))
                 .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(12, TimeUnit.SECONDS)
-                .writeTimeout(15, TimeUnit.SECONDS)
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(90, TimeUnit.SECONDS)
+                .writeTimeout(30, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)
                 .proxySelector(object : java.net.ProxySelector() {
                     override fun select(uri: java.net.URI?): List<java.net.Proxy> {
@@ -986,6 +966,7 @@ class ZenProvider : AIProvider {
         }
         try { source.close() } catch (_: Exception) {}
 
+        var foundEmbeddedToolCall = false
         if (toolCallBuilders.isEmpty()) {
             val contentStr = accumulatedContent.toString()
             val rawToolCallPattern = Regex("""(?s)(?:\]<\]minimax\[>\[\s*)?<tool_call>\s*(\{[^<]+\})\s*(?:</tool_call>)?""")
@@ -1007,6 +988,7 @@ class ZenProvider : AIProvider {
                         accumulatedContent.setLength(0)
                         accumulatedContent.append(cleanRemaining)
                         try { onToolCall(ToolCall(tcId, name, argsStr)) } catch (_: Exception) {}
+                        foundEmbeddedToolCall = true
                     }
                 } catch (e: Exception) {
                     AppLogger.w("AIProvider", "Failed to parse raw embedded tool call: ${e.message}")
@@ -1014,9 +996,13 @@ class ZenProvider : AIProvider {
             }
         }
 
+        var anyToolCallEmitted = foundEmbeddedToolCall
         toolCallBuilders.values.forEach { builder ->
             if (builder.name.isNotEmpty()) {
-                try { onToolCall(ToolCall(builder.getValidId(), builder.name, builder.arguments.toString())) } catch (_: Exception) {}
+                try {
+                    onToolCall(ToolCall(builder.getValidId(), builder.name, builder.arguments.toString()))
+                    anyToolCallEmitted = true
+                } catch (_: Exception) {}
             }
         }
         if (usageInput > 0 || usageOutput > 0) {
@@ -1037,7 +1023,7 @@ class ZenProvider : AIProvider {
         if (accumulatedContent.isEmpty() && finalAnswer.isNotEmpty()) {
             try { onToken(finalAnswer) } catch (_: Exception) {}
         }
-        if (finalAnswer.isEmpty() && toolCallBuilders.isEmpty()) {
+        if (finalAnswer.isEmpty() && !anyToolCallEmitted) {
             throw Exception("Zen stream completed with empty response")
         }
         onComplete(finalAnswer)
@@ -1240,7 +1226,7 @@ class GeminiProvider : AIProvider {
 
                 ai.deepcode.android.util.AppLogger.i("GeminiProvider", "model=$targetModel keySet=${finalKey.isNotEmpty()} keyLen=${finalKey.length}")
                 val baseUrl = resolveBaseUrl(customBaseUrl, "https://generativelanguage.googleapis.com")
-                val url = "$baseUrl/v1beta/models/$targetModel:streamGenerateContent?alt=sse&key=$finalKey"
+                val url = "$baseUrl/v1beta/models/$targetModel:streamGenerateContent?alt=sse"
 
                 val contentsArray = JsonArray()
                 var systemText: String? = null
@@ -1886,15 +1872,19 @@ class AnthropicProvider : AIProvider {
 
                 val msgArray = JsonArray()
                 var systemPrompt = ""
+                var currentRole: String? = null
+                var currentContentBlocks: JsonArray? = null
+
                 for (msg in messages) {
                     if (msg.role == "system") {
                         systemPrompt += msg.content + "\n"
                         continue
                     }
-                    val m = JsonObject()
+                    val role = if (msg.role == "tool") "user" else msg.role
+                    if (role != "user" && role != "assistant") continue
+
+                    val blocks = JsonArray()
                     if (msg.role == "tool") {
-                        m.addProperty("role", "user")
-                        val contentArray = JsonArray()
                         val toolResultObj = JsonObject().apply {
                             addProperty("type", "tool_result")
                             val rawId = msg.toolCallsJson ?: ""
@@ -1905,18 +1895,14 @@ class AnthropicProvider : AIProvider {
                             addProperty("tool_use_id", toolId)
                             addProperty("content", msg.content)
                         }
-                        contentArray.add(toolResultObj)
-                        m.add("content", contentArray)
-                        msgArray.add(m)
+                        blocks.add(toolResultObj)
                     } else if (msg.role == "assistant" && msg.isToolCall && !msg.toolCallsJson.isNullOrEmpty()) {
-                        m.addProperty("role", "assistant")
-                        val contentArray = JsonArray()
                         if (msg.content.isNotEmpty()) {
                             val textObj = JsonObject().apply {
                                 addProperty("type", "text")
-                                addProperty("content", msg.content)
+                                addProperty("text", msg.content)
                             }
-                            contentArray.add(textObj)
+                            blocks.add(textObj)
                         }
                         try {
                             val tcArray = JsonParser.parseString(msg.toolCallsJson).asJsonArray
@@ -1931,20 +1917,31 @@ class AnthropicProvider : AIProvider {
                                     val argsJson = try { JsonParser.parseString(argsStr).asJsonObject } catch (_: Exception) { JsonObject() }
                                     add("input", argsJson)
                                 }
-                                contentArray.add(toolUseObj)
+                                blocks.add(toolUseObj)
                             }
                         } catch (_: Exception) {}
-                        m.add("content", contentArray)
-                        msgArray.add(m)
                     } else {
-                        m.addProperty("role", msg.role)
-                        val contentArray = JsonArray()
-                        val textContentObj = JsonObject()
-                        textContentObj.addProperty("type", "text")
-                        textContentObj.addProperty("text", msg.content)
-                        contentArray.add(textContentObj)
-                        m.add("content", contentArray)
+                        if (msg.content.isNotEmpty()) {
+                            val textContentObj = JsonObject()
+                            textContentObj.addProperty("type", "text")
+                            textContentObj.addProperty("text", msg.content)
+                            blocks.add(textContentObj)
+                        }
+                    }
+
+                    if (blocks.size() == 0) continue
+
+                    if (role == currentRole && currentContentBlocks != null) {
+                        for (b in blocks) {
+                            currentContentBlocks.add(b)
+                        }
+                    } else {
+                        val m = JsonObject()
+                        m.addProperty("role", role)
+                        m.add("content", blocks)
                         msgArray.add(m)
+                        currentRole = role
+                        currentContentBlocks = blocks
                     }
                 }
 
@@ -1974,8 +1971,15 @@ class AnthropicProvider : AIProvider {
                             val propKey = k.toString()
                             val propVal = v as? Map<*, *>
                             val propObj = JsonObject()
-                            propObj.addProperty("type", (propVal?.get("type") ?: "string").toString())
+                            val propType = (propVal?.get("type") ?: "string").toString()
+                            propObj.addProperty("type", propType)
                             propObj.addProperty("description", (propVal?.get("description") ?: "").toString())
+                            if (propType == "array") {
+                                val itemsVal = propVal?.get("items") as? Map<*, *>
+                                val itemsObj = JsonObject()
+                                itemsObj.addProperty("type", (itemsVal?.get("type") ?: "string").toString())
+                                propObj.add("items", itemsObj)
+                            }
                             properties.add(propKey, propObj)
                             
                             val isReq = (tool.inputSchema["required"] as? List<*>)?.contains(propKey) ?: false
@@ -2058,9 +2062,13 @@ class AnthropicProvider : AIProvider {
                                     "content_block_delta" -> {
                                         val delta = ai.deepcode.android.util.SafeJson.obj(chunk, "delta") ?: continue
                                         val text = ai.deepcode.android.util.SafeJson.string(delta, "text")
+                                        val thinking = ai.deepcode.android.util.SafeJson.string(delta, "thinking")
                                         if (text != null) {
                                             collectedAnthropicText.append(text)
                                             onToken(text)
+                                        } else if (thinking != null) {
+                                            collectedAnthropicText.append(thinking)
+                                            onToken(thinking)
                                         } else {
                                             val partial = ai.deepcode.android.util.SafeJson.string(delta, "partial_json")
                                             if (partial != null) {
@@ -2462,16 +2470,34 @@ private suspend fun streamOpenAiCompatible(
             }
 
             val messagesArray = normalizeMessagesForApi(messages)
+            val isReasoningModel = effectiveModel.startsWith("o1") || effectiveModel.startsWith("o3")
+            val isTelegram = messages.any { it.sessionId.startsWith("telegram_") }
 
-            // Insert drive instruction at the BEGINNING, not end — appending after tool
-            // results breaks the required assistant(tool_calls)→tool(tool_call_id) sequence.
-            val driveInstr = JsonObject().apply {
-                addProperty("role", "system")
-                addProperty("content", "IMPORTANT: By default, all files you create with write_file are stored to Telegram Drive (cloud). Only use storage='local' when the user explicitly asks to save to their device. When listing files, use .tgdrive path to see cloud-stored files. When a file is not found locally, it is automatically checked on Telegram Drive.")
-            }
             val finalMessages = JsonArray()
-            finalMessages.add(driveInstr)
-            for (i in 0 until messagesArray.size()) finalMessages.add(messagesArray.get(i))
+            if (isTelegram) {
+                val driveRole = if (isReasoningModel) "developer" else "system"
+                val driveInstr = JsonObject().apply {
+                    addProperty("role", driveRole)
+                    addProperty("content", "IMPORTANT: By default, all files you create with write_file are stored to Telegram Drive (cloud). Only use storage='local' when the user explicitly asks to save to their device. When listing files, use .tgdrive path to see cloud-stored files. When a file is not found locally, it is automatically checked on Telegram Drive.")
+                }
+                finalMessages.add(driveInstr)
+            }
+
+            for (i in 0 until messagesArray.size()) {
+                val elem = messagesArray.get(i)
+                if (isReasoningModel && elem.isJsonObject) {
+                    val obj = elem.asJsonObject
+                    if (obj.get("role")?.asString == "system") {
+                        val mapped = JsonObject()
+                        for ((k, v) in obj.entrySet()) {
+                            if (k == "role") mapped.addProperty("role", "developer") else mapped.add(k, v)
+                        }
+                        finalMessages.add(mapped)
+                        continue
+                    }
+                }
+                finalMessages.add(elem)
+            }
 
             val payload = JsonObject()
             payload.addProperty("model", effectiveModel)
@@ -2498,8 +2524,15 @@ private suspend fun streamOpenAiCompatible(
                         val propKey = k.toString()
                         val propVal = v as? Map<*, *>
                         val propObj = JsonObject()
-                        propObj.addProperty("type", (propVal?.get("type") ?: "string").toString())
+                        val propType = (propVal?.get("type") ?: "string").toString()
+                        propObj.addProperty("type", propType)
                         propObj.addProperty("description", (propVal?.get("description") ?: "").toString())
+                        if (propType == "array") {
+                            val itemsVal = propVal?.get("items") as? Map<*, *>
+                            val itemsObj = JsonObject()
+                            itemsObj.addProperty("type", (itemsVal?.get("type") ?: "string").toString())
+                            propObj.add("items", itemsObj)
+                        }
                         properties.add(propKey, propObj)
                         
                         val isReq = (tool.inputSchema["required"] as? List<*>)?.contains(propKey) ?: false
@@ -2924,10 +2957,48 @@ class AntigravityProvider : AIProvider {
                     contents.add(c)
                 }
                 "tool" -> {
+                    val rawId = msg.toolCallsJson ?: ""
+                    var toolName = "tool"
+                    try {
+                        val parsed = JsonParser.parseString(rawId)
+                        if (parsed.isJsonObject && parsed.asJsonObject.has("name")) {
+                            toolName = parsed.asJsonObject.get("name").asString
+                        }
+                    } catch (_: Exception) {}
+
+                    if (toolName == "tool" || toolName.isBlank()) {
+                        val lastAssistantWithTool = messages.lastOrNull { it.role == "assistant" && it.isToolCall && !it.toolCallsJson.isNullOrEmpty() }
+                        if (lastAssistantWithTool != null) {
+                            try {
+                                val tcArray = JsonParser.parseString(lastAssistantWithTool.toolCallsJson).asJsonArray
+                                for (i in 0 until tcArray.size()) {
+                                    val tc = tcArray.get(i).asJsonObject
+                                    if (tc.has("id") && tc.get("id").asString == rawId) {
+                                        toolName = tc.get("name")?.asString ?: toolName
+                                        break
+                                    }
+                                }
+                                if (toolName == "tool" && tcArray.size() > 0) {
+                                    toolName = tcArray.get(0).asJsonObject.get("name")?.asString ?: toolName
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    }
+
                     val c = JsonObject().apply {
                         addProperty("role", "user")
                         val parts = JsonArray().apply {
-                            add(JsonObject().apply { addProperty("text", "Tool result: ${msg.content}") })
+                            val fnRespPart = JsonObject().apply {
+                                val fnRespObj = JsonObject().apply {
+                                    addProperty("name", toolName)
+                                    val responseObj = JsonObject().apply {
+                                        addProperty("result", msg.content)
+                                    }
+                                    add("response", responseObj)
+                                }
+                                add("functionResponse", fnRespObj)
+                            }
+                            add(fnRespPart)
                         }
                         add("parts", parts)
                     }
@@ -3051,7 +3122,7 @@ val PROVIDER_BASE_URLS = mapOf(
     "Zen" to "https://opencode.ai/zen/v1",
     "Zen (Free)" to "https://opencode.ai/zen/v1",
     "Groq" to "https://api.groq.com/openai/v1",
-    "Cerebrus" to "https://api.cerebrus.com/v1",
+    "Cerebrus" to "https://api.cerebras.ai/v1",
     "Cerebras" to "https://api.cerebras.ai/v1",
     "Mistral AI" to "https://api.mistral.ai/v1",
     "Mistral" to "https://api.mistral.ai/v1",

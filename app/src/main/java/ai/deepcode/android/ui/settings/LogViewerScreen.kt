@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -84,7 +85,7 @@ private val AccentOrange = Color(0xFFF97316)
 
 // ── tab definitions ───────────────────────────────────────────────────────────
 private enum class LogTab(val label: String, val icon: @Composable () -> Unit, val categoryFilter: String?) {
-    ALL      ("ALL",     { Icon(Icons.Default.List, null, modifier = Modifier.size(13.dp)) }, null),
+    ALL      ("ALL",     { Icon(Icons.AutoMirrored.Filled.List, null, modifier = Modifier.size(13.dp)) }, null),
     LOGCAT   ("LOGCAT",  { Icon(Icons.Default.Terminal, null, modifier = Modifier.size(13.dp)) }, "logcat"),
     NETWORK  ("NET",     { Icon(Icons.Default.Cloud, null, modifier = Modifier.size(13.dp)) }, "network"),
     SHELL    ("SHELL",   { Icon(Icons.Default.Code, null, modifier = Modifier.size(13.dp)) }, "shell"),
@@ -187,7 +188,7 @@ fun LogViewerScreen(
                                 .clickable { onBack() },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.ArrowBack, "Back", tint = TextPrimary, modifier = Modifier.size(18.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = TextPrimary, modifier = Modifier.size(18.dp))
                         }
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -586,7 +587,7 @@ private fun AdbConsolePanel(
             }
             IconButton(onClick = onToggleHelp, modifier = Modifier.size(22.dp)) {
                 Icon(
-                    if (showHelp) Icons.Default.ExpandMore else Icons.Default.HelpOutline,
+                    if (showHelp) Icons.Default.ExpandMore else Icons.AutoMirrored.Filled.HelpOutline,
                     "Help", tint = TextSecondary, modifier = Modifier.size(14.dp)
                 )
             }
@@ -747,7 +748,7 @@ private fun AdbConsolePanel(
                 onClick = { if (commandInput.isNotBlank()) onSendCommand(commandInput) },
                 modifier = Modifier.size(28.dp)
             ) {
-                Icon(Icons.Default.Send, "Send", tint = AccentPurple, modifier = Modifier.size(14.dp))
+                Icon(Icons.AutoMirrored.Filled.Send, "Send", tint = AccentPurple, modifier = Modifier.size(14.dp))
             }
         }
     }
@@ -1117,7 +1118,7 @@ private fun SessionHistoryTab(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = { onSelectSession(null) }) {
-                    Icon(Icons.Default.ArrowBack, "Back to sessions", tint = TextPrimary)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to sessions", tint = TextPrimary)
                 }
                 Spacer(Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f)) {

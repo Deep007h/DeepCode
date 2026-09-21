@@ -358,7 +358,7 @@ class WebViewAutomator(private val context: Context) {
                 settings.loadWithOverviewMode = true
                 settings.useWideViewPort = true
                 settings.userAgentString = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36"
-                settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
             }
 
@@ -383,8 +383,8 @@ class WebViewAutomator(private val context: Context) {
                         if (credentialStore.containsKey(platformKey)) {
                             val creds = credentialStore[platformKey]!!
                             val js = platform.fillLoginJs
-                                .replace("%s", creds.first.replace("'", "\\'"))
-                                .replace("%s", creds.second.replace("'", "\\'"))
+                                .replaceFirst("%s", gson.toJson(creds.first).removeSurrounding("\""))
+                                .replaceFirst("%s", gson.toJson(creds.second).removeSurrounding("\""))
                             view.evaluateJavascript(js, null)
                         } else {
                             resultJson.complete(gson.toJson(mapOf(
@@ -401,7 +401,7 @@ class WebViewAutomator(private val context: Context) {
                             finishWithResult("Could not find prompt input on ${platform.name}. The page may not support automation.", "[]")
                             return@evaluateJavascript
                         }
-                        val fillJs = platform.fillPromptJs.replace("%s", sanitizedPrompt)
+                        val fillJs = platform.fillPromptJs.replace("'%s'", gson.toJson(userPrompt)).replace("%s", gson.toJson(userPrompt).removeSurrounding("\""))
                         view.evaluateJavascript(fillJs) { filled ->
                             if (filled != "true") {
                                 finishWithResult("Could not fill prompt on ${platform.name}.", "[]")
@@ -425,7 +425,7 @@ class WebViewAutomator(private val context: Context) {
                 }
 
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
-                    if (done.compareAndSet(false, true)) {
+                    if (request.isForMainFrame && done.compareAndSet(false, true)) {
                         resultJson.completeExceptionally(Exception("Page load error: ${error.description}"))
                     }
                 }

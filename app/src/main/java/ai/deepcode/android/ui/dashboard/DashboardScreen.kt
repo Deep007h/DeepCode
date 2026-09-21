@@ -33,7 +33,7 @@ import ai.deepcode.android.ui.components.StatusBadge
 import ai.deepcode.android.ui.components.AppToggle
 import ai.deepcode.android.ui.components.OutlinedAppButton
 import ai.deepcode.android.ui.theme.*
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.*
 import ai.deepcode.android.ui.connections.IntegrationEntity
 import ai.deepcode.android.domain.model.ChatSession
 import java.text.SimpleDateFormat
@@ -355,7 +355,7 @@ fun DashboardScreen(
                         label = "Messages",
                         value = messagesSynced,
                         valueColor = MaterialTheme.colorScheme.tertiary,
-                        icon = Icons.Default.Chat
+                        icon = Icons.AutoMirrored.Filled.Chat
                     )
                     Box(modifier = Modifier.width(1.dp).height(32.dp).background(MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)))
                     StatItem(
@@ -424,7 +424,7 @@ fun DashboardScreen(
                             }
                         }
                         Icon(
-                            Icons.Default.KeyboardArrowRight,
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp)
@@ -660,9 +660,9 @@ fun DashboardScreen(
                             
                             val isGptSession = session.title.contains("ChatGPT", ignoreCase = true)
                             val icon = when {
-                                session.title.contains("Telegram", ignoreCase = true) -> Icons.Default.Send
+                                session.title.contains("Telegram", ignoreCase = true) -> Icons.AutoMirrored.Filled.Send
                                 session.title.contains("Crypto", ignoreCase = true) -> Icons.Default.MonetizationOn
-                                else -> Icons.Default.Chat
+                                else -> Icons.AutoMirrored.Filled.Chat
                             }
                             val iconColor = when {
                                 isGptSession -> Color(0xFF10A37F)

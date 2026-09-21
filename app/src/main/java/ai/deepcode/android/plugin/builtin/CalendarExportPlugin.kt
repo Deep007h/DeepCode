@@ -78,9 +78,10 @@ class CalendarExportPlugin : DeepCodePlugin {
 
         val outDir = File(context.filesDir, "plugins/calendar_export")
         if (!outDir.exists()) outDir.mkdirs()
-        val outFile = File(outDir, "${summary.replace(" ", "_")}.ics")
+        val safeSummary = summary.replace(Regex("[^a-zA-Z0-9._-]"), "_").trim('_', '.').ifEmpty { "event" }
+        val outFile = File(outDir, "$safeSummary.ics")
         outFile.writeText(ics)
-        return "Event saved to ${outFile.absolutePath}"
+        return "[file:${outFile.absolutePath}]\nEvent saved to ${outFile.absolutePath}"
     }
 
     private fun formatToIcalDate(isoDate: String): String {

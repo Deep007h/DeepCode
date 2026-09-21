@@ -63,7 +63,11 @@ class SystemToolkitPlugin : DeepCodePlugin {
             "system_battery_info" -> RootSystem.getBatteryInfo()
             "system_memory_info" -> RootSystem.getMemoryInfo()
             "system_device_info" -> RootSystem.getDeviceInfo()
-            "system_screenshot" -> RootSystem.takeScreenshot()
+            "system_screenshot" -> {
+                val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context)
+                val saveDir = prefs.getSetting("system_toolkit_save_dir", "/storage/emulated/0/Download")
+                RootSystem.takeScreenshot(saveDir)
+            }
             "system_app_control" -> {
                 val action = args.get("action")?.asString ?: "list"
                 val pkg = args.get("package_name")?.asString ?: ""

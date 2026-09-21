@@ -289,28 +289,35 @@ class ToolExecutor(private val context: Context? = null) {
             }
             when (name) {
                 "read_file", "file_read" -> {
-                    val path = args.get("path")?.asString ?: return "Missing path argument"
+                    val path = optString(args, "path") ?: return "Missing path argument"
                     readFile(path, workingDir, useRoot)
                 }
-                "write_file", "file_write", "edit" -> {
-                    val path = args.get("path")?.asString ?: return "Missing path argument"
-                    val content = args.get("content")?.asString ?: return "Missing content argument"
-                    val storage = args.get("storage")?.asString ?: ""
+                "write_file", "file_write" -> {
+                    val path = optString(args, "path") ?: return "Missing path argument"
+                    val content = optString(args, "content") ?: return "Missing content argument"
+                    val storage = optString(args, "storage") ?: ""
                     writeFile(path, content, workingDir, useRoot, storage)
                 }
+                "edit_file", "replace_file_content", "edit", "str_replace", "replace" -> {
+                    val path = optString(args, "path") ?: optString(args, "file_path") ?: return "Missing path argument"
+                    val oldStr = optString(args, "old_str") ?: optString(args, "target") ?: optString(args, "search") ?: return "Missing old_str argument"
+                    val newStr = optString(args, "new_str") ?: optString(args, "replacement") ?: optString(args, "replace") ?: ""
+                    val replaceAll = args.get("replace_all")?.takeIf { !it.isJsonNull }?.asBoolean ?: false
+                    editFile(path, oldStr, newStr, replaceAll, workingDir, useRoot)
+                }
                 "list_directory", "list", "glob" -> {
-                    val path = args.get("path")?.asString ?: "."
+                    val path = optString(args, "path") ?: "."
                     listDirectory(path, workingDir, useRoot)
                 }
                 "run_command", "shell", "git_operations", "node_exec", "npm_exec", "curl", "adb_command", "adb", "terminal_command", "terminal_exec" -> {
-                    val command = args.get("command")?.asString ?: args.get("cmd")?.asString ?: return "Missing command argument"
+                    val command = optString(args, "command") ?: optString(args, "cmd") ?: return "Missing command argument"
                     val effectiveRoot = useRoot || (context != null && ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context).getBooleanSetting("root_mode", false))
                     TerminalRunner.runCommand(command, workingDir, effectiveRoot)
                 }
                 "android_system_control", "system_control", "root_system_control" -> {
-                    val action = args.get("action")?.asString ?: "device_info"
-                    val target = args.get("target")?.asString ?: ""
-                    val subAction = args.get("sub_action")?.asString ?: ""
+                    val action = optString(args, "action") ?: "device_info"
+                    val target = optString(args, "target") ?: ""
+                    val subAction = optString(args, "sub_action") ?: ""
                     when (action.lowercase().trim()) {
                         "battery_info", "battery" -> ai.deepcode.android.util.RootSystem.getBatteryInfo()
                         "memory_info", "memory", "ram" -> ai.deepcode.android.util.RootSystem.getMemoryInfo()
@@ -322,17 +329,17 @@ class ToolExecutor(private val context: Context? = null) {
                     }
                 }
                 "grep_search", "grep" -> {
-                    val query = args.get("query")?.asString ?: return "Missing query argument"
-                    val path = args.get("path")?.asString ?: "."
+                    val query = optString(args, "query") ?: return "Missing query argument"
+                    val path = optString(args, "path") ?: "."
                     grepSearch(query, path, workingDir, useRoot)
                 }
                 "create_file" -> {
-                    val path = args.get("path")?.asString ?: return "Missing path argument"
-                    val isDir = args.get("isDirectory")?.asBoolean ?: false
+                    val path = optString(args, "path") ?: return "Missing path argument"
+                    val isDir = args.get("isDirectory")?.takeIf { !it.isJsonNull }?.asBoolean ?: false
                     createFileOrDirectory(path, isDir, workingDir, useRoot)
                 }
                 "delete_file" -> {
-                    val path = args.get("path")?.asString ?: return "Missing path argument"
+                    val path = optString(args, "path") ?: return "Missing path argument"
                     deleteFileOrDirectory(path, workingDir, useRoot)
                 }
                 "apply_patch" -> {
@@ -3132,6 +3139,39 @@ class ToolExecutor(private val context: Context? = null) {
         }
     }
 
+    private fun editFile(path: String, oldStr: String, newStr: String, replaceAll: Boolean, workingDir: String, useRoot: Boolean): String {
+        val file = resolvePath(path, workingDir)
+        if (!file.exists()) return "Error: File does not exist: ${file.absolutePath}"
+        if (!file.isFile) return "Error: Path is not a file: ${file.absolutePath}"
+        return try {
+            val content = file.readText()
+            if (!content.contains(oldStr)) {
+                return "Error: old_str not found in file: ${file.absolutePath}"
+            }
+            if (!replaceAll && content.indexOf(oldStr) != content.lastIndexOf(oldStr)) {
+                return "Error: Multiple occurrences of old_str found in ${file.name}. Provide a larger surrounding code block or set replace_all=true."
+            }
+            val newContent = if (replaceAll) {
+                content.replace(oldStr, newStr)
+            } else {
+                content.replaceFirst(oldStr, newStr)
+            }
+            if (useRoot) {
+                val escapedPath = escapeShellArg(file.absolutePath)
+                val base64Content = android.util.Base64.encodeToString(newContent.toByteArray(), android.util.Base64.NO_WRAP)
+                val cmd = "echo '$base64Content' | base64 -d > $escapedPath"
+                val result = TerminalRunner.runCommand(cmd, workingDir, true)
+                if (result.trim().isEmpty() || result.contains("success")) {
+                    return "Successfully edited file (root): ${file.absolutePath}"
+                }
+            }
+            file.writeText(newContent)
+            "Successfully edited file: ${file.absolutePath}"
+        } catch (e: Exception) {
+            "Failed to edit file: ${e.message}"
+        }
+    }
+
     private fun listDirectory(path: String, workingDir: String, useRoot: Boolean): String {
         val normalized = path.trim().trimEnd('/')
         if (normalized == ".tgdrive" || normalized.endsWith("/.tgdrive")) {
@@ -3954,6 +3994,16 @@ class ToolExecutor(private val context: Context? = null) {
                     "storage" to mapOf("type" to "string", "description" to "Storage backend: 'local' for device, omit for Telegram Drive")
                 ),
                 "required" to listOf("path", "content")
+            )),
+            Tool("edit_file", "Perform exact string replacement in a file. Replace old_str with new_str. Provide unique surrounding context for old_str to ensure precise replacement.", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "path" to mapOf("type" to "string", "description" to "Path to the file to edit"),
+                    "old_str" to mapOf("type" to "string", "description" to "The exact text chunk to find and replace"),
+                    "new_str" to mapOf("type" to "string", "description" to "The replacement text"),
+                    "replace_all" to mapOf("type" to "boolean", "description" to "Set true to replace all occurrences, default is false (single replacement)")
+                ),
+                "required" to listOf("path", "old_str", "new_str")
             )),
             Tool("list_directory", "List contents of a directory", mapOf(
                 "type" to "object",
@@ -4973,7 +5023,7 @@ The task strictly runs within DeepCode's single persistent ChatGPT conversation 
             requestBodyBuilder.addFormDataPart(
                 "files",
                 "index.html",
-                okhttp3.RequestBody.create("text/html; charset=utf-8".toMediaType(), htmlContent)
+                htmlContent.toRequestBody("text/html; charset=utf-8".toMediaType())
             )
 
             val req = okhttp3.Request.Builder()

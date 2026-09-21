@@ -297,6 +297,8 @@ object RootSystem {
         }
     }
 
+    private val PACKAGE_NAME_REGEX = Regex("^[a-zA-Z0-9._]+$")
+
     /**
      * Executes any terminal command directly as root via `su -c`.
      */
@@ -315,20 +317,27 @@ object RootSystem {
 
             val proc = pb.start()
             val output = StringBuilder()
-            val buffer = CharArray(4096)
-            proc.inputStream.bufferedReader().use { reader ->
-                var count = reader.read(buffer)
-                while (count != -1 && output.length < 256 * 1024) {
-                    output.append(buffer, 0, count)
-                    count = reader.read(buffer)
-                }
+            val readerThread = Thread {
+                try {
+                    val buffer = CharArray(4096)
+                    proc.inputStream.bufferedReader().use { reader ->
+                        var count = reader.read(buffer)
+                        while (count != -1 && output.length < 256 * 1024) {
+                            output.append(buffer, 0, count)
+                            count = reader.read(buffer)
+                        }
+                    }
+                } catch (_: Exception) {}
             }
+            readerThread.isDaemon = true
+            readerThread.start()
 
             val finished = proc.waitFor(45, TimeUnit.SECONDS)
             if (!finished) {
                 proc.destroyForcibly()
                 output.append("\n[Command timed out after 45s and was terminated]")
             }
+            readerThread.join(1000)
 
             val res = output.toString()
             _lastOutput.value = res.take(1000)
@@ -364,7 +373,8 @@ object RootSystem {
      * Lists third-party installed packages, optionally filtered.
      */
     fun listInstalledPackages(filter: String = ""): String {
-        val filterCmd = if (filter.isNotBlank()) "| grep -i '${filter.trim()}'" else "| head -n 40"
+        val cleanFilter = filter.trim().filter { it.isLetterOrDigit() || it == '.' || it == '_' || it == '-' }
+        val filterCmd = if (cleanFilter.isNotBlank()) "| grep -i '$cleanFilter'" else "| head -n 40"
         return executeAsRoot("pm list packages -3 $filterCmd")
     }
 
@@ -375,6 +385,9 @@ object RootSystem {
         val pkg = packageName.trim()
         if (pkg.isEmpty() && !action.equals("clear_cache", ignoreCase = true)) {
             return "Error: packageName is required for appControl action: $action"
+        }
+        if (pkg.isNotEmpty() && !PACKAGE_NAME_REGEX.matches(pkg)) {
+            return "Error: Invalid package name: $pkg"
         }
         return when (action.lowercase().trim()) {
             "freeze", "disable" -> executeAsRoot("pm disable-user --user 0 $pkg")

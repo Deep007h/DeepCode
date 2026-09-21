@@ -12,19 +12,33 @@ class YouTubeMusicService(private val context: Context) {
         val query = buildQuery(song, artist)
         val searchUrl = "https://music.youtube.com/search?q=${encode(query)}"
 
-        try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(searchUrl)).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val uri = Uri.parse(searchUrl)
+        val pm = context.packageManager
+        val ytMusicIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+            setPackage("com.google.android.apps.youtube.music")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return try {
+            if (ytMusicIntent.resolveActivity(pm) != null) {
+                context.startActivity(ytMusicIntent)
+                "Opened YouTube Music searching for '$query'."
+            } else {
+                val browserIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(browserIntent)
+                "Opened browser searching for '$query'."
             }
-            context.startActivity(intent)
-            val pm = context.packageManager
-            val ytMusic = Intent(Intent.ACTION_VIEW, Uri.parse(searchUrl)).apply {
-                setPackage("com.google.android.apps.youtube.music")
-            }
-            val app = if (ytMusic.resolveActivity(pm) != null) "YouTube Music" else "browser"
-            return "Opened $app searching for '$query'."
         } catch (e: Exception) {
-            return "Failed to open: ${e.message}"
+            try {
+                val browserIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(browserIntent)
+                "Opened browser searching for '$query'."
+            } catch (ex: Exception) {
+                "Failed to open: ${ex.message}"
+            }
         }
     }
 

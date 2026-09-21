@@ -2,7 +2,7 @@ package ai.deepcode.android.service.telegram
 
 object TelegramFormatter {
 
-    private val RE_THINK = Regex("""<think>.*?</think>""", setOf(RegexOption.DOT_MATCHES_ALL))
+    private val RE_THINK = Regex("""<think>[\s\S]*?(?:</think>|$)""", RegexOption.IGNORE_CASE)
     private val RE_EXISTING_TAGS = Regex("""</?(?:b|i|u|s|code|pre|blockquote|a|tg-spoiler)(?:\s+[^>]*?)?>""", RegexOption.IGNORE_CASE)
     private val RE_HTML_ENTITY = Regex("""^&(?:amp|lt|gt|quot|#\d+|#x[0-9a-fA-F]+);""")
     private val RE_CODE_BLOCK = Regex("""```([a-zA-Z0-9_-]*)\n?(.*?)```""", setOf(RegexOption.DOT_MATCHES_ALL))
@@ -68,7 +68,7 @@ object TelegramFormatter {
     fun formatMarkdownToTelegramHtml(raw: String): String {
         if (raw.isBlank()) return ""
 
-        // 0. Remove think blocks and trim
+        // 0. Remove think blocks (including unclosed blocks) and trim
         var text = RE_THINK.replace(raw, "").trim()
 
         val placeholders = ArrayList<String>()
@@ -105,7 +105,14 @@ object TelegramFormatter {
             addPlaceholder("<code>${escapeHtml(code)}</code>")
         }
 
-        // 4. Extract tables: lines starting and ending with |
+        // 4. Extract Markdown Links before HTML escaping so URLs aren't mangled
+        text = RE_MD_LINK.replace(text) { match ->
+            val linkText = escapeHtml(match.groupValues[1])
+            val linkUrl = match.groupValues[2].replace("\"", "%22")
+            addPlaceholder("""<a href="$linkUrl">$linkText</a>""")
+        }
+
+        // 5. Extract tables: lines starting and ending with |
         val lines = text.lines()
         val outLines = ArrayList<String>(lines.size)
         var i = 0
@@ -166,7 +173,7 @@ object TelegramFormatter {
         }
         text = outLines.joinToString("\n")
 
-        // 5. Extract blockquotes: lines starting with >
+        // 6. Extract blockquotes: lines starting with >
         val bqLines = text.lines()
         val bqOut = ArrayList<String>(bqLines.size)
         var bqIdx = 0
@@ -196,38 +203,42 @@ object TelegramFormatter {
         }
         text = bqOut.joinToString("\n")
 
-        // 6. Escape remaining HTML in normal text
+        // 7. Escape remaining HTML in normal text
         text = escapeHtml(text)
 
-        // 7. Convert Markdown Headers
+        // 8. Convert Markdown Headers
         text = RE_HEADING.replace(text) { match ->
             val content = match.groupValues[2].trim()
             "<b>$content</b>"
         }
 
-        // 8. Convert Horizontal Rules
+        // 9. Convert Horizontal Rules
         text = RE_DIVIDER.replace(text, "────────── ✦ ──────────")
 
-        // 9. Convert Bold: **text** or __text__
+        // 10. Convert Bold: **text** or __text__
         text = RE_BOLD_STAR.replace(text, "<b>$1</b>")
         text = RE_BOLD_UNDER.replace(text, "<b>$1</b>")
 
-        // 10. Convert Italic: *text* or _text_
+        // 11. Convert Italic: *text* or _text_
         text = RE_ITALIC_STAR.replace(text, "<i>$1</i>")
         text = RE_ITALIC_UNDER.replace(text, "<i>$1</i>")
 
-        // 11. Convert Strikethrough: ~~text~~
+        // 12. Convert Strikethrough: ~~text~~
         text = RE_STRIKE.replace(text, "<s>$1</s>")
 
-        // 12. Convert Bullet points: - item or * item -> • item
+        // 13. Convert Bullet points: - item or * item -> • item
         text = RE_BULLET.replace(text, "• ")
 
-        // 13. Convert Markdown Links: [text](url)
-        text = RE_MD_LINK.replace(text, """<a href="$2">$1</a>""")
-
-        // 14. Restore placeholders
-        for (pIdx in placeholders.indices) {
-            text = text.replace("@@TGBLOCK${pIdx}@@", placeholders[pIdx])
+        // 14. Restore placeholders recursively so nested blocks (e.g. code in blockquotes) are expanded
+        var changed = true
+        var iterations = 0
+        while (changed && iterations < 10) {
+            val before = text
+            for (pIdx in placeholders.indices.reversed()) {
+                text = text.replace("@@TGBLOCK${pIdx}@@", placeholders[pIdx])
+            }
+            changed = text != before
+            iterations++
         }
 
         for (tIdx in existingTags.indices) {
@@ -237,12 +248,32 @@ object TelegramFormatter {
         return text.trim()
     }
 
+    private fun getOpenTags(html: String): List<String> {
+        val tagRegex = Regex("""(</?([a-zA-Z0-9_-]+)(?:\s+[^>]*?)?>)""")
+        val openTags = mutableListOf<String>()
+        for (match in tagRegex.findAll(html)) {
+            val fullTag = match.groupValues[1]
+            val tagName = match.groupValues[2].lowercase()
+            if (fullTag.startsWith("</")) {
+                val idx = openTags.indexOfLast {
+                    Regex("""<([a-zA-Z0-9_-]+)""").find(it)?.groupValues?.get(1)?.equals(tagName, ignoreCase = true) == true
+                }
+                if (idx >= 0) {
+                    openTags.removeAt(idx)
+                }
+            } else if (!fullTag.endsWith("/>")) {
+                openTags.add(fullTag)
+            }
+        }
+        return openTags
+    }
+
     fun chunkTelegramHtml(htmlText: String, maxLen: Int = 3900): List<String> {
         if (htmlText.length <= maxLen) {
             return listOf(htmlText)
         }
 
-        val chunks = ArrayList<String>()
+        val rawChunks = ArrayList<String>()
         val paragraphs = htmlText.split("\n\n")
         var current = StringBuilder()
 
@@ -253,7 +284,7 @@ object TelegramFormatter {
                 current.append(para)
             } else {
                 if (current.isNotEmpty()) {
-                    chunks.add(current.toString())
+                    rawChunks.add(current.toString())
                     current = StringBuilder()
                 }
 
@@ -269,15 +300,14 @@ object TelegramFormatter {
                             current.append(line)
                         } else {
                             if (current.isNotEmpty()) {
-                                chunks.add(current.toString())
+                                rawChunks.add(current.toString())
                                 current = StringBuilder()
                             }
                             if (line.length <= maxLen) {
                                 current.append(line)
                             } else {
-                                // Subline itself is longer than maxLen, chunk by character length
                                 line.chunked(maxLen).forEach { c ->
-                                    chunks.add(c)
+                                    rawChunks.add(c)
                                 }
                             }
                         }
@@ -287,9 +317,38 @@ object TelegramFormatter {
         }
 
         if (current.isNotEmpty()) {
-            chunks.add(current.toString())
+            rawChunks.add(current.toString())
         }
 
-        return if (chunks.isEmpty()) listOf(htmlText) else chunks
+        if (rawChunks.isEmpty()) return listOf(htmlText)
+        if (rawChunks.size == 1) return rawChunks
+
+        // Tag-balance all split boundaries so every chunk has valid, closed HTML
+        val balancedChunks = ArrayList<String>(rawChunks.size)
+        var pendingOpenTags = listOf<String>()
+
+        for (chunkIdx in rawChunks.indices) {
+            val rawChunk = rawChunks[chunkIdx]
+            val chunkWithPrefix = if (pendingOpenTags.isNotEmpty()) {
+                pendingOpenTags.joinToString("") + rawChunk
+            } else rawChunk
+
+            val activeOpenTags = getOpenTags(chunkWithPrefix)
+            val isLast = chunkIdx == rawChunks.lastIndex
+
+            if (isLast || activeOpenTags.isEmpty()) {
+                balancedChunks.add(chunkWithPrefix)
+                pendingOpenTags = emptyList()
+            } else {
+                val closingTags = activeOpenTags.reversed().joinToString("") { tag ->
+                    val name = Regex("""<([a-zA-Z0-9_-]+)""").find(tag)?.groupValues?.get(1) ?: ""
+                    "</$name>"
+                }
+                balancedChunks.add(chunkWithPrefix + closingTags)
+                pendingOpenTags = activeOpenTags
+            }
+        }
+
+        return balancedChunks
     }
 }

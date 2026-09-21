@@ -558,7 +558,7 @@ fun ChatScreen(
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop
                     )
                 }
-            } else if (wallpaperOpt != null && wallpaperOpt.gradientColors != null) {
+            } else if (wallpaperOpt != null) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()

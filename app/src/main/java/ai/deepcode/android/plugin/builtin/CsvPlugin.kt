@@ -65,10 +65,11 @@ class CsvPlugin : DeepCodePlugin {
             "csv_create" -> {
                 val headers = args.getAsJsonArray("headers")
                 val rows = args.getAsJsonArray("rows")
-                val filename = if (args.has("filename")) args.get("filename").asString else "data_${System.currentTimeMillis()}.csv"
+                val rawFilename = if (args.has("filename")) args.get("filename").asString else "data_${System.currentTimeMillis()}.csv"
+                val safeFilename = rawFilename.substringAfterLast("/").substringAfterLast("\\").replace(Regex("[^a-zA-Z0-9._-]"), "_").ifEmpty { "data_${System.currentTimeMillis()}.csv" }
                 val delimiter = if (args.has("delimiter")) args.get("delimiter").asString else ","
                 
-                val file = File(outputDir, filename)
+                val file = File(outputDir, if (safeFilename.endsWith(".csv")) safeFilename else "$safeFilename.csv")
                 FileWriter(file).use { writer ->
                     val headerLine = headers.map { escapeCsvField(it.asString, delimiter) }.joinToString(delimiter)
                     writer.write(headerLine + "\n")
@@ -126,7 +127,7 @@ class CsvPlugin : DeepCodePlugin {
             }
             "csv_to_json" -> {
                 val filePath = args.get("file_path").asString
-                val delimiter = "," // Assuming comma for simplicity
+                val delimiter = if (args.has("delimiter")) args.get("delimiter").asString else ","
                 val file = File(filePath)
                 if (!file.exists()) throw Exception("File not found: $filePath")
                 
@@ -142,7 +143,13 @@ class CsvPlugin : DeepCodePlugin {
                             for (i in headers.indices) {
                                 val key = headers[i].trim().removeSurrounding("\"")
                                 val value = if (i < values.size) values[i].trim().removeSurrounding("\"") else ""
-                                obj.addProperty(key, value)
+                                val num = value.toDoubleOrNull()
+                                val bool = if (value.equals("true", ignoreCase = true)) true else if (value.equals("false", ignoreCase = true)) false else null
+                                when {
+                                    bool != null -> obj.addProperty(key, bool)
+                                    num != null -> obj.addProperty(key, num)
+                                    else -> obj.addProperty(key, value)
+                                }
                             }
                             jsonArray.add(obj)
                             line = reader.readLine()

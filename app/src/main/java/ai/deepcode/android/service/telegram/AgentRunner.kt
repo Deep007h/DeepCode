@@ -2,6 +2,13 @@ package ai.deepcode.android.service.telegram
 
 import ai.deepcode.android.data.remote.AIProvider
 import ai.deepcode.android.data.remote.AIProviderFactory
+import ai.deepcode.android.data.remote.OPENAI_PROVIDERS
+import ai.deepcode.android.data.remote.GenericOpenAIProvider
+import ai.deepcode.android.data.remote.ModelCatalog
+import ai.deepcode.android.data.remote.providerStorageId
+import ai.deepcode.android.data.remote.providerDefaultBaseUrl
+import ai.deepcode.android.data.remote.ApiKeyRotator
+import ai.deepcode.android.data.remote.DecommissionedModels
 import ai.deepcode.android.data.repository.DeepCodeRepository
 import ai.deepcode.android.domain.model.Message
 import ai.deepcode.android.domain.model.ToolCall
@@ -31,28 +38,27 @@ class AgentRunner(private val repository: DeepCodeRepository) {
         val done = CompletableDeferred<CompletionResult>()
         val textBuilder = StringBuilder()
         val toolCalls = mutableListOf<ToolCall>()
+        val reasoningBuilder = StringBuilder()
 
-        try {
-            provider.streamCompletion(
-                messages = messages,
-                model = model,
-                tools = tools,
-                apiKey = apiKey,
-                customBaseUrl = customBaseUrl,
-                onToken = { textBuilder.append(it) },
-                onToolCall = { toolCalls.add(it) },
-                onComplete = { reasoning ->
-                    done.complete(CompletionResult(textBuilder.toString(), toolCalls.toList(), reasoning))
-                },
-                onError = { done.completeExceptionally(it) }
-            )
-        } catch (e: Exception) {
-            if (!done.isCompleted) {
+        val job = CoroutineScope(Dispatchers.IO).launch {
+            try {
+                provider.streamCompletion(
+                    messages = messages,
+                    model = model,
+                    tools = tools,
+                    apiKey = apiKey,
+                    customBaseUrl = customBaseUrl,
+                    onToken = { textBuilder.append(it) },
+                    onToolCall = { toolCalls.add(it) },
+                    onComplete = { done.complete(CompletionResult(textBuilder.toString(), toolCalls, reasoningBuilder.toString())) },
+                    onError = { done.completeExceptionally(it) }
+                )
+            } catch (e: Exception) {
                 done.completeExceptionally(e)
             }
         }
 
-        return done.await()
+        return withTimeout(120_000L) { done.await() }
     }
 
     suspend fun runAgentLoop(sessionId: String, userPrompt: String): String {
@@ -66,7 +72,7 @@ class AgentRunner(private val repository: DeepCodeRepository) {
             timestamp = System.currentTimeMillis()
         ))
 
-        val (provider, _, modelId, apiKey, customUrl) = resolveProvider()
+        val (provider, _, modelId, apiKey, customUrl) = resolveProvider(sessionId)
         val declaredTools = repository.getDeclaredTools()
 
         val systemMsg = Message(
@@ -267,41 +273,63 @@ $telegramRules"""
         val customUrl: String?
     )
 
-    private fun resolveProvider(): ResolvedProvider {
+    private fun resolveProvider(sessionId: String? = null): ResolvedProvider {
         val prefs = repository.securePrefs
-        val savedModelId = prefs.getSetting("agent_model", "")
-        val savedProvider = prefs.getSetting("agent_provider", "")
+        val chatId = if (sessionId != null && sessionId.startsWith("telegram_")) {
+            sessionId.removePrefix("telegram_")
+        } else null
 
-        if (savedModelId.isNotEmpty() && savedProvider.isNotEmpty()) {
-            val providerObj = AIProviderFactory.providers.firstOrNull { it.name == savedProvider }
+        val savedModelId = if (chatId != null) {
+            prefs.getSetting("tg_model_$chatId", "").ifEmpty { prefs.getSetting("agent_model", "") }
+        } else {
+            prefs.getSetting("agent_model", "")
+        }
+
+        val savedProvider = if (chatId != null) {
+            prefs.getSetting("tg_provider_$chatId", "").ifEmpty { prefs.getSetting("agent_provider", "") }
+        } else {
+            prefs.getSetting("agent_provider", "")
+        }
+
+        if (savedProvider.isNotEmpty()) {
+            val providerObj: AIProvider? = AIProviderFactory.providers.firstOrNull { it.name.equals(savedProvider, ignoreCase = true) }
+                ?: (OPENAI_PROVIDERS.find { it.name.equals(savedProvider, ignoreCase = true) }?.let { GenericOpenAIProvider(it) })
             if (providerObj != null) {
-                val modelObj = providerObj.models.firstOrNull { it.id == savedModelId }
-                if (modelObj != null) {
-                    val keyName = getApiKeyName(providerObj.name)
-                    val apiKey = prefs.getApiKey(keyName)
-                    val urlKey = "url_$keyName"
-                    val customUrl = prefs.getSetting(urlKey, "")
-                    return ResolvedProvider(
-                        provider = providerObj,
-                        providerName = providerObj.name,
-                        modelId = modelObj.id,
-                        apiKey = apiKey,
-                        customUrl = customUrl.ifEmpty { null }
-                    )
+                val storageId = providerStorageId(providerObj.name)
+                val dynamicModels = ModelCatalog.getModelsForProvider(providerObj.name, prefs)
+                val allModels = (dynamicModels + providerObj.models).associateBy { it.id }.values.toList()
+                var modelId = savedModelId.ifEmpty {
+                    prefs.getSetting("default_model_$storageId", "")
                 }
+                if (modelId.isEmpty() || (allModels.isNotEmpty() && allModels.none { it.id == modelId })) {
+                    modelId = allModels.firstOrNull()?.id ?: savedModelId
+                }
+                val (apiKey, _) = ApiKeyRotator.getNextAvailableKey(prefs, storageId) ?: ("" to 0)
+                val keyToUse = apiKey.ifEmpty { prefs.getApiKey(storageId) }
+                val customUrl = prefs.getSetting("url_$storageId", "").takeIf { it.isNotBlank() }
+                return ResolvedProvider(
+                    provider = providerObj,
+                    providerName = providerObj.name,
+                    modelId = modelId,
+                    apiKey = keyToUse,
+                    customUrl = customUrl
+                )
             }
         }
 
         // Fallback: loop to find the first available free or configured provider
-        for (p in AIProviderFactory.providers) {
-            val keyName = getApiKeyName(p.name)
-            val key = prefs.getApiKey(keyName)
-            val urlKey = "url_$keyName"
-            val url = prefs.getSetting(urlKey, "")
+        val allCandidates: List<AIProvider> = AIProviderFactory.providers + OPENAI_PROVIDERS.map { GenericOpenAIProvider(it) }
+        for (p in allCandidates) {
+            val storageId = providerStorageId(p.name)
+            val (apiKey, _) = ApiKeyRotator.getNextAvailableKey(prefs, storageId) ?: ("" to 0)
+            val key = apiKey.ifEmpty { prefs.getApiKey(storageId) }
+            val customUrl = prefs.getSetting("url_$storageId", "").takeIf { it.isNotBlank() }
 
             if (p.isFree || key.isNotEmpty()) {
-                val modelId = p.models.firstOrNull()?.id ?: ""
-                return ResolvedProvider(p, p.name, modelId, key, url.ifEmpty { null })
+                val dynamicModels = ModelCatalog.getModelsForProvider(p.name, prefs)
+                val allModels = (dynamicModels + p.models).associateBy { it.id }.values.toList()
+                val modelId = allModels.firstOrNull()?.id ?: ""
+                return ResolvedProvider(p, p.name, modelId, key, customUrl)
             }
         }
 
@@ -312,24 +340,6 @@ $telegramRules"""
             )
         val fallbackModelId = fallback.models.firstOrNull()?.id ?: ai.deepcode.android.data.remote.ZenModels.DEFAULT_FREE
         return ResolvedProvider(fallback, fallback.name, fallbackModelId, "", null)
-    }
-
-    private fun getApiKeyName(providerName: String): String {
-        return when (providerName) {
-            "Zen AI", "Zen", "Zen (Free)" -> "zen"
-            "Google Gemini" -> "gemini"
-            "Groq" -> "groq"
-            "Cerebrus" -> "cerebrus"
-            "OpenRouter" -> "openrouter"
-            "OpenAI" -> "openai"
-            "Anthropic" -> "anthropic"
-            "Mistral AI" -> "mistral"
-            "Ollama Cloud" -> "ollama"
-            "Agent Router" -> "agentrouter"
-            "TokenHarbor", "Token Harbor" -> "tokenharbor"
-            "GMI Cloud" -> "gmi"
-            else -> ""
-        }
     }
 
     private fun getLocalBasicReply(prompt: String): String {
@@ -374,7 +384,7 @@ $telegramRules"""
     private fun parseToolCallsFromText(rawText: String): List<ToolCall> {
         val text = normalizeAscii(rawText)
         val lower = text.lowercase()
-        if (!lower.contains("tool_call") && !lower.contains("tool_calls") && !lower.contains("tool__calls") && !lower.contains("dsml")) return emptyList()
+        if (!lower.contains("tool_call") && !lower.contains("tool_calls") && !lower.contains("tool__calls") && !lower.contains("dsml") && !lower.contains("<invoke")) return emptyList()
         val result = mutableListOf<ToolCall>()
 
         val dsmlInvokeRegex = Regex("""<\s*\|{1,2}\s*DSML\s*\|{1,2}\s*invoke\s+name="([^"]+)"[^>]*>(.*?)</\s*\|{1,2}\s*DSML\s*\|{1,2}\s*invoke>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))

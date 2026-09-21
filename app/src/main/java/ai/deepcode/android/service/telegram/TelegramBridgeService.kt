@@ -392,10 +392,43 @@ class TelegramBridgeService : Service() {
         Companion.registerBotCommands(token)
     }
 
+    private suspend fun downloadTelegramFile(token: String, fileId: String, customName: String? = null): File? = withContext(Dispatchers.IO) {
+        try {
+            val getFileUrl = "${API_BASE}${token}/getFile?file_id=${fileId}"
+            val req = Request.Builder().url(getFileUrl).get().build()
+            val remotePath = client.newCall(req).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val body = resp.body?.string() ?: ""
+                    val json = gson.fromJson(body, JsonObject::class.java)
+                    json.getAsJsonObject("result")?.get("file_path")?.asString
+                } else null
+            } ?: return@withContext null
+
+            val downloadUrl = "https://api.telegram.org/file/bot${token}/${remotePath}"
+            val fileName = customName?.takeIf { it.isNotBlank() } ?: File(remotePath).name
+            val targetDir = File(repository.getDefaultProjectPath()).apply { mkdirs() }
+            val targetFile = File(targetDir, "tg_${System.currentTimeMillis()}_${fileName}")
+            val dlReq = Request.Builder().url(downloadUrl).get().build()
+            client.newCall(dlReq).execute().use { resp ->
+                if (resp.isSuccessful && resp.body != null) {
+                    targetFile.outputStream().use { out ->
+                        resp.body!!.byteStream().copyTo(out)
+                    }
+                    targetFile
+                } else null
+            }
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "Failed to download Telegram file $fileId", e)
+            null
+        }
+    }
+
     private suspend fun pollBot(token: String) {
         AppLogger.d(TAG, "Started polling bot: ...${token.takeLast(6)}")
         serviceScope.launch { registerBotCommands(token) }
-        var offset = offsets.getOrDefault(token, 0L)
+        var offset = offsets.getOrPut(token) {
+            repository.securePrefs.getSetting("tg_offset_$token", "0").toLongOrNull() ?: 0L
+        }
 
         while (currentCoroutineContext().isActive) {
             try {
@@ -444,6 +477,7 @@ class TelegramBridgeService : Service() {
                             val updateId = update.get("update_id")?.asLong ?: continue
                             offset = updateId + 1
                             offsets[token] = offset
+                            repository.securePrefs.saveSetting("tg_offset_$token", offset.toString())
 
                             AppLogger.d(TAG, "Received Telegram update: ${gson.toJson(update)}")
                             val callbackQuery = try {
@@ -482,29 +516,76 @@ class TelegramBridgeService : Service() {
                             }
 
                             val message = try { update.getAsJsonObject("message") } catch (_: Exception) { null } ?: continue
-                            val text = message.get("text")?.asString ?: ""
+                            val rawText = message.get("text")?.asString ?: message.get("caption")?.asString ?: ""
                             val chat = try { message.getAsJsonObject("chat") } catch (_: Exception) { null } ?: continue
                             val chatId = chat.get("id")?.asLong ?: continue
                             val chatType = chat.get("type")?.asString ?: "private"
                             val isPrivateChat = chatType == "private"
 
-                            if (text.isNotEmpty()) {
+                            val photoArray = try { message.getAsJsonArray("photo") } catch (_: Exception) { null }
+                            val document = try { message.getAsJsonObject("document") } catch (_: Exception) { null }
+                            val voice = try { message.getAsJsonObject("voice") } catch (_: Exception) { null }
+
+                            val largestPhoto = photoArray?.lastOrNull()?.asJsonObject
+                            val photoFileId = largestPhoto?.get("file_id")?.asString
+                            val docFileId = document?.get("file_id")?.asString
+                            val docName = document?.get("file_name")?.asString
+                            val voiceFileId = voice?.get("file_id")?.asString
+
+                            val hasMedia = photoFileId != null || docFileId != null || voiceFileId != null
+
+                            if (rawText.isNotEmpty() || hasMedia) {
                                 // Group spam protection: Ignore non-command group messages unless replying to the bot
-                                if (!isPrivateChat && !text.startsWith("/")) {
+                                if (!isPrivateChat && !rawText.startsWith("/")) {
                                     val isReplyToBot = try {
                                         val replyTo = message.getAsJsonObject("reply_to_message")
                                         val from = replyTo?.getAsJsonObject("from")
                                         from?.get("is_bot")?.asBoolean == true
                                     } catch (_: Exception) { false }
                                     if (!isReplyToBot) {
-                                        AppLogger.d(TAG, "Ignoring non-command group message in chat $chatId: ${text.take(40)}")
+                                        AppLogger.d(TAG, "Ignoring non-command group message in chat $chatId: ${rawText.take(40)}")
                                         continue
                                     }
                                 }
 
-                                AppLogger.d(TAG, "Message from chat $chatId ($chatType): ${text.take(100)}")
+                                AppLogger.d(TAG, "Message from chat $chatId ($chatType): ${rawText.take(100)}")
                                 serviceScope.launch {
-                                    handleMessage(token, chatId, text, isPrivateChat)
+                                    var effectiveText = rawText
+                                    if (photoFileId != null) {
+                                        sendChatAction(token, chatId, "upload_photo")
+                                        val downloadedPhoto = downloadTelegramFile(token, photoFileId)
+                                        if (downloadedPhoto != null) {
+                                            effectiveText = if (rawText.isNotBlank()) {
+                                                "[image:${downloadedPhoto.absolutePath}]\n\n$rawText"
+                                            } else {
+                                                "[image:${downloadedPhoto.absolutePath}] Describe this image in detail."
+                                            }
+                                        }
+                                    } else if (docFileId != null) {
+                                        sendChatAction(token, chatId, "upload_document")
+                                        val downloadedDoc = downloadTelegramFile(token, docFileId, customName = docName)
+                                        if (downloadedDoc != null) {
+                                            effectiveText = if (rawText.isNotBlank()) {
+                                                "📎 ${downloadedDoc.name}\n[File: ${downloadedDoc.absolutePath}]\n\n$rawText"
+                                            } else {
+                                                "📎 ${downloadedDoc.name}\n[File: ${downloadedDoc.absolutePath}] Please inspect and analyze this document."
+                                            }
+                                        }
+                                    } else if (voiceFileId != null) {
+                                        sendChatAction(token, chatId, "record_voice")
+                                        val downloadedVoice = downloadTelegramFile(token, voiceFileId, customName = "voice.ogg")
+                                        if (downloadedVoice != null) {
+                                            effectiveText = if (rawText.isNotBlank()) {
+                                                "🎤 [Voice Note: ${downloadedVoice.absolutePath}]\n\n$rawText"
+                                            } else {
+                                                "🎤 [Voice Note: ${downloadedVoice.absolutePath}] Please listen to this voice note."
+                                            }
+                                        }
+                                    }
+
+                                    if (effectiveText.isNotEmpty()) {
+                                        handleMessage(token, chatId, effectiveText, isPrivateChat)
+                                    }
                                 }
                             }
                         } catch (e: Exception) {
@@ -704,8 +785,10 @@ class TelegramBridgeService : Service() {
             ?: getFirstConfiguredProvider()
             ?: "Google Gemini"
         repository.securePrefs.saveSetting("tg_provider_$chatId", prov)
-        repository.securePrefs.saveSetting("agent_provider", prov)
-        repository.securePrefs.saveSetting("agent_model", modelId)
+        if (repository.securePrefs.getSetting("agent_provider", "").isEmpty()) {
+            repository.securePrefs.saveSetting("agent_provider", prov)
+            repository.securePrefs.saveSetting("agent_model", modelId)
+        }
     }
 
     private suspend fun handleMessage(token: String, chatId: Long, text: String, isPrivateChat: Boolean = true) {
@@ -2234,10 +2317,8 @@ class TelegramBridgeService : Service() {
                     defaultModelId = ai.deepcode.android.data.remote.ZenModels.sanitize(defaultModelId, allProviderModels)
                 }
                 repository.securePrefs.saveSetting("tg_provider_$chatId", providerName)
-                repository.securePrefs.saveSetting("agent_provider", providerName)
                 if (defaultModelId.isNotEmpty()) {
                     repository.securePrefs.saveSetting("tg_model_$chatId", defaultModelId)
-                    repository.securePrefs.saveSetting("agent_model", defaultModelId)
                 }
                 showModelsForProvider(token, chatId, messageId, providerName)
                 answerCallbackQuery(token, callbackId, "Switched to $providerName")
@@ -2356,11 +2437,13 @@ class TelegramBridgeService : Service() {
         val hasCreds = hasProviderCredentials(storageId, isFree)
 
         val warning = if (!hasCreds && !isFree) {
-            "\n\n⚠️ *Note:* No API key configured for $effectiveProvider. Please add your key in DeepCode app (Settings → API Keys → $effectiveProvider) before chatting."
+            "\n\n⚠️ <b>Note:</b> No API key configured for $effectiveProvider. Please add your key in DeepCode app (Settings → API Keys → $effectiveProvider) before chatting."
         } else ""
 
+        val escapedName = TelegramFormatter.escapeHtml(name)
+        val escapedLabel = TelegramFormatter.escapeHtml(providerLabel)
         AppLogger.d(TAG, "Editing bot selection message to model name: $name")
-        editMessage(token, chatId, messageId, "✅ Switched to *$name*$providerLabel!$warning\n\nSend a message to chat with this model.", "Markdown")
+        editMessage(token, chatId, messageId, "✅ Switched to <b>$escapedName</b>$escapedLabel!$warning\n\nSend a message to chat with this model.", "HTML")
         AppLogger.d(TAG, "Sending answerCallbackQuery response...")
         answerCallbackQuery(token, callbackId, "Model switched to $name")
         AppLogger.d(TAG, "handleSelectModel finish.")
@@ -2370,6 +2453,9 @@ class TelegramBridgeService : Service() {
         var cleaned = text.replace(Regex("<thought>[\\s\\S]*?</thought>", RegexOption.IGNORE_CASE), "")
         cleaned = cleaned.replace(Regex("<thought>[\\s\\S]*", RegexOption.IGNORE_CASE), "")
         cleaned = cleaned.replace(Regex("</thought>", RegexOption.IGNORE_CASE), "")
+        cleaned = cleaned.replace(Regex("<think>[\\s\\S]*?</think>", RegexOption.IGNORE_CASE), "")
+        cleaned = cleaned.replace(Regex("<think>[\\s\\S]*", RegexOption.IGNORE_CASE), "")
+        cleaned = cleaned.replace(Regex("</think>", RegexOption.IGNORE_CASE), "")
         val trimmed = cleaned.trim()
         return if (trimmed.isEmpty() && text.isNotEmpty()) {
             "Thinking completed."
@@ -2489,11 +2575,31 @@ class TelegramBridgeService : Service() {
         val isHtml = parseMode.equals("HTML", ignoreCase = true) || (parseMode.isNotEmpty() && (cleanText.contains("<b>") || cleanText.contains("</b>") || cleanText.contains("<code>")))
         val targetParseMode = if (isHtml) "HTML" else parseMode
         val processed = if (targetParseMode == "HTML") TelegramFormatter.formatMarkdownToTelegramHtml(cleanText) else preprocessMarkdown(cleanText)
+
+        if (targetParseMode == "HTML" && processed.length > 3900) {
+            val chunks = TelegramFormatter.chunkTelegramHtml(processed, maxLen = 3900)
+            var lastId: Long? = null
+            for (chunk in chunks) {
+                lastId = sendSingleRawMessage(token, chatId, chunk, "HTML", cleanText)
+            }
+            return lastId
+        } else if (processed.length > 3900) {
+            val chunks = processed.chunked(3900)
+            var lastId: Long? = null
+            for (chunk in chunks) {
+                lastId = sendSingleRawMessage(token, chatId, chunk, targetParseMode, cleanText)
+            }
+            return lastId
+        }
+        return sendSingleRawMessage(token, chatId, processed, targetParseMode, cleanText)
+    }
+
+    private fun sendSingleRawMessage(token: String, chatId: Long, processedText: String, targetParseMode: String, cleanText: String): Long? {
         return try {
             val url = "${API_BASE}${token}/sendMessage"
             val payload = JsonObject().apply {
                 addProperty("chat_id", chatId)
-                addProperty("text", processed)
+                addProperty("text", processedText)
                 if (targetParseMode.isNotEmpty()) {
                     addProperty("parse_mode", targetParseMode)
                 }
@@ -2521,7 +2627,7 @@ class TelegramBridgeService : Service() {
 
             if (shouldRetry) {
                 AppLogger.d(TAG, "Retrying sendMessage without parse_mode for chat $chatId")
-                val plainFallback = TelegramFormatter.stripHtml(cleanText)
+                val plainFallback = TelegramFormatter.stripHtml(cleanText).take(3900)
                 val retryPayload = JsonObject().apply {
                     addProperty("chat_id", chatId)
                     addProperty("text", plainFallback)
@@ -2713,14 +2819,31 @@ class TelegramBridgeService : Service() {
         }
     }
 
+    private fun buildSafeCaptionParts(caption: String?): Pair<String?, String?> {
+        if (caption.isNullOrBlank()) return Pair(null, null)
+        val clean = stripThoughts(caption)
+        val formatted = TelegramFormatter.formatMarkdownToTelegramHtml(clean)
+        return if (formatted.length <= 1024) {
+            Pair(formatted, null)
+        } else {
+            Pair(formatted.take(1020) + "...", clean)
+        }
+    }
+
     private fun sendAudio(token: String, chatId: Long, audioFile: File, caption: String? = null): Boolean {
         try {
+            val (safeCaption, overflow) = buildSafeCaptionParts(caption)
             val url = "${API_BASE}${token}/sendAudio"
             val requestBody = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart("chat_id", chatId.toString())
                 .addFormDataPart("audio", audioFile.name, audioFile.asRequestBody(null))
-                .apply { caption?.let { addFormDataPart("caption", it) } }
+                .apply {
+                    safeCaption?.let {
+                        addFormDataPart("caption", it)
+                        addFormDataPart("parse_mode", "HTML")
+                    }
+                }
                 .build()
             val request = Request.Builder()
                 .url(url)
@@ -2735,7 +2858,12 @@ class TelegramBridgeService : Service() {
                     AppLogger.e(TAG, "sendAudio failed: $body")
                 }
             }
-            if (success) return true
+            if (success) {
+                if (overflow != null) {
+                    sendMessage(token, chatId, overflow)
+                }
+                return true
+            }
 
             AppLogger.w(TAG, "sendAudio failed, falling back to sendDocument for: ${audioFile.absolutePath}")
             return sendDocument(token, chatId, audioFile, caption)
@@ -2747,6 +2875,7 @@ class TelegramBridgeService : Service() {
 
     private fun sendPhoto(token: String, chatId: Long, photoUrlOrPath: String, caption: String? = null): Boolean {
         try {
+            val (safeCaption, overflow) = buildSafeCaptionParts(caption)
             val cleanPath = photoUrlOrPath.removePrefix("file://").trim()
             val localFile = File(cleanPath)
             if (localFile.exists() && localFile.isFile) {
@@ -2755,7 +2884,12 @@ class TelegramBridgeService : Service() {
                     .setType(MultipartBody.FORM)
                     .addFormDataPart("chat_id", chatId.toString())
                     .addFormDataPart("photo", localFile.name, localFile.asRequestBody(null))
-                    .apply { caption?.let { addFormDataPart("caption", it) } }
+                    .apply {
+                        safeCaption?.let {
+                            addFormDataPart("caption", it)
+                            addFormDataPart("parse_mode", "HTML")
+                        }
+                    }
                     .build()
                 val request = Request.Builder().url(url).post(requestBody).build()
                 var success = false
@@ -2767,7 +2901,12 @@ class TelegramBridgeService : Service() {
                         AppLogger.e(TAG, "sendPhoto (multipart) failed: $body")
                     }
                 }
-                if (success) return true
+                if (success) {
+                    if (overflow != null) {
+                        sendMessage(token, chatId, overflow)
+                    }
+                    return true
+                }
 
                 AppLogger.w(TAG, "sendPhoto failed, falling back to sendDocument for: $cleanPath")
                 return sendDocument(token, chatId, localFile, caption)
@@ -2776,7 +2915,10 @@ class TelegramBridgeService : Service() {
                 val payload = JsonObject().apply {
                     addProperty("chat_id", chatId)
                     addProperty("photo", photoUrlOrPath)
-                    caption?.let { addProperty("caption", it) }
+                    safeCaption?.let {
+                        addProperty("caption", it)
+                        addProperty("parse_mode", "HTML")
+                    }
                 }
                 val request = Request.Builder()
                     .url(url)
@@ -2791,7 +2933,12 @@ class TelegramBridgeService : Service() {
                         AppLogger.w(TAG, "sendPhoto (URL) failed: $body, will attempt download & upload")
                     }
                 }
-                if (remoteSuccess) return true
+                if (remoteSuccess) {
+                    if (overflow != null) {
+                        sendMessage(token, chatId, overflow)
+                    }
+                    return true
+                }
 
                 try {
                     val downloadReq = Request.Builder().url(photoUrlOrPath).build()
@@ -2811,7 +2958,12 @@ class TelegramBridgeService : Service() {
                                 .setType(MultipartBody.FORM)
                                 .addFormDataPart("chat_id", chatId.toString())
                                 .addFormDataPart("photo", downloadedFile.name, downloadedFile.asRequestBody(null))
-                                .apply { caption?.let { addFormDataPart("caption", it) } }
+                                .apply {
+                                    safeCaption?.let {
+                                        addFormDataPart("caption", it)
+                                        addFormDataPart("parse_mode", "HTML")
+                                    }
+                                }
                                 .build()
                             val mpReq = Request.Builder().url(mpUrl).post(mpBody).build()
                             var mpSuccess = false
@@ -2821,7 +2973,12 @@ class TelegramBridgeService : Service() {
                                     mpSuccess = try { gson.fromJson(body, JsonObject::class.java).get("ok")?.asBoolean == true } catch (_: Exception) { false }
                                 }
                             }
-                            if (mpSuccess) return true
+                            if (mpSuccess) {
+                                if (overflow != null) {
+                                    sendMessage(token, chatId, overflow)
+                                }
+                                return true
+                            }
                             return sendDocument(token, chatId, downloadedFile, caption)
                         } finally {
                             downloadedFile.delete()
@@ -2841,6 +2998,7 @@ class TelegramBridgeService : Service() {
 
     private fun sendVideo(token: String, chatId: Long, videoUrlOrPath: String, caption: String? = null): Boolean {
         try {
+            val (safeCaption, overflow) = buildSafeCaptionParts(caption)
             val cleanPath = videoUrlOrPath.removePrefix("file://").trim()
             val localFile = File(cleanPath)
             if (localFile.exists() && localFile.isFile) {
@@ -2849,7 +3007,12 @@ class TelegramBridgeService : Service() {
                     .setType(MultipartBody.FORM)
                     .addFormDataPart("chat_id", chatId.toString())
                     .addFormDataPart("video", localFile.name, localFile.asRequestBody(null))
-                    .apply { caption?.let { addFormDataPart("caption", it) } }
+                    .apply {
+                        safeCaption?.let {
+                            addFormDataPart("caption", it)
+                            addFormDataPart("parse_mode", "HTML")
+                        }
+                    }
                     .build()
                 val request = Request.Builder().url(url).post(requestBody).build()
                 var success = false
@@ -2861,7 +3024,12 @@ class TelegramBridgeService : Service() {
                         AppLogger.e(TAG, "sendVideo (multipart) failed: $body")
                     }
                 }
-                if (success) return true
+                if (success) {
+                    if (overflow != null) {
+                        sendMessage(token, chatId, overflow)
+                    }
+                    return true
+                }
 
                 AppLogger.w(TAG, "sendVideo failed, falling back to sendDocument for: $cleanPath")
                 return sendDocument(token, chatId, localFile, caption)
@@ -2870,7 +3038,10 @@ class TelegramBridgeService : Service() {
                 val payload = JsonObject().apply {
                     addProperty("chat_id", chatId)
                     addProperty("video", videoUrlOrPath)
-                    caption?.let { addProperty("caption", it) }
+                    safeCaption?.let {
+                        addProperty("caption", it)
+                        addProperty("parse_mode", "HTML")
+                    }
                 }
                 val request = Request.Builder()
                     .url(url)
@@ -2885,7 +3056,12 @@ class TelegramBridgeService : Service() {
                         AppLogger.w(TAG, "sendVideo (URL) failed: $body, will attempt download & upload")
                     }
                 }
-                if (remoteSuccess) return true
+                if (remoteSuccess) {
+                    if (overflow != null) {
+                        sendMessage(token, chatId, overflow)
+                    }
+                    return true
+                }
 
                 try {
                     val downloadReq = Request.Builder().url(videoUrlOrPath).build()
@@ -2905,7 +3081,12 @@ class TelegramBridgeService : Service() {
                                 .setType(MultipartBody.FORM)
                                 .addFormDataPart("chat_id", chatId.toString())
                                 .addFormDataPart("video", downloadedFile.name, downloadedFile.asRequestBody(null))
-                                .apply { caption?.let { addFormDataPart("caption", it) } }
+                                .apply {
+                                    safeCaption?.let {
+                                        addFormDataPart("caption", it)
+                                        addFormDataPart("parse_mode", "HTML")
+                                    }
+                                }
                                 .build()
                             val mpReq = Request.Builder().url(mpUrl).post(mpBody).build()
                             var mpSuccess = false
@@ -2915,7 +3096,12 @@ class TelegramBridgeService : Service() {
                                     mpSuccess = try { gson.fromJson(body, JsonObject::class.java).get("ok")?.asBoolean == true } catch (_: Exception) { false }
                                 }
                             }
-                            if (mpSuccess) return true
+                            if (mpSuccess) {
+                                if (overflow != null) {
+                                    sendMessage(token, chatId, overflow)
+                                }
+                                return true
+                            }
                             return sendDocument(token, chatId, downloadedFile, caption)
                         } finally {
                             downloadedFile.delete()
@@ -2935,18 +3121,24 @@ class TelegramBridgeService : Service() {
 
     private fun sendDocument(token: String, chatId: Long, file: File, caption: String? = null): Boolean {
         try {
+            val (safeCaption, overflow) = buildSafeCaptionParts(caption)
             val url = "${API_BASE}${token}/sendDocument"
             val requestBody = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart("chat_id", chatId.toString())
                 .addFormDataPart("document", file.name, file.asRequestBody(null))
-                .apply { caption?.let { addFormDataPart("caption", it) } }
+                .apply {
+                    safeCaption?.let {
+                        addFormDataPart("caption", it)
+                        addFormDataPart("parse_mode", "HTML")
+                    }
+                }
                 .build()
             val request = Request.Builder()
                 .url(url)
                 .post(requestBody)
                 .build()
-            return client.newCall(request).execute().use { response ->
+            val success = client.newCall(request).execute().use { response ->
                 val body = response.body?.string()
                 if (response.isSuccessful) {
                     try { gson.fromJson(body, JsonObject::class.java).get("ok")?.asBoolean == true } catch (_: Exception) { false }
@@ -2955,6 +3147,10 @@ class TelegramBridgeService : Service() {
                     false
                 }
             }
+            if (success && overflow != null) {
+                sendMessage(token, chatId, overflow)
+            }
+            return success
         } catch (e: Exception) {
             AppLogger.e(TAG, "sendDocument error", e)
             return false

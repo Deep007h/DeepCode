@@ -88,7 +88,7 @@ object ApiKeyRotator {
         for (targetId in aliases) {
             for (slot in 1..EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER) {
                 val slotKey = prefs.getApiKeySlot(targetId, slot).trim()
-                if (slotKey.isNotEmpty() && (slotKey == cleanKey || cleanKey.startsWith(slotKey))) {
+                if (slotKey.isNotEmpty() && slotKey == cleanKey) {
                     return slot
                 }
             }
@@ -187,21 +187,17 @@ object ApiKeyRotator {
      */
     fun getNextAvailableKey(prefs: EncryptedPrefs, storageId: String): Pair<String, Int>? {
         val aliases = getStorageAliases(storageId)
+        var globalFirstConfiguredKey: Pair<String, Int>? = null
         for (targetId in aliases) {
-            var firstConfiguredKey: Pair<String, Int>? = null
             for (slot in 1..EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER) {
                 val key = prefs.getApiKeySlot(targetId, slot)
                 if (key.isNotEmpty()) {
-                    if (firstConfiguredKey == null) firstConfiguredKey = key to slot
+                    if (globalFirstConfiguredKey == null) globalFirstConfiguredKey = key to slot
                     if (!isKeyExhausted(targetId, slot, key)) return key to slot
                 }
             }
-            if (firstConfiguredKey != null) {
-                // Fallback: If all are in cooldown for this provider, return first configured key
-                return firstConfiguredKey
-            }
         }
-        return null
+        return globalFirstConfiguredKey
     }
 
     /**
@@ -212,25 +208,19 @@ object ApiKeyRotator {
     fun getAvailableKeyAfter(prefs: EncryptedPrefs, storageId: String, afterSlot: Int): Pair<String, Int>? {
         val max = EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER
         val aliases = getStorageAliases(storageId)
+        var globalNextConfiguredKey: Pair<String, Int>? = null
         for (targetId in aliases) {
-            var nextConfiguredKey: Pair<String, Int>? = null
-
             // Pass 1: Look for a non-exhausted non-empty key
             for (offset in 1..max) {
                 val slot = ((afterSlot - 1 + offset) % max) + 1
                 val key = prefs.getApiKeySlot(targetId, slot)
                 if (key.isNotEmpty()) {
-                    if (nextConfiguredKey == null) nextConfiguredKey = key to slot
+                    if (globalNextConfiguredKey == null) globalNextConfiguredKey = key to slot
                     if (!isKeyExhausted(targetId, slot, key)) return key to slot
                 }
             }
-
-            // Pass 2: Fallback to next configured key in ring even if in cooldown
-            if (nextConfiguredKey != null) {
-                return nextConfiguredKey
-            }
         }
-        return null
+        return globalNextConfiguredKey
     }
 
     /**
@@ -251,9 +241,20 @@ object ApiKeyRotator {
     /**
      * Clear all cooldowns for a specific provider.
      */
-    fun clearCooldowns(storageId: String) {
-        val prefix = "$storageId:"
-        exhaustedKeys.keys.removeAll { it.startsWith(prefix) }
+    fun clearCooldowns(storageId: String, prefs: EncryptedPrefs? = null) {
+        val aliases = getStorageAliases(storageId)
+        for (alias in aliases) {
+            val prefix = "$alias:"
+            exhaustedKeys.keys.removeAll { it.startsWith(prefix) }
+            if (prefs != null) {
+                for (slot in 1..EncryptedPrefs.MAX_API_KEYS_PER_PROVIDER) {
+                    val k = prefs.getApiKeySlot(alias, slot).trim()
+                    if (k.isNotEmpty()) {
+                        exhaustedKeyValues.remove(k)
+                    }
+                }
+            }
+        }
     }
 
     /**

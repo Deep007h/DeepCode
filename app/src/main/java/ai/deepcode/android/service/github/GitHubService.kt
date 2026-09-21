@@ -101,20 +101,22 @@ class GitHubService(private val token: String) {
 
     private fun execute(request: Request): Result<String> {
         return try {
-            val response = client.newCall(request).execute()
-            val scopes = response.header("X-OAuth-Scopes") ?: response.header("x-oauth-scopes")
-            if (!scopes.isNullOrBlank()) {
-                cachedScopes = scopes
+            client.newCall(request).execute().use { response ->
+                val scopes = response.header("X-OAuth-Scopes") ?: response.header("x-oauth-scopes")
+                if (!scopes.isNullOrBlank()) {
+                    cachedScopes = scopes
+                }
+                val body = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    val msg = try {
+                        val json = gson.fromJson(body, JsonObject::class.java)
+                        json.get("message")?.asString ?: body
+                    } catch (_: Exception) { body }
+                    Result.failure(Exception("GitHub API error (HTTP ${response.code}): $msg"))
+                } else {
+                    Result.success(body)
+                }
             }
-            val body = response.body?.string() ?: ""
-            if (!response.isSuccessful) {
-                val msg = try {
-                    val json = gson.fromJson(body, JsonObject::class.java)
-                    json.get("message")?.asString ?: body
-                } catch (_: Exception) { body }
-                return Result.failure(Exception("GitHub API error (HTTP ${response.code}): $msg"))
-            }
-            Result.success(body)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -372,10 +374,11 @@ class GitHubService(private val token: String) {
         val endpoint = if (ref != null) "$baseEndpoint?ref=$ref" else baseEndpoint
         val rawReq = buildRequest(endpoint, "GET", null, acceptHeader = "application/vnd.github.v3.raw")
         try {
-            val resp = client.newCall(rawReq).execute()
-            if (resp.isSuccessful) {
-                val body = resp.body?.string() ?: ""
-                return Result.success(body)
+            client.newCall(rawReq).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val body = resp.body?.string() ?: ""
+                    return Result.success(body)
+                }
             }
         } catch (_: Exception) {}
 
@@ -397,8 +400,9 @@ class GitHubService(private val token: String) {
                         .header("User-Agent", "DeepCode-Android")
                         .get()
                         .build()
-                    val dResp = client.newCall(dReq).execute()
-                    dResp.body?.string() ?: ""
+                    client.newCall(dReq).execute().use { dResp ->
+                        dResp.body?.string() ?: ""
+                    }
                 } else {
                     body
                 }
@@ -981,16 +985,21 @@ class GitHubService(private val token: String) {
     fun downloadArtifact(owner: String, repo: String, artifactId: Long, savePath: String): Result<String> {
         val request = buildRequest("repos/$owner/$repo/actions/artifacts/$artifactId/zip")
         return try {
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                val body = response.body?.string() ?: ""
-                return Result.failure(Exception("GitHub API error (HTTP ${response.code}): $body"))
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    return Result.failure(Exception("GitHub API error (HTTP ${response.code}): $body"))
+                }
+                val body = response.body ?: return Result.failure(Exception("Empty artifact response"))
+                val file = java.io.File(savePath)
+                file.parentFile?.mkdirs()
+                val bytesCopied = body.byteStream().use { input ->
+                    java.io.FileOutputStream(file).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                Result.success("Artifact downloaded to: ${file.absolutePath} ($bytesCopied bytes)")
             }
-            val bytes = response.body?.bytes() ?: return Result.failure(Exception("Empty artifact response"))
-            val file = java.io.File(savePath)
-            file.parentFile?.mkdirs()
-            file.writeBytes(bytes)
-            Result.success("Artifact downloaded to: ${file.absolutePath} (${bytes.size} bytes)")
         } catch (e: Exception) {
             Result.failure(e)
         }

@@ -1275,7 +1275,7 @@ fun SessionRow(
     var menuExpanded by remember { mutableStateOf(false) }
     
     val icon = when {
-        session.title.contains("Telegram", ignoreCase = true) -> Icons.Default.Send
+        session.title.contains("Telegram", ignoreCase = true) -> Icons.AutoMirrored.Filled.Send
         session.title.contains("Crypto", ignoreCase = true) -> Icons.Default.MonetizationOn
         else -> Icons.AutoMirrored.Filled.Chat
     }
@@ -1937,7 +1937,7 @@ fun GlobalWallpaperBackground(repository: DeepCodeRepository) {
         } else {
             Box(modifier = Modifier.fillMaxSize().background(AppScreenBg))
         }
-    } else if (wallpaperOpt != null && wallpaperOpt.gradientColors != null) {
+    } else if (wallpaperOpt != null) {
         Box(
             modifier = Modifier
                 .fillMaxSize()

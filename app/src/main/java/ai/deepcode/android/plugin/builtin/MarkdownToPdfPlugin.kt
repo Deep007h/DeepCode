@@ -146,10 +146,13 @@ class MarkdownToPdfPlugin : DeepCodePlugin {
         doc.finishPage(page)
         val outDir = File(context.filesDir, "plugins/md_to_pdf")
         if (!outDir.exists()) outDir.mkdirs()
-        val outFile = File(outDir, if (filename.endsWith(".pdf")) filename else "$filename.pdf")
-        doc.writeTo(FileOutputStream(outFile))
+        val safeFileName = filename.substringAfterLast("/").substringAfterLast("\\").replace(Regex("[^a-zA-Z0-9._-]"), "_").ifEmpty { "document" }
+        val outFile = File(outDir, if (safeFileName.endsWith(".pdf")) safeFileName else "$safeFileName.pdf")
+        FileOutputStream(outFile).use { fos ->
+            doc.writeTo(fos)
+        }
         doc.close()
         
-        return "PDF saved to ${outFile.absolutePath}"
+        return "[file:${outFile.absolutePath}]\nPDF saved successfully to ${outFile.absolutePath}"
     }
 }
