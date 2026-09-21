@@ -282,12 +282,34 @@ class ToolExecutor(private val context: Context? = null) {
 
     fun executeTool(name: String, argumentsJson: String, workingDir: String, useRoot: Boolean): String {
         return try {
-            val args = try { gson.fromJson(argumentsJson, JsonObject::class.java) ?: JsonObject() } catch (_: Exception) { JsonObject() }
+            val unmaskedArgsJson = ai.deepcode.android.security.AuthSurrogate.unmaskSurrogates(argumentsJson)
+            val args = try { gson.fromJson(unmaskedArgsJson, JsonObject::class.java) ?: JsonObject() } catch (_: Exception) { JsonObject() }
+            
+            // ── Sentinel Arbiter: Evaluate Risk & Enforce Safe Mode ──
+            val decision = ai.deepcode.android.security.SentinelArbiter.evaluateToolCall(name, args, useRoot, context)
+            if (!decision.allowed) {
+                return decision.blockedReason ?: "[Sentinel Block] Action restricted by security policy."
+            }
+
+            val rawResult = executeToolInternal(name, args, workingDir, useRoot)
+            ai.deepcode.android.security.AuthSurrogate.maskSecrets(rawResult)
+        } catch (e: Exception) {
+            "Error executing tool $name: ${e.message}"
+        }
+    }
+
+    private fun executeToolInternal(name: String, args: JsonObject, workingDir: String, useRoot: Boolean): String {
+        return try {
             if (name == "summon_agents") {
                 val taskDesc = args.get("task")?.asString ?: args.get("description")?.asString ?: return "Missing task/description argument"
                 return runOrchestration(taskDesc)
             }
             when (name) {
+            "video_inspect", "video_extract_frames", "video_extract_audio" -> {
+                val plugin = ai.deepcode.android.plugin.builtin.VideoIntelligencePlugin()
+                val ctx = context ?: return "Context not available for video intelligence"
+                plugin.execute(name, args, ctx)
+            }
                 "read_file", "file_read" -> {
                     val path = optString(args, "path") ?: return "Missing path argument"
                     readFile(path, workingDir, useRoot)
@@ -3474,18 +3496,16 @@ class ToolExecutor(private val context: Context? = null) {
             val msg = "Web fetch failed: only http(s) URLs allowed"
             if (throwOnError) throw RuntimeException(msg) else return msg
         }
-        // Block cloud-metadata + loopback SSRF targets; LAN hosts still allowed for local dev servers.
-        try {
-            val host = java.net.URL(url).host.lowercase()
-            if (host == "169.254.169.254" || host == "metadata.google.internal" || host == "[::1]") {
-                val msg = "Web fetch failed: blocked host $host"
-                if (throwOnError) throw RuntimeException(msg) else return msg
-            }
-        } catch (_: Exception) {}
+        // Block cloud-metadata + loopback SSRF targets via NetworkSentinel
+        if (!ai.deepcode.android.security.NetworkSentinel.validateUrl(url)) {
+            val msg = "Web fetch failed: blocked by NetworkSentinel anti-SSRF policy ($url)"
+            if (throwOnError) throw RuntimeException(msg) else return msg
+        }
         // 1st Priority: TinyFish Fetch API
         val tinyFishResult = fetchTinyFishFetch(url, raw = raw)
         if (!tinyFishResult.isNullOrBlank()) {
-            return tinyFishResult
+            val sanitized = ai.deepcode.android.security.NetworkSentinel.sanitizeWebOutput(tinyFishResult)
+            return if (raw) sanitized else sanitized.take(40000)
         }
 
         // Standard HTTP / JSoup Fallback
@@ -3512,7 +3532,8 @@ class ToolExecutor(private val context: Context? = null) {
                 val contentType = response.header("Content-Type") ?: ""
                 val isHtml = contentType.contains("html", ignoreCase = true) || body.trim().startsWith("<")
                 val cleanText = if (raw) body else if (isHtml) htmlToText(body) else body
-                if (raw) cleanText else cleanText.take(40000)
+                val sanitized = ai.deepcode.android.security.NetworkSentinel.sanitizeWebOutput(cleanText)
+                if (raw) sanitized else sanitized.take(40000)
             }
         } catch (e: Exception) {
             if (throwOnError) throw e
@@ -4766,7 +4787,30 @@ The task strictly runs within DeepCode's single persistent ChatGPT conversation 
                         "name" to mapOf("type" to "string", "description" to "The name of the automation to delete if ID is not known")
                     )
                 )
-            )
+            ),
+            Tool("video_inspect", "Inspect video file container, resolution, duration, bitrate, frame rate, and audio streams (muse.ai video intelligence).", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "path" to mapOf("type" to "string", "description" to "Local path to video file (.mp4, .mkv, .webm, etc.)")
+                ),
+                "required" to listOf("path")
+            )),
+            Tool("video_extract_frames", "Extract high-resolution video frames at timestamps or intervals for visual inspection or OCR (muse.ai video intelligence).", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "path" to mapOf("type" to "string", "description" to "Local path to video file"),
+                    "timestamps_sec" to mapOf("type" to "string", "description" to "Comma-separated timestamps in seconds (e.g. '5, 15, 30') or empty for keyframes")
+                ),
+                "required" to listOf("path")
+            )),
+            Tool("video_extract_audio", "Extract the audio stream from a video file into a standalone audio file (.aac/.wav) for transcription (muse.ai video intelligence).", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "path" to mapOf("type" to "string", "description" to "Local path to video file"),
+                    "output_format" to mapOf("type" to "string", "description" to "Target format: 'aac' or 'wav', default 'aac'")
+                ),
+                "required" to listOf("path")
+            ))
         )
         return try {
             coreTools + ai.deepcode.android.plugin.PluginRegistry.getEnabledTools()

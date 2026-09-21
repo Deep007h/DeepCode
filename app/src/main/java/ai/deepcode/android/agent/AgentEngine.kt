@@ -1741,6 +1741,7 @@ class AgentEngine(private val context: Context) {
                         var hasCompleted = false
                         val mediaMarkers = mutableListOf<String>()
                         val executedToolSignatures = mutableMapOf<String, Int>()
+                        ai.deepcode.android.security.AuthSurrogate.refreshSurrogates(context)
 
                         while (loopCount < maxLoops && !hasCompleted && !delivered) {
                             loopCount++
@@ -1892,8 +1893,11 @@ class AgentEngine(private val context: Context) {
                             send("Thinking...\n")
 
                             var toolCallDetected = false
+                            val maskedHistory = finalHistory.map { msg ->
+                                msg.copy(content = ai.deepcode.android.security.AuthSurrogate.maskSecrets(msg.content))
+                            }
                             provider.streamCompletion(
-                                messages = finalHistory,
+                                messages = maskedHistory,
                                 model = modelId,
                                 tools = tools,
                                 apiKey = apiKey,
@@ -2117,8 +2121,11 @@ class AgentEngine(private val context: Context) {
 
                                 send("Thinking...\n")
 
+                                val maskedFallbackHistory = history.map { msg ->
+                                    msg.copy(content = ai.deepcode.android.security.AuthSurrogate.maskSecrets(msg.content))
+                                }
                                 provider.streamCompletion(
-                                    messages = history.toMutableList(),
+                                    messages = maskedFallbackHistory.toMutableList(),
                                     model = modelId,
                                     tools = emptyList(),
                                     apiKey = apiKey,

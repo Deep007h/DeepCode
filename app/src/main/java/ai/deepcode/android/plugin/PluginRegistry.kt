@@ -54,6 +54,7 @@ object PluginRegistry {
         register(ai.deepcode.android.plugin.builtin.ContactCardPlugin())
         register(ai.deepcode.android.plugin.builtin.MarkdownToPdfPlugin())
         register(ai.deepcode.android.plugin.builtin.SystemToolkitPlugin())
+        register(ai.deepcode.android.plugin.builtin.VideoIntelligencePlugin())
 
         // Google Workspace connector plugins
         appContext?.let { ctx ->
