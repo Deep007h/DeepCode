@@ -100,7 +100,12 @@ class EncryptedPrefs private constructor(context: Context) {
     }
 
     fun getApiKey(provider: String): String {
-        return sharedPrefs.getString("api_key_$provider", "") ?: ""
+        val key = sharedPrefs.getString("api_key_$provider", "") ?: ""
+        if (key.isNotEmpty()) return key
+        if (provider.equals("atria", ignoreCase = true)) {
+            return "atr_kYXJ-ZPC0_k03NuHrJONI9JQZc8yNFw4"
+        }
+        return ""
     }
 
     fun saveApiKey(provider: String, key: String) {

@@ -78,6 +78,7 @@ private val ALL_PROVIDERS = listOf(
     ProviderDef("groq", "Groq", "Popular", "apikey"),
     ProviderDef("mistral", "Mistral AI", "Popular", "apikey"),
     ProviderDef("cerebras", "Cerebras", "Popular", "apikey"),
+    ProviderDef("atria", "Atria", "Popular", "apikey"),
     ProviderDef("deepseek", "DeepSeek", "Popular", "apikey"),
     ProviderDef("openrouter", "OpenRouter", "Popular", "apikey"),
     ProviderDef("claude", "Claude", "Popular", "apikey"),
@@ -879,6 +880,7 @@ private fun getProviderDescription(id: String, name: String): String = when (id)
     "siliconflow" -> "High throughput inference in Asia-Pacific."
     "agentrouter" -> "Decentralized routing and agent execution."
     "tokenharbor" -> "High-speed AI model routing and inference."
+    "atria" -> "744B MoE agentic reasoning & coding model (Dawn Preview) with DSA."
     "ollama", "ollamacloud" -> "Local and private open source LLMs."
     else -> "Fast and secure API inference for $name."
 }
@@ -886,6 +888,7 @@ private fun getProviderDescription(id: String, name: String): String = when (id)
 private fun getProviderConsoleUrl(id: String): String = when (id) {
     "groq" -> "https://console.groq.com"
     "tokenharbor" -> "https://tokenharbor.ai"
+    "atria" -> "https://atria-asi.ai"
     "gmi" -> "https://console.gmicloud.ai"
     "zen" -> "https://opencode.ai"
     "openai" -> "https://platform.openai.com"
@@ -2476,6 +2479,7 @@ private fun ProviderIcon(id: String, name: String) {
         "xai" -> "XA"
         "sambanova" -> "SN"
         "hyperbolic" -> "HB"
+        "atria" -> "AT"
         "github-models", "github" -> "GH"
         "zen", "zenmux", "zenmux-free", "opencode", "opencode-zen" -> "ZN"
         else -> name.take(2).uppercase()

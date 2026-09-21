@@ -82,7 +82,8 @@ data class OpenAIProviderConfig(
     val name: String,
     val baseUrl: String,
     val models: List<AIModel>,
-    val isFree: Boolean = false
+    val isFree: Boolean = false,
+    val defaultApiKey: String? = null
 )
 
 class GenericOpenAIProvider(private val config: OpenAIProviderConfig) : AIProvider {
@@ -102,11 +103,12 @@ class GenericOpenAIProvider(private val config: OpenAIProviderConfig) : AIProvid
         onError: (Throwable) -> Unit,
         onUsage: ((TurnTokenUsage) -> Unit)?
     ) {
+        val effectiveKey = if (apiKey.isNotBlank()) apiKey else (config.defaultApiKey ?: "")
         streamOpenAiCompatible(
             messages = messages,
             model = model,
             tools = tools,
-            apiKey = apiKey,
+            apiKey = effectiveKey,
             baseUrl = resolveBaseUrl(customBaseUrl, config.baseUrl),
             onToken = onToken,
             onToolCall = onToolCall,
@@ -118,19 +120,28 @@ class GenericOpenAIProvider(private val config: OpenAIProviderConfig) : AIProvid
     }
 }
 
-private fun genProvider(name: String, baseUrl: String, modelIds: List<Pair<String, String>>, isFree: Boolean = false): OpenAIProviderConfig {
+private fun genProvider(name: String, baseUrl: String, modelIds: List<Pair<String, String>>, isFree: Boolean = false, defaultApiKey: String? = null): OpenAIProviderConfig {
     return OpenAIProviderConfig(
         name = name,
         baseUrl = baseUrl,
         models = modelIds.map { (id, label) ->
             val modelFree = isFree || id.contains("free", ignoreCase = true) || label.contains("free", ignoreCase = true)
-            AIModel(id, label, name, modelFree, "", if (modelFree) "Free" else "Paid")
+            val ctx = when {
+                id.contains("256k", true) || id.contains("Atria", true) -> "256K"
+                id.contains("128k", true) -> "128K"
+                else -> ""
+            }
+            AIModel(id, label, name, modelFree, ctx, if (modelFree) "Free" else "Paid")
         },
-        isFree = isFree
+        isFree = isFree,
+        defaultApiKey = defaultApiKey
     )
 }
 
 val OPENAI_PROVIDERS = listOf(
+    genProvider("Atria", "https://api.atria-asi.ai/v1", listOf(
+        "Atria-Dawn-Preview" to "Atria Dawn Preview"
+    ), defaultApiKey = "atr_kYXJ-ZPC0_k03NuHrJONI9JQZc8yNFw4"),
     genProvider("OpenAI", "https://api.openai.com/v1", listOf(
         "gpt-6-astra" to "GPT 6 Astra", "gpt-5.6-sol" to "GPT 5.6 Sol", "gpt-4o" to "GPT-4o", "gpt-4o-mini" to "GPT-4o Mini", "o1" to "OpenAI o1", "o1-mini" to "OpenAI o1 Mini",
         "o3-mini" to "OpenAI o3 Mini", "gpt-4.5-preview" to "GPT-4.5 Preview", "gpt-4-turbo" to "GPT-4 Turbo", "gpt-3.5-turbo" to "GPT-3.5 Turbo"
@@ -3173,6 +3184,8 @@ val PROVIDER_BASE_URLS = mapOf(
     "Baidu" to "https://qianfan.baidubce.com/v2",
     "TokenHarbor" to "https://tokenharbor.ai/v1",
     "Token Harbor" to "https://tokenharbor.ai/v1",
+    "Atria" to "https://api.atria-asi.ai/v1",
+    "Atria AI" to "https://api.atria-asi.ai/v1",
 )
 
 fun providerDefaultBaseUrl(providerName: String): String =
@@ -3184,6 +3197,7 @@ fun providerDefaultBaseUrl(providerName: String): String =
 fun providerStorageId(providerName: String): String {
     val clean = providerName.trim().lowercase()
     return when (clean) {
+        "atria", "atria ai", "atria-ai" -> "atria"
         "tokenharbor", "token harbor", "token-harbor" -> "tokenharbor"
         "zen ai", "zen", "zen (free)", "opencode-zen", "opencode zen", "opencode" -> "zen"
         "openai" -> "openai"
@@ -3368,6 +3382,8 @@ fun formatModelTitle(rawId: String): String {
             "deepseek" -> "DeepSeek"
             "grok" -> "Grok"
             "kimi" -> "Kimi"
+            "atria" -> "Atria"
+            "dawn" -> "Dawn"
             "minimax" -> "MiniMax"
             "nemotron" -> "Nemotron"
             "mimo" -> "Mimo"

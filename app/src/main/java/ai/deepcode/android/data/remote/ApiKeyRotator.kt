@@ -73,6 +73,7 @@ object ApiKeyRotator {
             "nvidia", "nvidia-nim" -> listOf("nvidia", "nvidia-nim")
             "cerebras", "cerebrus" -> listOf("cerebras", "cerebrus")
             "gmi", "gmi-cloud" -> listOf("gmi", "gmi-cloud")
+            "atria", "atria-ai" -> listOf("atria", "atria-ai")
             else -> listOf(clean)
         }
     }

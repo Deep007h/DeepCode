@@ -438,6 +438,7 @@ class AgentEngine(private val context: Context) {
             "Novita AI" -> securePrefs.getApiKey("novita")
             "SiliconFlow" -> securePrefs.getApiKey("siliconflow")
             "DeepSeek" -> securePrefs.getApiKey("deepseek")
+            "Atria", "Atria AI" -> securePrefs.getApiKey("atria")
             else -> {
                 val resolvedId = name.lowercase().replace(" ai", "").replace(" ", "").replace("-", "")
                 val keyFromId = securePrefs.getApiKey(resolvedId)

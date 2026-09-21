@@ -306,7 +306,9 @@ fun ChatScreen(
     val orchestratedResult by viewModel.orchestratedResult.collectAsStateWithLifecycle()
 
     val currentSessionId by viewModel.activeSessionIdFlow.collectAsStateWithLifecycle()
+    var replyingToMessage by remember { mutableStateOf<Message?>(null) }
     LaunchedEffect(currentSessionId) {
+        replyingToMessage = null
         if (currentSessionId.isNotEmpty() && activeSessionId.isEmpty()) {
             onSessionChanged(currentSessionId)
         }
@@ -1111,13 +1113,33 @@ fun ChatScreen(
                                     viewModel.sendMessage(suggestion)
                                     Unit
                                 } }
-                                MessageBubble(
+                                SwipeToReplyContainer(
                                     message = item.message,
-                                    showTimestamp = true,
-                                    imageCache = imageCache,
-                                    onSelectLayout = onSelect,
-                                    onSendSuggestion = onSendSug
-                                )
+                                    onReply = { msg ->
+                                        replyingToMessage = msg
+                                    }
+                                ) {
+                                    MessageBubble(
+                                        message = item.message,
+                                        showTimestamp = true,
+                                        imageCache = imageCache,
+                                        onSelectLayout = onSelect,
+                                        onSendSuggestion = onSendSug,
+                                        onScrollToMessage = { targetId ->
+                                            val targetIdx = combinedItems.indexOfFirst {
+                                                it is ChatItem.NormalMessage && it.message.id == targetId
+                                            }
+                                            if (targetIdx >= 0) {
+                                                scope.launch {
+                                                    lazyListState.animateScrollToItem(targetIdx)
+                                                }
+                                            }
+                                        },
+                                        onReply = { msg ->
+                                            replyingToMessage = msg
+                                        }
+                                    )
+                                }
                             }
                             is ChatItem.ToolExecutionGroup -> ToolExecutionGroupBubble(group = item)
                             is ChatItem.Streaming -> StreamingItem(
@@ -1226,6 +1248,20 @@ fun ChatScreen(
 
 
 
+            // Reply Preview Banner (Telegram-style)
+            AnimatedVisibility(
+                visible = replyingToMessage != null,
+                enter = slideInVertically(initialOffsetY = { it / 2 }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it / 2 }) + fadeOut()
+            ) {
+                replyingToMessage?.let { replyMsg ->
+                    ReplyPreviewBar(
+                        replyMessage = replyMsg,
+                        onDismiss = { replyingToMessage = null }
+                    )
+                }
+            }
+
             // 1:1 Floating Bottom Input Bar
             Row(
                 modifier = Modifier
@@ -1284,9 +1320,11 @@ fun ChatScreen(
                         keyboardActions = KeyboardActions(onSend = {
                             if ((inputMsg.isNotEmpty() || attachedFiles.isNotEmpty()) && !viewModel.isStreaming.value) {
                                 val toSend = inputMsg
+                                val replyTo = replyingToMessage
                                 inputMsg = ""
+                                replyingToMessage = null
                                 shouldScrollToBottomOnSend = true
-                                viewModel.sendMessage(toSend)
+                                viewModel.sendMessage(toSend, replyToMessage = replyTo)
                             }
                         })
                     )
@@ -1357,9 +1395,11 @@ fun ChatScreen(
                                         viewModel.cancelActiveChat()
                                     } else if (inputMsg.isNotEmpty() || attachedFiles.isNotEmpty()) {
                                         val toSend = inputMsg
+                                        val replyTo = replyingToMessage
                                         inputMsg = ""
+                                        replyingToMessage = null
                                         shouldScrollToBottomOnSend = true
-                                        viewModel.sendMessage(toSend)
+                                        viewModel.sendMessage(toSend, replyToMessage = replyTo)
                                     }
                                 },
                             contentAlignment = Alignment.Center
@@ -1673,7 +1713,9 @@ fun MessageBubble(
     showTimestamp: Boolean = false,
     imageCache: Map<String, ImageBitmap> = emptyMap(),
     onSelectLayout: (String) -> Unit = {},
-    onSendSuggestion: (String) -> Unit = {}
+    onSendSuggestion: (String) -> Unit = {},
+    onScrollToMessage: (String) -> Unit = {},
+    onReply: (Message) -> Unit = {}
 ) {
     val context = LocalContext.current
     val isUser = message.role == "user"
@@ -1697,10 +1739,28 @@ fun MessageBubble(
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalAlignment = alignment) {
         if (!isInterrupted || cleanedContent.isNotEmpty()) {
             if (isUser) {
-                UserBubble(cleanedContent = cleanedContent, parsedParts = parsedParts, message = message, showTimestamp = showTimestamp, context = context)
+                UserBubble(
+                    cleanedContent = cleanedContent,
+                    parsedParts = parsedParts,
+                    message = message,
+                    showTimestamp = showTimestamp,
+                    context = context,
+                    onScrollToMessage = onScrollToMessage,
+                    onReply = onReply
+                )
             } else {
                 if (cleanedContent.isNotEmpty()) {
-                    AiBubble(cleanedContent = cleanedContent, parsedParts = parsedParts, message = message, showTimestamp = showTimestamp, imageCache = imageCache, onSelectLayout = onSelectLayout, onSendSuggestion = onSendSuggestion)
+                    AiBubble(
+                        cleanedContent = cleanedContent,
+                        parsedParts = parsedParts,
+                        message = message,
+                        showTimestamp = showTimestamp,
+                        imageCache = imageCache,
+                        onSelectLayout = onSelectLayout,
+                        onSendSuggestion = onSendSuggestion,
+                        onScrollToMessage = onScrollToMessage,
+                        onReply = onReply
+                    )
                 }
             }
         }
@@ -1714,15 +1774,20 @@ private fun UserBubble(
     parsedParts: List<MessageContentPart>,
     message: Message,
     showTimestamp: Boolean = false,
-    context: android.content.Context
+    context: android.content.Context,
+    onScrollToMessage: (String) -> Unit = {},
+    onReply: (Message) -> Unit = {}
 ) {
     val showMenu = remember { mutableStateOf(false) }
     val pressOffset = remember { mutableStateOf(Offset.Zero) }
     val haptic = LocalHapticFeedback.current
     var isExpanded by remember { mutableStateOf(false) }
 
-    val shouldTruncate = remember(cleanedContent) {
-        cleanedContent.length > 250 || cleanedContent.lines().size > 6
+    val replyInfo = remember(cleanedContent) { parseReplyHeader(cleanedContent) }
+    val displayBody = replyInfo?.cleanBody ?: cleanedContent
+
+    val shouldTruncate = remember(displayBody) {
+        displayBody.length > 250 || displayBody.lines().size > 6
     }
 
     val topColor = if (isDarkThemeActive) {
@@ -1758,8 +1823,19 @@ private fun UserBubble(
             }
     ) {
         Column {
+            if (replyInfo != null) {
+                QuotedReplyHeader(
+                    author = replyInfo.author,
+                    snippet = replyInfo.snippet,
+                    onClick = {
+                        replyInfo.targetMessageId?.let(onScrollToMessage)
+                    }
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+
             Text(
-                text = cleanedContent,
+                text = displayBody,
                 fontSize = 15.sp,
                 lineHeight = 22.sp,
                 color = AppWhite,
@@ -1802,7 +1878,13 @@ private fun UserBubble(
             }
         }
         if (showMenu.value) {
-            TextContextMenu(showMenu = showMenu, pressOffset = pressOffset, text = cleanedContent, context = context)
+            TextContextMenu(
+                showMenu = showMenu,
+                pressOffset = pressOffset,
+                text = displayBody,
+                context = context,
+                onReply = { onReply(message) }
+            )
         }
     }
 }
@@ -1815,7 +1897,9 @@ private fun AiBubble(
     showTimestamp: Boolean = false,
     imageCache: Map<String, ImageBitmap>,
     onSelectLayout: (String) -> Unit = {},
-    onSendSuggestion: (String) -> Unit = {}
+    onSendSuggestion: (String) -> Unit = {},
+    onScrollToMessage: (String) -> Unit = {},
+    onReply: (Message) -> Unit = {}
 ) {
     val context = LocalContext.current
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalAlignment = Alignment.Start) {
@@ -1899,7 +1983,13 @@ private fun AiBubble(
                 }
             }
             if (showAiMenu.value) {
-                TextContextMenu(showMenu = showAiMenu, pressOffset = pressOffset, text = cleanedContent, context = context)
+                TextContextMenu(
+                    showMenu = showAiMenu,
+                    pressOffset = pressOffset,
+                    text = cleanedContent,
+                    context = context,
+                    onReply = { onReply(message) }
+                )
             }
         }
     }
@@ -2411,13 +2501,24 @@ private fun TextContextMenu(
     showMenu: MutableState<Boolean>,
     pressOffset: MutableState<Offset>,
     text: String,
-    context: android.content.Context
+    context: android.content.Context,
+    onReply: (() -> Unit)? = null
 ) {
     Popup(alignment = Alignment.TopStart, offset = IntOffset(pressOffset.value.x.toInt(), pressOffset.value.y.toInt()),
         onDismissRequest = { showMenu.value = false }) {
         Surface(modifier = Modifier.widthIn(min = 100.dp, max = 160.dp), shape = RoundedCornerShape(12.dp),
             color = AppDivider, border = BorderStroke(1.dp, AppBorder)) {
             Column {
+                if (onReply != null) {
+                    DropdownMenuItem(
+                        text = { Text("Reply", color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Bold) },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.Reply, null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), modifier = Modifier.size(16.dp)) },
+                        onClick = {
+                            showMenu.value = false
+                            onReply()
+                        }
+                    )
+                }
                 DropdownMenuItem(text = { Text("Copy", color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Bold) },
                     leadingIcon = { Icon(Icons.Default.ContentCopy, null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), modifier = Modifier.size(16.dp)) },
                     onClick = {
@@ -3897,7 +3998,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         return title.take(28)
     }
 
-    fun sendMessage(text: String) {
+    fun sendMessage(text: String, replyToMessage: Message? = null) {
         // Prevent concurrent sends racing on _streamedText / _streamingMessageId (was overwriting + DB REPLACE collision).
         if (_isStreaming.value) return
         sendJob?.cancel()
@@ -3940,7 +4041,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             }
             val uploadedImage = currentAttachments.firstOrNull { isImageAtt(it) }
 
-            val msgText = if (currentAttachments.isNotEmpty()) {
+            val baseText = if (currentAttachments.isNotEmpty()) {
                 val filesSection = currentAttachments.joinToString("\n") { f ->
                     if (isImageAtt(f) && f.filePath != null) {
                         "[image:${f.filePath}]"
@@ -3952,6 +4053,14 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 }
                 if (text.isBlank()) filesSection else "$filesSection\n\n$text"
             } else text
+
+            val msgText = if (replyToMessage != null) {
+                val author = if (replyToMessage.role == "user") "You" else "DeepCode"
+                val snippet = cleanSnippetForReply(replyToMessage.content).replace("\n", " ").take(160)
+                """[reply author="$author" id="${replyToMessage.id}"]$snippet[/reply]""" + "\n\n" + baseText
+            } else {
+                baseText
+            }
 
             val userMsg = Message(
                 id = UUID.randomUUID().toString(),
@@ -5171,6 +5280,7 @@ CRITICAL INSTRUCTIONS:
 - Image Generation (generate_image): When the user asks for an image, picture, photo, illustration, drawing, or artwork, ALWAYS call the `generate_image` tool with a detailed prompt describing what to render. NEVER fabricate, hallucinate, or make up local file paths or [image:...] tags yourself.
 - Documents (generate_chatgpt_document): When asked to generate a document or specification with ChatGPT, call `generate_chatgpt_document`.
 - Video Generation (generate_video): Call `generate_video` with a prompt describing the scene.
+- Reply Threads & Context Pointing: When a user's prompt begins with `[reply author="..." id="..."]...[/reply]`, the user is specifically swiping or pointing to that past quoted message as conversational context. Answer their prompt in direct relation and context to that quoted message.
 $rootSection
 $githubSection
 """.trim()
