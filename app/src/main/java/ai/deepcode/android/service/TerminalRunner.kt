@@ -44,7 +44,7 @@ class TerminalRunner {
 
                 val env = pb.environment()
                 env["TERM"] = "screen"
-                env["PATH"] = (env["PATH"] ?: "") + ":/sbin:/system/sbin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/data/adb/ksu/bin:/data/adb/ap/bin"
+                env["PATH"] = (env["PATH"] ?: "") + ":/sbin:/system/sbin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk:/data/data/com.termux/files/usr/bin:/data/local/tmp:/data/adb/modules"
 
                 val proc = pb.start()
                 process = proc
@@ -154,7 +154,7 @@ class TerminalRunner {
                     .directory(dirToUse)
                     .redirectErrorStream(true)
                 val env = pb.environment()
-                env["PATH"] = (env["PATH"] ?: "") + ":/sbin:/system/sbin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk"
+                env["PATH"] = (env["PATH"] ?: "") + ":/sbin:/system/sbin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk:/data/data/com.termux/files/usr/bin:/data/local/tmp:/data/adb/modules"
                 val proc = pb.start()
                 try {
                     // Read output in chunks with a hard cap (prevents OOM from

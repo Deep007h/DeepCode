@@ -78,6 +78,12 @@ import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.update
 import java.io.File
 import java.io.FileOutputStream
+import java.util.UUID
+import com.google.gson.Gson
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import com.google.gson.JsonPrimitive
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -3809,7 +3815,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
 
     private var _deferredResponse = ""
     private var toolCallDepth = 0
-    private val maxToolCallDepth = 5
+    private val maxToolCallDepth = 15
     // Tracks consecutive web_search calls in a single turn (reset on each sendMessage)
     private var consecutiveWebSearches = 0
     private val executedToolSignatures = java.util.concurrent.ConcurrentHashMap<String, Int>()
@@ -4417,6 +4423,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 try {
                     _streamedText.value = ""
                     var streamHadToolCall = false
+                    val turnToolCalls = java.util.Collections.synchronizedList(mutableListOf<ToolCall>())
                     // Cross-thread flag: written on the provider's network callback
                     // thread and read on the pacing coroutine / other callbacks.
                     // AtomicBoolean gives visibility without requiring bufferLock.
@@ -4502,7 +4509,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                                 streamHadAudioTool.set(true)
                                 _streamedText.value = ""
                             }
-                            maybeAutoApproveTool(toolCall)
+                            turnToolCalls.add(toolCall)
                         },
                         onComplete = { fullResponse ->
                             if (streamHadAudioTool.get()) {
@@ -4543,35 +4550,37 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     )
                     pacingJob?.join()
                     if (streamHadAudioTool.get()) {
+                        val ttsCall = turnToolCalls.firstOrNull { it.name == "edge_tts" }
+                        if (ttsCall != null) {
+                            handleAudioToolCall(ttsCall, sessionId)
+                        }
                         _streamedText.value = ""
                         _deferredResponse = ""
                         break
                     }
                     val textToSave = if (_streamedText.value.isNotBlank()) _streamedText.value else _deferredResponse
-                    if (!streamHadToolCall && textToSave.isNotBlank()) {
+                    val toolCallsToRun = turnToolCalls.toList().toMutableList()
+                    if (toolCallsToRun.isEmpty() && textToSave.isNotBlank()) {
                         val parsedCalls = parseToolCallsFromText(textToSave)
                         if (parsedCalls.isNotEmpty()) {
                             streamHadToolCall = true
-                            _streamedText.value = ""
-                            _deferredResponse = ""
-                            for (tc in parsedCalls) {
-                                maybeAutoApproveTool(tc)
-                            }
-                            break
+                            toolCallsToRun.addAll(parsedCalls)
                         }
-                    }
-                    if (textToSave.isNotBlank()) {
-                        // Pin to the originating session — activeSessionId may have changed on switch.
-                        appendAssistantMessage(textToSave, sessionId)
-                        _streamingMessageId.value = ""
-                    }
-                    if (!streamHadToolCall) {
-                        _isStreaming.value = false
-                        _streamingMessageId.value = ""
                     }
                     _streamedText.value = ""
                     _deferredResponse = ""
-                    break  // Success — exit retry loop
+                    if (toolCallsToRun.isNotEmpty()) {
+                        executeToolCallsTurn(toolCallsToRun, textToSave, sessionId)
+                        break
+                    } else {
+                        if (textToSave.isNotBlank()) {
+                            // Pin to the originating session — activeSessionId may have changed on switch.
+                            appendAssistantMessage(textToSave, sessionId)
+                        }
+                        _isStreaming.value = false
+                        _streamingMessageId.value = ""
+                        break  // Success — exit retry loop
+                    }
                 } catch (e: RateLimitException) {
                     pacingJob?.cancel()
                     val actualSlot = if (retrySlot > 0) retrySlot else ApiKeyRotator.findSlotForKey(repository.securePrefs, storageId, retryApiKey)
@@ -4660,100 +4669,12 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         _pendingToolCall.value = null
 
         if (toolCall.name == "edge_tts") {
-            _mediaProcessingType.value = "audio"
-            _mediaProcessingPrompt.value = "Thinking..."
-            val priorContent = if (_deferredResponse.isNotBlank()) _deferredResponse else _streamedText.value
-            _streamedText.value = ""
-            _isStreaming.value = true
-
-            viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    val result = try {
-                        repository.executeTool(toolCall.name, toolCall.arguments, repository.getDefaultProjectPath())
-                    } catch (e: Exception) {
-                        "Error executing audio generation: ${e.message}"
-                    }
-                    val mediaMatch = RE_MEDIA_TAG.find(result)
-                    val audioTag = mediaMatch?.value ?: if (result.contains("[audio:")) result else null
-                    val cleanPrior = priorContent.trim()
-                    val textToSave = if (audioTag != null) {
-                        if (cleanPrior.isNotEmpty()) "$cleanPrior\n\n$audioTag" else audioTag
-                    } else {
-                        if (cleanPrior.isNotEmpty()) "$cleanPrior\n\nFailed to generate audio: $result" else "Failed to generate audio: $result"
-                    }
-                    appendAssistantMessage(textToSave)
-                } catch (e: Exception) {
-                    ai.deepcode.android.util.AppLogger.e("ChatViewModel", "edge_tts approve crashed: ${e.message}", e)
-                    appendAssistantMessage("Error: ${e.message}")
-                } finally {
-                    _isStreaming.value = false
-                    _streamingMessageId.value = ""
-                    _mediaProcessingType.value = null
-                    _mediaProcessingPrompt.value = ""
-                }
-            }
+            handleAudioToolCall(toolCall, activeSessionId)
             return
         }
 
-        when (toolCall.name) {
-            "generate_image" -> {
-                val prompt = try {
-                    com.google.gson.JsonParser.parseString(toolCall.arguments).asJsonObject.get("prompt")?.asString ?: ""
-                } catch (_: Exception) { "" }
-                _mediaProcessingType.value = "image"
-                _mediaProcessingPrompt.value = prompt
-            }
-            "generate_video" -> {
-                val prompt = try {
-                    com.google.gson.JsonParser.parseString(toolCall.arguments).asJsonObject.get("prompt")?.asString ?: ""
-                } catch (_: Exception) { "" }
-                _mediaProcessingType.value = "video"
-                _mediaProcessingPrompt.value = prompt
-            }
-        }
         viewModelScope.launch(Dispatchers.IO) {
-            val argsString = toolCall.arguments.trim()
-            val encodedArgs = com.google.gson.Gson().toJson(argsString)
-            // Insert assistant message with tool_calls BEFORE tool result
-            val assistantToolCallMsg = Message(
-                id = UUID.randomUUID().toString(),
-                sessionId = activeSessionId,
-                role = "assistant",
-                content = "",
-                timestamp = System.currentTimeMillis(),
-                isToolCall = true,
-                toolCallsJson = """[{"id":"${toolCall.id}","name":"${toolCall.name}","arguments":$encodedArgs}]"""
-            )
-            repository.insertMessage(assistantToolCallMsg)
-
-            val result = try {
-                repository.executeTool(toolCall.name, toolCall.arguments, repository.getDefaultProjectPath())
-            } catch (e: Exception) {
-                "Error executing ${toolCall.name}: ${e.message}"
-            } finally {
-                if (toolCall.name in setOf("generate_image", "generate_video")) {
-                    _mediaProcessingType.value = null
-                    _mediaProcessingPrompt.value = ""
-                }
-            }
-            val mediaMatch = RE_MEDIA_TAG.find(result)
-            if (mediaMatch != null) {
-                _streamedText.update { current ->
-                    if (!current.contains(mediaMatch.value)) "$current\n\n${mediaMatch.value}" else current
-                }
-            }
-            val toolResultMsg = Message(
-                id = UUID.randomUUID().toString(),
-                sessionId = activeSessionId,
-                role = "tool",
-                content = result,
-                timestamp = System.currentTimeMillis(),
-                isToolCall = true,
-                toolCallsJson = """{"id":"${toolCall.id}","name":"${toolCall.name}"}"""
-            )
-            repository.insertMessage(toolResultMsg)
-            // Feed the tool result back to the AI so it can respond
-            viewModelScope.launch(Dispatchers.IO) { continueWithToolResult(toolResultMsg) }
+            executeToolCallsTurn(listOf(toolCall), "", activeSessionId)
         }
     }
 
@@ -4904,6 +4825,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             try {
                 _streamedText.value = ""
                 var nextStreamHadToolCall = false
+                val nextTurnToolCalls = java.util.Collections.synchronizedList(mutableListOf<ToolCall>())
                 // Cross-thread flag (see streamHadAudioTool above).
                 val nextStreamHadAudioTool = java.util.concurrent.atomic.AtomicBoolean(false)
                 val rawBuffer = StringBuilder()
@@ -4987,7 +4909,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                             nextStreamHadAudioTool.set(true)
                             _streamedText.value = ""
                         }
-                        maybeAutoApproveTool(tc)
+                        nextTurnToolCalls.add(tc)
                     },
                     onComplete = { fullResponse ->
                         if (nextStreamHadAudioTool.get()) {
@@ -5028,32 +4950,36 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 )
                 pacingJob?.join()
                 if (nextStreamHadAudioTool.get()) {
+                    val ttsCall = nextTurnToolCalls.firstOrNull { it.name == "edge_tts" }
+                    if (ttsCall != null) {
+                        handleAudioToolCall(ttsCall, activeSessionId)
+                    }
                     _streamedText.value = ""
                     _deferredResponse = ""
                     break
                 }
                 val textToSave = if (_streamedText.value.isNotBlank()) _streamedText.value else _deferredResponse
-                if (!nextStreamHadToolCall && textToSave.isNotBlank()) {
+                val toolCallsToRun = nextTurnToolCalls.toList().toMutableList()
+                if (toolCallsToRun.isEmpty() && textToSave.isNotBlank()) {
                     val parsedCalls = parseToolCallsFromText(textToSave)
                     if (parsedCalls.isNotEmpty()) {
                         nextStreamHadToolCall = true
-                        _streamedText.value = ""
-                        _deferredResponse = ""
-                        for (tc in parsedCalls) {
-                            maybeAutoApproveTool(tc)
-                        }
-                        break
+                        toolCallsToRun.addAll(parsedCalls)
                     }
-                }
-                if (textToSave.isNotBlank()) {
-                    appendAssistantMessage(textToSave)
-                }
-                if (!nextStreamHadToolCall) {
-                    _isStreaming.value = false
                 }
                 _streamedText.value = ""
                 _deferredResponse = ""
-                break
+                if (toolCallsToRun.isNotEmpty()) {
+                    executeToolCallsTurn(toolCallsToRun, textToSave, activeSessionId)
+                    break
+                } else {
+                    if (textToSave.isNotBlank()) {
+                        appendAssistantMessage(textToSave, activeSessionId)
+                    }
+                    _isStreaming.value = false
+                    _streamingMessageId.value = ""
+                    break
+                }
             } catch (e: RateLimitException) {
                 pacingJob?.cancel()
                 val actualSlot = if (retrySlot > 0) retrySlot else ApiKeyRotator.findSlotForKey(repository.securePrefs, storageId, retryApiKey)
@@ -5302,12 +5228,12 @@ Available tools: github_get_user, github_list_repos, github_get_repo, github_cre
         val rootFlavor = prefs.getSetting("root_flavor", "su")
         val rootSection = if (isRootMode) {
             """
-- Root & Linux/PC-Environment Execution: ACTIVE & GRANTED ($rootFlavor, uid=0).
-The user has granted this app Superuser / Root access via $rootFlavor. You operate like an autonomous AI coding agent in a full Linux/PC environment:
-- You have unrestricted access to the entire Android filesystem (/storage/emulated/0, /data, /system, /etc, /sdcard, etc.).
-- When asked to run commands, inspect logs, edit files, check hardware/battery, or modify configs, RUN THE TOOLS DIRECTLY (`run_command`, `read_file`, `write_file`, `edit_file`, `list_directory`).
-- Do NOT hesitate, do NOT ask for confirmation, and NEVER tell the user to connect to a PC or execute commands manually. Execute them directly.
-- All file operations and terminal commands execute with full root (Superuser) permissions."""
+- Autonomous Developer Agent & Root PC-Environment: ACTIVE & GRANTED ($rootFlavor, uid=0).
+You are an autonomous senior developer agent operating with full Superuser root privileges in a native Linux/Android environment (comparable to Claude Code or Cursor in a desktop Linux terminal):
+- Storage & Filesystem: You have unrestricted direct read/write access to the entire device filesystem, including `/sdcard`, `/storage/emulated/0`, `/data`, `/data/data/`, `/data/local/tmp`, `/system`, etc. Default file operations (`read_file`, `write_file`, `edit_file`, `list_directory`) write directly to local disk.
+- Terminal & Shell: You can run any shell command via `run_command` (`ls`, `cat`, `grep`, `find`, `pm`, `am`, `dumpsys`, `logcat`, `ps`, `top`, `df -h`, `kill`, `chmod`, `chown`, `iptables`, `settings`, etc.). Termux binaries (`/data/data/com.termux/files/usr/bin`), `/data/local/tmp`, and root binaries are included in your PATH (e.g. `python`, `node`, `git`, `curl`, `bash` if installed in Termux).
+- Autonomous Execution: When asked to run commands, inspect logs, read or modify files, diagnose bugs, or implement code, DO IT DIRECTLY using your tools. Do NOT just print commands in markdown and ask the user to execute them on a PC. Call `run_command`, `read_file`, `write_file`, `edit_file`, etc., directly and report the results.
+- Never say you cannot access storage or run commands. You have full root access."""
         } else ""
 
         val memoryPart = if (memoryBlock.isNotBlank()) "\n$memoryBlock\n" else ""
@@ -5315,10 +5241,10 @@ The user has granted this app Superuser / Root access via $rootFlavor. You opera
             "\n- Reply Threads & Context Pointing: When a user's prompt begins with `[reply author=\"...\" id=\"...\"]...[/reply]`, the user is specifically swiping or pointing to that past quoted message as conversational context. Answer their prompt in direct relation and context to that quoted message."
         } else ""
 
-        val isToolsNeeded = userText.isNotBlank() && shouldIncludeTools(
+        val isToolsNeeded = isRootMode || (userText.isNotBlank() && shouldIncludeTools(
             listOf(Message(id = "user", sessionId = "eval", role = "user", content = userText, timestamp = 0L)),
             repository.getDeclaredTools()
-        )
+        ))
 
         if (!isToolsNeeded && userText.isNotBlank()) {
             return """
@@ -5562,121 +5488,150 @@ $githubSection
         return result
     }
 
-    private fun maybeAutoApproveTool(toolCall: ToolCall) {
-        val signature = "${toolCall.name}:${toolCall.arguments.trim()}"
-        val count = executedToolSignatures.getOrDefault(signature, 0)
-
-        if (count >= 2) {
-            ai.deepcode.android.util.AppLogger.w("ChatViewModel", "Prevented duplicate tool execution loop for: $signature")
+    private suspend fun executeToolCallsTurn(
+        toolCalls: List<ToolCall>,
+        preambleText: String,
+        sessionId: String
+    ) {
+        // 1. Loop detection
+        val allDuplicates = toolCalls.all { tc ->
+            val signature = "${tc.name}:${tc.arguments.trim()}"
+            executedToolSignatures.getOrDefault(signature, 0) >= 2
+        }
+        if (allDuplicates) {
+            ai.deepcode.android.util.AppLogger.w("ChatViewModel", "Prevented duplicate tool execution loop")
             _isStreaming.value = false
-            viewModelScope.launch {
-                appendAssistantMessage("I've completed the tool actions (prevented repeated duplicate execution of '${toolCall.name}'). The results are shown above.")
-            }
+            _streamingMessageId.value = ""
+            val cleanPreamble = preambleText.trim()
+            val notice = "I've completed the tool actions (prevented repeated duplicate execution). The results are shown above."
+            val fullMsg = if (cleanPreamble.isNotEmpty()) "$cleanPreamble\n\n$notice" else notice
+            appendAssistantMessage(fullMsg, sessionId)
             return
         }
 
-        executedToolSignatures[signature] = count + 1
+        // Record execution count
+        for (tc in toolCalls) {
+            val signature = "${tc.name}:${tc.arguments.trim()}"
+            executedToolSignatures[signature] = executedToolSignatures.getOrDefault(signature, 0) + 1
+        }
 
-        if (toolCall.name == "edge_tts") {
-            _mediaProcessingType.value = "audio"
-            _mediaProcessingPrompt.value = "Thinking..."
-            val priorContent = if (_deferredResponse.isNotBlank()) _deferredResponse else _streamedText.value
-            _streamedText.value = ""
-            _isStreaming.value = true
+        // 2. Insert ONE assistant message with the preamble and ALL tool calls in toolCallsJson
+        val toolCallsArray = JsonArray()
+        for (tc in toolCalls) {
+            val tcObj = JsonObject()
+            tcObj.addProperty("id", tc.id)
+            tcObj.addProperty("name", tc.name)
+            val argsStr = tc.arguments.trim()
+            val argsElement = try {
+                JsonParser.parseString(argsStr)
+            } catch (_: Exception) {
+                JsonPrimitive(argsStr)
+            }
+            tcObj.add("arguments", argsElement)
+            toolCallsArray.add(tcObj)
+        }
 
-            viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    val result = try {
-                        repository.executeTool(toolCall.name, toolCall.arguments, repository.getDefaultProjectPath())
-                    } catch (e: Exception) {
-                        "Error executing audio generation: ${e.message}"
-                    }
-                    val mediaMatch = RE_MEDIA_TAG.find(result)
-                    val audioTag = mediaMatch?.value ?: if (result.contains("[audio:")) result else null
-                    val cleanPrior = priorContent.trim()
-                    val textToSave = if (audioTag != null) {
-                        if (cleanPrior.isNotEmpty()) "$cleanPrior\n\n$audioTag" else audioTag
-                    } else {
-                        if (cleanPrior.isNotEmpty()) "$cleanPrior\n\nFailed to generate audio: $result" else "Failed to generate audio: $result"
-                    }
-                    appendAssistantMessage(textToSave)
-                } catch (e: Exception) {
-                    ai.deepcode.android.util.AppLogger.e("ChatViewModel", "edge_tts auto-approve crashed: ${e.message}", e)
-                    appendAssistantMessage("Error: ${e.message}")
-                } finally {
-                    _isStreaming.value = false
-                    _streamingMessageId.value = ""
+        val assistantToolCallMsg = Message(
+            id = UUID.randomUUID().toString(),
+            sessionId = sessionId,
+            role = "assistant",
+            content = preambleText,
+            timestamp = System.currentTimeMillis(),
+            isToolCall = true,
+            toolCallsJson = toolCallsArray.toString()
+        )
+        repository.insertMessage(assistantToolCallMsg)
+
+        // 3. Sequentially execute each tool and insert its tool result message
+        var lastToolResult: Message? = null
+        for (tc in toolCalls) {
+            when (tc.name) {
+                "generate_image" -> {
+                    val prompt = try {
+                        JsonParser.parseString(tc.arguments).asJsonObject.get("prompt")?.asString ?: ""
+                    } catch (_: Exception) { "" }
+                    _mediaProcessingType.value = "image"
+                    _mediaProcessingPrompt.value = prompt
+                }
+                "generate_video" -> {
+                    val prompt = try {
+                        JsonParser.parseString(tc.arguments).asJsonObject.get("prompt")?.asString ?: ""
+                    } catch (_: Exception) { "" }
+                    _mediaProcessingType.value = "video"
+                    _mediaProcessingPrompt.value = prompt
+                }
+            }
+
+            val result = try {
+                withContext(Dispatchers.IO) {
+                    repository.executeTool(tc.name, tc.arguments, repository.getDefaultProjectPath())
+                }
+            } catch (e: Exception) {
+                "Error executing ${tc.name}: ${e.message}"
+            } finally {
+                if (tc.name in setOf("generate_image", "generate_video")) {
                     _mediaProcessingType.value = null
                     _mediaProcessingPrompt.value = ""
                 }
             }
-            return
+
+            val isError = result.startsWith("Error", ignoreCase = true) || result.startsWith("Exception", ignoreCase = true)
+            if (isError) {
+                ai.deepcode.android.util.AppLogger.w("ChatViewModel", "Tool '${tc.name}' returned error: ${result.take(150)}")
+            }
+
+            val toolResultMsg = Message(
+                id = UUID.randomUUID().toString(),
+                sessionId = sessionId,
+                role = "tool",
+                content = result,
+                timestamp = System.currentTimeMillis(),
+                isToolCall = true,
+                toolCallsJson = """{"id":"${tc.id}","name":"${tc.name}"}"""
+            )
+            repository.insertMessage(toolResultMsg)
+            lastExecutedToolName = tc.name
+            lastToolResult = toolResultMsg
         }
 
-        // Set media processing overlay for image/video generation
-        when (toolCall.name) {
-            "generate_image" -> {
-                val prompt = try {
-                    com.google.gson.JsonParser.parseString(toolCall.arguments).asJsonObject.get("prompt")?.asString ?: ""
-                } catch (_: Exception) { "" }
-                _mediaProcessingType.value = "image"
-                _mediaProcessingPrompt.value = prompt
-            }
-            "generate_video" -> {
-                val prompt = try {
-                    com.google.gson.JsonParser.parseString(toolCall.arguments).asJsonObject.get("prompt")?.asString ?: ""
-                } catch (_: Exception) { "" }
-                _mediaProcessingType.value = "video"
-                _mediaProcessingPrompt.value = prompt
-            }
+        // 4. Continue conversation with tool results!
+        if (lastToolResult != null) {
+            continueWithToolResult(lastToolResult)
+        } else {
+            _isStreaming.value = false
+            _streamingMessageId.value = ""
         }
+    }
+
+    private fun handleAudioToolCall(toolCall: ToolCall, sessionId: String) {
+        _mediaProcessingType.value = "audio"
+        _mediaProcessingPrompt.value = "Generating audio..."
+        _isStreaming.value = true
+
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val argsString = toolCall.arguments.trim()
-                val encodedArgs = com.google.gson.Gson().toJson(argsString)
-                val assistantToolCallMsg = Message(
-                    id = UUID.randomUUID().toString(),
-                    sessionId = activeSessionId,
-                    role = "assistant",
-                    content = "",
-                    timestamp = System.currentTimeMillis(),
-                    isToolCall = true,
-                    toolCallsJson = """[{"id":"${toolCall.id}","name":"${toolCall.name}","arguments":$encodedArgs}]"""
-                )
-                repository.insertMessage(assistantToolCallMsg)
-
                 val result = try {
                     repository.executeTool(toolCall.name, toolCall.arguments, repository.getDefaultProjectPath())
                 } catch (e: Exception) {
-                    "Error executing ${toolCall.name}: ${e.message}"
+                    "Error executing audio generation: ${e.message}"
                 }
-
-                val isError = result.startsWith("Error", ignoreCase = true) || result.startsWith("Exception", ignoreCase = true)
-                if (isError) {
-                    ai.deepcode.android.util.AppLogger.w("ChatViewModel", "Tool '${toolCall.name}' returned error: ${result.take(150)}")
+                val mediaMatch = RE_MEDIA_TAG.find(result)
+                val audioTag = mediaMatch?.value ?: if (result.contains("[audio:")) result else null
+                val cleanPrior = _deferredResponse.ifEmpty { _streamedText.value }.trim()
+                val textToSave = if (audioTag != null) {
+                    if (cleanPrior.isNotEmpty()) "$cleanPrior\n\n$audioTag" else audioTag
+                } else {
+                    if (cleanPrior.isNotEmpty()) "$cleanPrior\n\nFailed to generate audio: $result" else "Failed to generate audio: $result"
                 }
-
-                val toolResultMsg = Message(
-                    id = UUID.randomUUID().toString(),
-                    sessionId = activeSessionId,
-                    role = "tool",
-                    content = result,
-                    timestamp = System.currentTimeMillis(),
-                    isToolCall = true,
-                    toolCallsJson = toolCall.id
-                )
-                repository.insertMessage(toolResultMsg)
-                lastExecutedToolName = toolCall.name
-                continueWithToolResult(toolResultMsg)
+                appendAssistantMessage(textToSave, sessionId)
             } catch (e: Exception) {
-                ai.deepcode.android.util.AppLogger.e("ChatViewModel", "maybeAutoApproveTool crashed: ${e.message}", e)
-                _isStreaming.value = false
-                appendAssistantMessage("Error: ${e.message}")
+                ai.deepcode.android.util.AppLogger.e("ChatViewModel", "edge_tts crashed: ${e.message}", e)
+                appendAssistantMessage("Error: ${e.message}", sessionId)
             } finally {
-                if (toolCall.name in setOf("generate_image", "generate_video")) {
-                    _mediaProcessingType.value = null
-                    _mediaProcessingPrompt.value = ""
-                }
+                _isStreaming.value = false
+                _streamingMessageId.value = ""
+                _mediaProcessingType.value = null
+                _mediaProcessingPrompt.value = ""
             }
         }
     }

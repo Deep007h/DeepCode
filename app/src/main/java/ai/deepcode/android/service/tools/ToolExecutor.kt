@@ -3100,12 +3100,14 @@ class ToolExecutor(private val context: Context? = null) {
         if (useRoot) {
             val escapedPath = escapeShellArg(file.absolutePath)
             val result = TerminalRunner.runCommand("cat $escapedPath", workingDir, true)
-            if (!result.startsWith("Error running command:") && !result.contains("No such file") && !result.contains("Permission denied")) {
+            if (!result.startsWith("Error running command:") && !result.contains("No such file") && !result.contains("Permission denied") && !result.contains("Is a directory")) {
                 return if (result.length > maxChars) {
                     result.take(maxChars) + "\n\n... [TRUNCATED: Content exceeds 256KB preview limit]"
                 } else {
                     result
                 }
+            } else if (result.contains("No such file") || result.contains("Is a directory") || result.contains("Permission denied")) {
+                return result.trim()
             }
         }
         if (file.exists() && file.isFile) {
@@ -3151,7 +3153,7 @@ class ToolExecutor(private val context: Context? = null) {
             return "DOCX files are not supported. Use create_pdf for PDFs instead."
         }
         val drive = telegramDrive
-        if (storage != "local" && drive != null && drive.isConfigured()) {
+        if ((storage == "tgdrive" || storage == "cloud" || storage == "telegram") && drive != null && drive.isConfigured()) {
             val fileName = File(path).name
             val result = drive.storeTextFile(fileName, content)
             if (result.isSuccess) {
@@ -3162,7 +3164,7 @@ class ToolExecutor(private val context: Context? = null) {
                     if (parent != null && !parent.exists()) parent.mkdirs()
                     localFile.writeText(content)
                 } catch (_: Exception) {}
-                return "Successfully wrote file: ${localFile.absolutePath}"
+                return "Successfully wrote file to Telegram Drive: ${localFile.absolutePath}"
             }
         }
         val file = resolvePath(path, workingDir)
@@ -3175,15 +3177,27 @@ class ToolExecutor(private val context: Context? = null) {
             // Use temporary file in accessible cache dir to support arbitrary file size without shell arg length limits
             val cacheDir = context?.cacheDir ?: File("/data/local/tmp")
             val tempFile = File(cacheDir, "write_${System.currentTimeMillis()}_${(1000..9999).random()}.tmp")
+            var lastError = ""
             val writeViaTempSuccess = try {
                 if (!cacheDir.exists()) cacheDir.mkdirs()
                 tempFile.writeText(content)
+                tempFile.setReadable(true, false)
                 val copyCmd = "cp -f ${escapeShellArg(tempFile.absolutePath)} $escapedPath && chmod 644 $escapedPath"
-                val cpResult = TerminalRunner.runCommand(copyCmd, workingDir, true)
+                var cpResult = TerminalRunner.runCommand(copyCmd, workingDir, true)
+                if (cpResult.contains("Read-only file system", ignoreCase = true) || cpResult.contains("Read-only", ignoreCase = true)) {
+                    TerminalRunner.runCommand("mount -o remount,rw / 2>/dev/null; mount -o remount,rw /system 2>/dev/null", workingDir, true)
+                    cpResult = TerminalRunner.runCommand(copyCmd, workingDir, true)
+                }
                 tempFile.delete()
-                cpResult.isBlank() || !cpResult.contains("error", ignoreCase = true)
-            } catch (_: Exception) {
+                if (cpResult.isBlank() || (!cpResult.contains("error", ignoreCase = true) && !cpResult.contains("failed", ignoreCase = true) && !cpResult.contains("cannot", ignoreCase = true))) {
+                    true
+                } else {
+                    lastError = cpResult.trim()
+                    false
+                }
+            } catch (e: Exception) {
                 try { tempFile.delete() } catch (_: Exception) {}
+                lastError = e.message ?: "Failed writing temp file"
                 false
             }
             if (writeViaTempSuccess) {
@@ -3192,10 +3206,15 @@ class ToolExecutor(private val context: Context? = null) {
             // Fallback to base64 pipe if temp file copy failed
             val base64Content = android.util.Base64.encodeToString(content.toByteArray(), android.util.Base64.NO_WRAP)
             val cmd = "echo '$base64Content' | base64 -d > $escapedPath"
-            val result = TerminalRunner.runCommand(cmd, workingDir, true)
+            var result = TerminalRunner.runCommand(cmd, workingDir, true)
+            if (result.contains("Read-only file system", ignoreCase = true) || result.contains("Read-only", ignoreCase = true)) {
+                TerminalRunner.runCommand("mount -o remount,rw / 2>/dev/null; mount -o remount,rw /system 2>/dev/null", workingDir, true)
+                result = TerminalRunner.runCommand(cmd, workingDir, true)
+            }
             if (result.trim().isEmpty() || result.contains("success")) {
                 return "Successfully wrote file (root): ${file.absolutePath}"
             }
+            return "Failed to write file as root: ${result.trim().ifEmpty { lastError }}"
         }
         return try {
             val parent = file.parentFile
@@ -3205,11 +3224,7 @@ class ToolExecutor(private val context: Context? = null) {
             file.writeText(content)
             "Successfully wrote file: ${file.absolutePath}"
         } catch (e: Exception) {
-            if (useRoot) {
-                "Failed to write file as root: ${e.message}"
-            } else {
-                "Failed to write file: ${e.message}"
-            }
+            "Failed to write file: ${e.message}"
         }
     }
 
@@ -3268,8 +3283,10 @@ class ToolExecutor(private val context: Context? = null) {
         if (useRoot) {
             val escapedPath = escapeShellArg(dir.absolutePath)
             val result = TerminalRunner.runCommand("ls -la $escapedPath", workingDir, true)
-            if (!result.startsWith("Error running command:") && !result.contains("Permission denied") && !result.contains("No such file")) {
-                return result
+            if (!result.startsWith("Error running command:") && !result.contains("Permission denied")) {
+                return result.ifBlank { "Empty directory" }
+            } else if (result.contains("No such file")) {
+                return result.trim()
             }
         }
         return if (dir.exists() && dir.isDirectory) {

@@ -47,7 +47,10 @@ fun shouldIncludeTools(messages: List<Message>, tools: List<Tool>?): Boolean {
     }
     if (hasActiveToolHistory) return true
 
-    // 2. Extract latest user query (clean of reply quotes)
+    // 2. If Root Mode is active or Superuser is granted, the user expects full autonomous capabilities!
+    if (ai.deepcode.android.util.RootSystem.isRootGranted.value) return true
+
+    // 3. Extract latest user query (clean of reply quotes)
     val lastUserMsg = messages.lastOrNull { it.role == "user" }?.content?.trim() ?: ""
     if (lastUserMsg.isEmpty()) return false
 
@@ -59,7 +62,7 @@ fun shouldIncludeTools(messages: List<Message>, tools: List<Tool>?): Boolean {
 
     val lower = cleanPrompt.lowercase()
 
-    // 3. Fast check: Simple greetings, pleasantries, and purely conversational expressions
+    // 4. Fast check: Simple greetings, pleasantries, and purely conversational expressions
     val isPureGreeting = lower in setOf(
         "hi", "hello", "hey", "hola", "yo", "sup", "howdy", "heya",
         "good morning", "good afternoon", "good evening", "good night",
@@ -72,38 +75,7 @@ fun shouldIncludeTools(messages: List<Message>, tools: List<Tool>?): Boolean {
     ) || lower.matches(Regex("""^(hi|hello|hey|yo|greetings|hola)\s+([a-zA-Z0-9_\-\s]{1,20})[!?.]*$"""))
     if (isPureGreeting) return false
 
-    // 4. Creative / pure explanation queries without tool keywords
-    val isGeneralCreativeOrExpl = (
-        lower.startsWith("explain ") || lower.startsWith("what is ") || lower.startsWith("why is ") ||
-        lower.startsWith("how does ") || lower.startsWith("tell me about ") || lower.startsWith("write a poem") ||
-        lower.startsWith("write a story") || lower.startsWith("tell a joke") || lower.startsWith("write a song") ||
-        lower.startsWith("can you explain") || lower.startsWith("how do i reverse") || lower.startsWith("how to solve")
-    ) && !listOf("file", "folder", "run", "search", "github", "pdf", "terminal", "cmd", "command").any { lower.contains(it) }
-    if (isGeneralCreativeOrExpl) return false
-
-    // 5. Tool intent keywords / file markers
-    val toolIntentKeywords = setOf(
-        "file", "files", "folder", "dir", "directory", "read_file", "write_file", "edit_file",
-        "run_command", "run", "exec", "execute", "command", "terminal", "bash", "shell", "adb", "root", "su",
-        "search", "google", "web", "fetch", "browse", "url", "http", "https", "link", "website",
-        "github", "git", "repo", "repository", "commit", "branch", "pr", "pull request", "issue", "clone",
-        "notion", "drive", "pdf", "tts", "audio", "voice", "speak", "image", "photo", "picture",
-        "video", "apk", "automation", "automate", "cron", "schedule", "battery", "memory", "screenshot",
-        "install", "uninstall", "remove", "delete", "create", "make", "list", "cat", "ls", "grep",
-        "find", "logcat", "status", "ps", "top", "free", "storage", "sdcard", "packages", "package",
-        "pm", "am", "dumpsys", "system", "setting", "settings", "download", "documents"
-    )
-    val words = lower.split(Regex("""[\s,;.!?'"()\[\]{}]+""")).toSet()
-    val hasToolKeyword = words.any { it in toolIntentKeywords } ||
-        listOf("/", "\\", ".kt", ".py", ".js", ".json", ".txt", ".pdf", ".apk").any { cleanPrompt.contains(it) } ||
-        lower.contains("save to") || lower.contains("write to")
-
-    if (hasToolKeyword) return true
-
-    // Short queries without tool keywords are conversational
-    if (cleanPrompt.length < 60) return false
-
-    // Default for longer ambiguous queries: include tools to be safe
+    // For all coding, terminal, file, and system queries: always include tools!
     return true
 }
 interface AIProvider {

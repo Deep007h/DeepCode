@@ -30,6 +30,7 @@ data class RootCheckResult(
 
 object RootSystem {
     private const val TAG = "RootSystem"
+    const val ROOT_PATH_EXTENSIONS = ":/sbin:/system/sbin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk:/data/data/com.termux/files/usr/bin:/data/local/tmp:/data/adb/modules"
 
     private val _isRootAvailable = MutableStateFlow(false)
     val isRootAvailable: StateFlow<Boolean> = _isRootAvailable.asStateFlow()
@@ -81,7 +82,7 @@ object RootSystem {
             val suBin = getSuBinaryPath()
             val pb = ProcessBuilder(suBin, "-c", "id").redirectErrorStream(true)
             val env = pb.environment()
-            env["PATH"] = (env["PATH"] ?: "") + ":/sbin:/system/sbin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk"
+            env["PATH"] = (env["PATH"] ?: "") + ROOT_PATH_EXTENSIONS
             val proc = pb.start()
             val out = proc.inputStream.bufferedReader().readText().trim()
             val finished = proc.waitFor(1500, TimeUnit.MILLISECONDS)
@@ -97,7 +98,13 @@ object RootSystem {
         try {
             val cleanPkg = packageName.trim()
             if (cleanPkg.isNotBlank()) {
-                executeAsRoot("appops set $cleanPkg MANAGE_EXTERNAL_STORAGE allow 2>/dev/null; pm grant $cleanPkg android.permission.READ_EXTERNAL_STORAGE 2>/dev/null; pm grant $cleanPkg android.permission.WRITE_EXTERNAL_STORAGE 2>/dev/null")
+                executeAsRoot(
+                    "appops set $cleanPkg MANAGE_EXTERNAL_STORAGE allow 2>/dev/null; " +
+                    "appops set $cleanPkg NO_ISOLATED_STORAGE allow 2>/dev/null; " +
+                    "pm grant $cleanPkg android.permission.READ_EXTERNAL_STORAGE 2>/dev/null; " +
+                    "pm grant $cleanPkg android.permission.WRITE_EXTERNAL_STORAGE 2>/dev/null; " +
+                    "pm grant $cleanPkg android.permission.MANAGE_EXTERNAL_STORAGE 2>/dev/null"
+                )
             }
         } catch (_: Exception) {}
     }
@@ -205,7 +212,7 @@ object RootSystem {
             val pb = ProcessBuilder(suBin, "-c", "id")
                 .redirectErrorStream(true)
             val env = pb.environment()
-            env["PATH"] = (env["PATH"] ?: "") + ":/sbin:/system/sbin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/data/adb/ksu/bin:/data/adb/ap/bin"
+            env["PATH"] = (env["PATH"] ?: "") + ROOT_PATH_EXTENSIONS
 
             val proc = pb.start()
             val output = StringBuilder()
@@ -343,7 +350,7 @@ object RootSystem {
                 .redirectErrorStream(true)
 
             val env = pb.environment()
-            env["PATH"] = (env["PATH"] ?: "") + ":/sbin:/system/sbin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/data/adb/ksu/bin:/data/adb/ap/bin"
+            env["PATH"] = (env["PATH"] ?: "") + ROOT_PATH_EXTENSIONS
 
             val proc = pb.start()
             val output = StringBuilder()
