@@ -167,20 +167,102 @@ class VideoIntelligencePlugin : DeepCodePlugin {
 
         val outDir = File(context.filesDir, "plugins/video_audio")
         if (!outDir.exists()) outDir.mkdirs()
-        val ext = if (format.lowercase() == "wav") "wav" else "aac"
+        val ext = if (format.lowercase() == "wav") "wav" else "m4a"
         val outFile = File(outDir, "${file.nameWithoutExtension}_audio.$ext")
 
         return try {
-            // Check if native root or ffmpeg tool exists
-            val cmd = "ffmpeg -y -i '${file.absolutePath}' -vn -c:a copy '${outFile.absolutePath}' 2>&1 || cp '${file.absolutePath}' '${outFile.absolutePath}'"
-            val res = ai.deepcode.android.service.TerminalRunner.runCommand(cmd, context.filesDir.absolutePath, false)
-            if (outFile.exists() && outFile.length() > 0) {
+            // 1. Try native Android MediaExtractor + MediaMuxer for AAC audio track
+            if (ext == "m4a" && extractAudioNatively(file, outFile)) {
+                return "[file:${outFile.absolutePath}]\nAudio extracted successfully to ${outFile.absolutePath} (${outFile.length() / 1024} KB)"
+            }
+
+            // 2. Fallback: try ffmpeg binary if available using ProcessBuilder without shell injection
+            val ffmpegExtracted = extractAudioWithFfmpeg(file, outFile)
+            if (ffmpegExtracted && outFile.exists() && outFile.length() > 0) {
                 "[file:${outFile.absolutePath}]\nAudio extracted successfully to ${outFile.absolutePath} (${outFile.length() / 1024} KB)"
             } else {
-                "[file:${outFile.absolutePath}]\nAudio extraction prepared at: ${outFile.absolutePath}"
+                "Error: Could not extract audio track from ${file.name}. Ensure the file contains a valid audio stream."
             }
         } catch (e: Exception) {
             "Audio extraction error: ${e.message}"
+        }
+    }
+
+    private fun extractAudioNatively(sourceFile: File, outputFile: File): Boolean {
+        var extractor: android.media.MediaExtractor? = null
+        var muxer: android.media.MediaMuxer? = null
+        return try {
+            extractor = android.media.MediaExtractor().apply { setDataSource(sourceFile.absolutePath) }
+            var audioTrackIndex = -1
+            var audioFormat: android.media.MediaFormat? = null
+
+            for (i in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(i)
+                val mime = format.getString(android.media.MediaFormat.KEY_MIME) ?: ""
+                if (mime.startsWith("audio/")) {
+                    audioTrackIndex = i
+                    audioFormat = format
+                    break
+                }
+            }
+
+            if (audioTrackIndex == -1 || audioFormat == null) return false
+
+            extractor.selectTrack(audioTrackIndex)
+            if (outputFile.exists()) outputFile.delete()
+            muxer = android.media.MediaMuxer(outputFile.absolutePath, android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            val muxerTrackIndex = muxer.addTrack(audioFormat)
+            muxer.start()
+
+            val maxBufferSize = if (audioFormat.containsKey(android.media.MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                audioFormat.getInteger(android.media.MediaFormat.KEY_MAX_INPUT_SIZE).coerceAtLeast(64 * 1024)
+            } else {
+                128 * 1024
+            }
+            val buffer = java.nio.ByteBuffer.allocate(maxBufferSize)
+            val bufferInfo = android.media.MediaCodec.BufferInfo()
+
+            while (true) {
+                buffer.clear()
+                val sampleSize = extractor.readSampleData(buffer, 0)
+                if (sampleSize < 0) break
+
+                bufferInfo.offset = 0
+                bufferInfo.size = sampleSize
+                bufferInfo.presentationTimeUs = extractor.sampleTime
+                bufferInfo.flags = extractor.sampleFlags
+
+                muxer.writeSampleData(muxerTrackIndex, buffer, bufferInfo)
+                extractor.advance()
+            }
+            true
+        } catch (e: Exception) {
+            AppLogger.w("VideoIntelligencePlugin", "Native audio demuxing failed: ${e.message}")
+            if (outputFile.exists()) outputFile.delete()
+            false
+        } finally {
+            try { extractor?.release() } catch (_: Exception) {}
+            try {
+                muxer?.stop()
+                muxer?.release()
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun extractAudioWithFfmpeg(sourceFile: File, outputFile: File): Boolean {
+        return try {
+            val pb = ProcessBuilder("ffmpeg", "-y", "-i", sourceFile.absolutePath, "-vn", "-c:a", "copy", outputFile.absolutePath)
+            pb.redirectErrorStream(true)
+            val proc = pb.start()
+            val finished = proc.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)
+            if (finished && proc.exitValue() == 0 && outputFile.exists() && outputFile.length() > 0) {
+                true
+            } else {
+                proc.destroyForcibly()
+                false
+            }
+        } catch (_: Exception) {
+            false
         }
     }
 

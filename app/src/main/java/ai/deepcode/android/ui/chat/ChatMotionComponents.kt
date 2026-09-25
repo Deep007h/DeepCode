@@ -484,8 +484,10 @@ fun ReasoningAccordion(
  */
 fun cleanSnippetForReply(content: String): String {
     var text = content.trim()
-    if (text.startsWith("[reply", ignoreCase = true)) {
-        text = text.replace(Regex("""^\[reply[\s\S]*?\[/reply\]\s*""", RegexOption.IGNORE_CASE), "").trim()
+    while (text.startsWith("[reply", ignoreCase = true)) {
+        val next = text.replace(Regex("""^\[reply[\s\S]*?\[/reply\]\s*""", RegexOption.IGNORE_CASE), "").trim()
+        if (next == text) break
+        text = next
     }
     text = stripThinkingProcess(text, isStreaming = false)
     if (text.contains("[image:")) {
@@ -506,6 +508,8 @@ fun cleanSnippetForReply(content: String): String {
     }
     // Remove markdown code fences
     text = text.replace(Regex("""```[a-zA-Z0-9]*\n?"""), "").replace("```", "")
+    // Neutralize any nested reply closing tags and quotes so it cannot corrupt outer tags
+    text = text.replace("[/reply]", "[reply]").replace("\"", "'")
     // Normalize spaces and newlines
     text = text.replace(Regex("""\s+"""), " ").trim()
     return if (text.length > 100) text.take(100) + "…" else text

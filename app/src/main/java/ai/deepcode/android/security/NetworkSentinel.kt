@@ -42,8 +42,44 @@ object NetworkSentinel {
                 return false
             }
 
-            // Resolve IP and check for cloud metadata / loopback
-            val address = InetAddress.getByName(host)
+            // Check for direct loopback or cloud metadata IP strings
+            if (host == "127.0.0.1" || host == "::1" || host == "0.0.0.0") {
+                AppLogger.w(TAG, "Blocked loopback target IP address: $host")
+                return false
+            }
+            if (host == "169.254.169.254" || host.startsWith("169.254.")) {
+                AppLogger.w(TAG, "Blocked cloud metadata IP: $host")
+                return false
+            }
+
+            // Guard against NetworkOnMainThreadException when called from Compose or UI thread
+            val isMainThread = try {
+                android.os.Looper.myLooper() == android.os.Looper.getMainLooper()
+            } catch (_: Exception) {
+                false
+            }
+            if (isMainThread) {
+                // Check if host is a numeric IP without doing blocking DNS
+                val isNumericIp = host.all { it.isDigit() || it == '.' || it == ':' }
+                if (isNumericIp && !allowLan) {
+                    if (host.startsWith("10.") || host.startsWith("192.168.") ||
+                        (host.startsWith("172.") && (host.split(".").getOrNull(1)?.toIntOrNull() in 16..31))) {
+                        AppLogger.w(TAG, "Blocked private network IP on main thread: $host")
+                        return false
+                    }
+                }
+                // On main thread, avoid blocking DNS resolution
+                return true
+            }
+
+            // Background thread: resolve IP and check for cloud metadata / loopback / private IP
+            val address = try {
+                InetAddress.getByName(host)
+            } catch (e: Exception) {
+                AppLogger.w(TAG, "DNS resolution failed for host $host: ${e.message}")
+                return false
+            }
+
             if (address.isLoopbackAddress || address.isAnyLocalAddress) {
                 AppLogger.w(TAG, "Blocked loopback target IP address: ${address.hostAddress} for host $host")
                 return false

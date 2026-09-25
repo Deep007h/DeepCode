@@ -78,6 +78,8 @@ object AppLogger {
     private var appContext: android.content.Context? = null
     private val dateFormat = ThreadLocal.withInitial { SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US) }
     private val fileDateFormat = ThreadLocal.withInitial { SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US) }
+    private fun getDateFormat(): SimpleDateFormat = dateFormat.get() ?: SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+    private fun getFileDateFormat(): SimpleDateFormat = fileDateFormat.get() ?: SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US)
 
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -268,7 +270,7 @@ object AppLogger {
         category: String? = null
     ) {
         val now = System.currentTimeMillis()
-        val timestamp = dateFormat.get().format(Date(now))
+        val timestamp = getDateFormat().format(Date(now))
         val id = entryCounter.incrementAndGet()
 
         val entry = LogEntry(
@@ -300,10 +302,10 @@ object AppLogger {
         try {
             val crashDir = File(appContext?.filesDir, CRASH_DIR)
             if (!crashDir.exists()) crashDir.mkdirs()
-            val timestamp = fileDateFormat.get().format(Date())
+            val timestamp = getFileDateFormat().format(Date())
             val crashFile = File(crashDir, "crash_$timestamp.log")
             val sb = StringBuilder()
-            sb.appendLine("DEEPCODE CRASH REPORT — ${dateFormat.get().format(Date())}")
+            sb.appendLine("DEEPCODE CRASH REPORT — ${getDateFormat().format(Date())}")
             sb.appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL} (API ${Build.VERSION.SDK_INT})")
             sb.appendLine("========================================")
             sb.appendLine()
@@ -329,7 +331,7 @@ object AppLogger {
         return try {
             val crashDir = File(appContext?.filesDir, CRASH_DIR)
             if (!crashDir.exists()) crashDir.mkdirs()
-            val timestamp = fileDateFormat.get().format(Date())
+            val timestamp = getFileDateFormat().format(Date())
             val exportFile = File(crashDir, "deepcode_log_$timestamp.log")
             val sb = StringBuilder()
             _logEntries.forEach { entry ->
@@ -400,7 +402,7 @@ object AppLogger {
         durationMs: Long? = null
     ) {
         val now = System.currentTimeMillis()
-        val timestamp = dateFormat.get().format(Date(now))
+        val timestamp = getDateFormat().format(Date(now))
         val st = stackTraceOverride ?: if (throwable != null) Log.getStackTraceString(throwable) else null
         val id = entryCounter.incrementAndGet()
 
@@ -532,7 +534,7 @@ object AppLogger {
     private fun rotateLogs() {
         val file = logFile ?: return
         try {
-            val backupName = "deepcode_${fileDateFormat.get().format(Date())}.jsonl.gz"
+            val backupName = "deepcode_${getFileDateFormat().format(Date())}.jsonl.gz"
             val backup = File(file.parent, backupName)
             FileOutputStream(backup).use { fos ->
                 java.util.zip.GZIPOutputStream(fos).use { gzip ->

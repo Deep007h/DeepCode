@@ -1902,6 +1902,15 @@ private fun AiBubble(
     onReply: (Message) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val replyInfo = remember(cleanedContent) { parseReplyHeader(cleanedContent) }
+    val effectiveParts = remember(parsedParts, replyInfo) {
+        if (replyInfo != null) {
+            parseMessageContent(replyInfo.cleanBody, isUser = false)
+        } else {
+            parsedParts
+        }
+    }
+
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalAlignment = Alignment.Start) {
         val showAiMenu = remember { mutableStateOf(false) }
         val pressOffset = remember { mutableStateOf(Offset.Zero) }
@@ -1919,10 +1928,21 @@ private fun AiBubble(
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
-                val groupedParts = remember(parsedParts) {
+                if (replyInfo != null) {
+                    QuotedReplyHeader(
+                        author = replyInfo.author,
+                        snippet = replyInfo.snippet,
+                        onClick = {
+                            replyInfo.targetMessageId?.let(onScrollToMessage)
+                        },
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                }
+
+                val groupedParts = remember(effectiveParts) {
                     val result = mutableListOf<Any>()
                     var currentTools = mutableListOf<MessageContentPart.ToolCall>()
-                    for (part in parsedParts) {
+                    for (part in effectiveParts) {
                         if (part is MessageContentPart.ToolCall) {
                             currentTools.add(part)
                         } else {
@@ -1983,10 +2003,11 @@ private fun AiBubble(
                 }
             }
             if (showAiMenu.value) {
+                val textToCopy = replyInfo?.cleanBody ?: cleanedContent
                 TextContextMenu(
                     showMenu = showAiMenu,
                     pressOffset = pressOffset,
-                    text = cleanedContent,
+                    text = textToCopy,
                     context = context,
                     onReply = { onReply(message) }
                 )
@@ -4054,12 +4075,18 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 if (text.isBlank()) filesSection else "$filesSection\n\n$text"
             } else text
 
+            val cleanBaseText = if (replyToMessage != null && baseText.startsWith("[reply", ignoreCase = true)) {
+                baseText.replace(Regex("""^\[reply[\s\S]*?\[/reply\]\s*""", RegexOption.IGNORE_CASE), "").trim()
+            } else {
+                baseText
+            }
+
             val msgText = if (replyToMessage != null) {
                 val author = if (replyToMessage.role == "user") "You" else "DeepCode"
                 val snippet = cleanSnippetForReply(replyToMessage.content).replace("\n", " ").take(160)
-                """[reply author="$author" id="${replyToMessage.id}"]$snippet[/reply]""" + "\n\n" + baseText
+                """[reply author="$author" id="${replyToMessage.id}"]$snippet[/reply]""" + "\n\n" + cleanBaseText
             } else {
-                baseText
+                cleanBaseText
             }
 
             val userMsg = Message(
