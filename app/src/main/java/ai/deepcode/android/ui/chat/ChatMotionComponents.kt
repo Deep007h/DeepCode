@@ -48,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -558,11 +559,11 @@ fun SwipeToReplyContainer(
     val thresholdPx = with(density) { thresholdDp.toPx() }
     val maxDragPx = with(density) { maxDragDp.toPx() }
 
-    val offsetX = remember { Animatable(0f) }
+    var dragOffsetX by remember { mutableFloatStateOf(0f) }
     var hasHapticFired by remember { mutableStateOf(false) }
 
     val isDark = isDarkThemeActive
-    val progress = (-offsetX.value / thresholdPx).coerceIn(0f, 1f)
+    val progress = (-dragOffsetX / thresholdPx).coerceIn(0f, 1f)
 
     Box(
         modifier = Modifier
@@ -573,37 +574,43 @@ fun SwipeToReplyContainer(
                         hasHapticFired = false
                     },
                     onDragEnd = {
-                        val triggered = offsetX.value <= -thresholdPx
+                        val triggered = dragOffsetX <= -thresholdPx
+                        val startVal = dragOffsetX
                         coroutineScope.launch {
                             if (triggered) {
                                 onReply(message)
                             }
-                            offsetX.animateTo(
+                            Animatable(startVal).animateTo(
                                 targetValue = 0f,
                                 animationSpec = spring(
                                     dampingRatio = Spring.DampingRatioMediumBouncy,
                                     stiffness = Spring.StiffnessMedium
                                 )
-                            )
+                            ) {
+                                dragOffsetX = value
+                            }
                         }
                     },
                     onDragCancel = {
+                        val startVal = dragOffsetX
                         coroutineScope.launch {
-                            offsetX.animateTo(
+                            Animatable(startVal).animateTo(
                                 targetValue = 0f,
                                 animationSpec = spring(
                                     dampingRatio = Spring.DampingRatioMediumBouncy,
                                     stiffness = Spring.StiffnessMedium
                                 )
-                            )
+                            ) {
+                                dragOffsetX = value
+                            }
                         }
                     },
                     onHorizontalDrag = { change, dragAmount ->
                         // Only swipe to the left: dragAmount < 0
-                        val next = (offsetX.value + dragAmount).coerceIn(-maxDragPx, 0f)
-                        if (next != offsetX.value) {
+                        val next = (dragOffsetX + dragAmount).coerceIn(-maxDragPx, 0f)
+                        if (next != dragOffsetX) {
                             change.consume()
-                            coroutineScope.launch { offsetX.snapTo(next) }
+                            dragOffsetX = next
                             if (next <= -thresholdPx && !hasHapticFired) {
                                 hasHapticFired = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -616,11 +623,11 @@ fun SwipeToReplyContainer(
             }
     ) {
         // Behind: Telegram-style animated reply arrow indicator
-        if (offsetX.value < -2f) {
+        if (dragOffsetX < -2f) {
             val iconScale = 0.4f + 0.6f * progress
             val bgAlpha = if (progress >= 1f) 1f else 0.45f * progress
             val circleSize = (36 + 4 * progress).dp
-            val rightPadding = (12 + (maxDragPx + offsetX.value) / 8).coerceAtLeast(8f).dp
+            val rightPadding = (12 + (maxDragPx + dragOffsetX) / 8).coerceAtLeast(8f).dp
 
             Box(
                 modifier = Modifier
@@ -649,11 +656,11 @@ fun SwipeToReplyContainer(
             }
         }
 
-        // Foreground: the message bubble sliding horizontally
+        // Foreground: the message bubble sliding horizontally via GPU layer (no relayout jitter)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                .graphicsLayer { translationX = dragOffsetX }
         ) {
             content()
         }

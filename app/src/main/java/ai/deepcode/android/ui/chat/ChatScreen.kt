@@ -469,29 +469,36 @@ fun ChatScreen(
             val total = lazyListState.layoutInfo.totalItemsCount
             if (total > 0 && !lazyListState.isScrollInProgress) {
                 try {
-                    lazyListState.animateScrollToItem(total - 1)
+                    lazyListState.scrollToItem(total - 1)
                 } catch (_: Exception) {}
             }
         }
     }
 
-    // Follow streaming text gently without micro-jitter by scrolling to bottom edge
+    // Follow streaming text gently without micro-jitter by scrolling exact delta of newly rendered tokens
     LaunchedEffect(isStreaming) {
         ai.deepcode.android.util.RefreshRateManager.setStreamingActive(isStreaming)
         if (!isStreaming) return@LaunchedEffect
         var lastScrollTime = 0L
         viewModel.streamedText.collect {
             val now = System.currentTimeMillis()
-            if (now - lastScrollTime >= 140L && isNearBottom && !lazyListState.isScrollInProgress) {
+            if (now - lastScrollTime >= 80L && isNearBottom && !lazyListState.isScrollInProgress) {
                 lastScrollTime = now
-                val total = lazyListState.layoutInfo.totalItemsCount
+                val layoutInfo = lazyListState.layoutInfo
+                val total = layoutInfo.totalItemsCount
                 if (total > 0) {
                     try {
-                        val lastItem = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()
-                        val scrollOffset = if (lastItem != null && lastItem.index == total - 1) {
-                            lastItem.size
-                        } else 0
-                        lazyListState.scrollToItem(total - 1, scrollOffset)
+                        val lastItem = layoutInfo.visibleItemsInfo.lastOrNull()
+                        if (lastItem != null && lastItem.index == total - 1) {
+                            val viewportBottom = layoutInfo.viewportEndOffset - layoutInfo.afterContentPadding
+                            val itemBottom = lastItem.offset + lastItem.size
+                            val excess = itemBottom - viewportBottom
+                            if (excess > 0) {
+                                lazyListState.scrollBy(excess.toFloat())
+                            }
+                        } else {
+                            lazyListState.scrollToItem(total - 1)
+                        }
                     } catch (_: Exception) {}
                 }
             }
@@ -611,13 +618,19 @@ fun ChatScreen(
             }
 
             val isChatEmpty = messages.isEmpty() && !isStreaming
-            if (isChatEmpty) {
+            Crossfade(
+                targetState = isChatEmpty,
+                animationSpec = tween(durationMillis = 200),
+                label = "chatEmptyCrossfade"
+            ) { empty ->
+                if (empty) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(top = 28.dp, bottom = 16.dp),
+                            .verticalScroll(rememberScrollState())
+                            .padding(top = if (isImeVisible) 12.dp else 24.dp, bottom = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.SpaceBetween
+                        verticalArrangement = Arrangement.spacedBy(if (isImeVisible) 14.dp else 24.dp)
                     ) {
                     // 1. Top Section: Robot Icon + DeepCode Title + Subtitle
                     Column(
@@ -1028,14 +1041,15 @@ fun ChatScreen(
                     }
 
                     // 3. Bottom Pill
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp)
-                            .depthCard(shape = RoundedCornerShape(24.dp), elevation = 3.dp, isDark = isDarkThemeActive)
-                            .padding(vertical = 12.dp, horizontal = 18.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
+                    if (!isImeVisible) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp)
+                                .depthCard(shape = RoundedCornerShape(24.dp), elevation = 3.dp, isDark = isDarkThemeActive)
+                                .padding(vertical = 12.dp, horizontal = 18.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -1064,7 +1078,8 @@ fun ChatScreen(
                         }
                     }
                 }
-            } else {
+            }
+        } else {
                     val streamingMsgId = streamingMessageId
                     val combinedItems = remember(groupedItems, isStreaming, streamingMsgId, orchestrationPlan, orchestrationExpanded) {
                         buildList {
@@ -1169,8 +1184,9 @@ fun ChatScreen(
                     }
                 }
             }
+        }
 
-            ScrollToBottomButton(visible = showScrollToBottomButton, lazyListState = lazyListState)
+        ScrollToBottomButton(visible = showScrollToBottomButton, lazyListState = lazyListState)
         }
 
         if (agentsWorking) {
@@ -1198,22 +1214,16 @@ fun ChatScreen(
         }
 
         val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-        val targetBottomPadding = maxOf(bottomBarHeight, imeBottom)
-        val animatedBottomPadding by animateDpAsState(
-            targetValue = targetBottomPadding,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioNoBouncy,
-                stiffness = Spring.StiffnessMedium
-            ),
-            label = "inputBarBottomPadding"
-        )
+        // Hardware-accelerated 120Hz tracking: when IME is visible, follow system insets directly (zero spring lag).
+        // When IME is hidden, position comfortably above the navigation bar.
+        val currentBottomPadding = if (imeBottom > bottomBarHeight) imeBottom else bottomBarHeight
 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp)
                 .padding(top = 8.dp)
-                .padding(bottom = animatedBottomPadding)
+                .padding(bottom = currentBottomPadding)
         ) {
             if (attachedFiles.isNotEmpty()) {
                 Row(
@@ -1257,8 +1267,14 @@ fun ChatScreen(
             // Reply Preview Banner (Telegram-style)
             AnimatedVisibility(
                 visible = replyingToMessage != null,
-                enter = slideInVertically(initialOffsetY = { it / 2 }) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { it / 2 }) + fadeOut()
+                enter = expandVertically(
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+                    expandFrom = Alignment.Bottom
+                ) + fadeIn(animationSpec = tween(150)),
+                exit = shrinkVertically(
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+                    shrinkTowards = Alignment.Bottom
+                ) + fadeOut(animationSpec = tween(100))
             ) {
                 replyingToMessage?.let { replyMsg ->
                     ReplyPreviewBar(
@@ -1302,6 +1318,13 @@ fun ChatScreen(
 
                     Spacer(Modifier.width(10.dp))
 
+                    val inputTextStyle = TextStyle(
+                        color = AppWhite,
+                        fontSize = 15.sp,
+                        lineHeight = 22.sp,
+                        fontFamily = FontFamily.Default
+                    )
+
                     BasicTextField(
                         value = inputMsg,
                         onValueChange = { inputMsg = it },
@@ -1309,15 +1332,19 @@ fun ChatScreen(
                             .weight(1f)
                             .padding(vertical = 10.dp),
                         maxLines = 5,
-                        textStyle = TextStyle(color = AppWhite, fontSize = 15.sp),
+                        textStyle = inputTextStyle,
                         cursorBrush = SolidColor(AppPrimary),
                         decorationBox = { innerTextField ->
-                            Box(contentAlignment = Alignment.CenterStart) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
                                 if (inputMsg.isEmpty()) {
                                     Text(
-                                        "Ask anything...",
-                                        color = AppMuted,
-                                        fontSize = 15.sp
+                                        text = "Ask anything...",
+                                        style = inputTextStyle.copy(color = AppMuted),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                                 innerTextField()
@@ -1501,9 +1528,7 @@ private fun BoxScope.ScrollToBottomButton(visible: Boolean, lazyListState: LazyL
                     scope.launch {
                         val total = lazyListState.layoutInfo.totalItemsCount
                         if (total > 0) {
-                            val lastVis = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()
-                            val offset = if (lastVis != null && lastVis.index == total - 1) lastVis.size else 0
-                            lazyListState.animateScrollToItem(total - 1, offset)
+                            lazyListState.animateScrollToItem(total - 1)
                         }
                     }
                 },
