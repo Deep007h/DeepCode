@@ -179,7 +179,7 @@ class DeepCodeRepository(context: Context) {
     }
 
     fun executeTool(name: String, argsJson: String, workingDir: String): String {
-        val rootMode = securePrefs.getBooleanSetting("root_mode", false)
+        val rootMode = securePrefs.getBooleanSetting("root_mode", false) || ai.deepcode.android.util.RootSystem.isRootGranted.value
         return toolExecutor.executeTool(name, argsJson, workingDir, rootMode)
     }
 
@@ -201,6 +201,8 @@ class DeepCodeRepository(context: Context) {
     }
 
     fun getDefaultProjectPath(): String {
+        val configured = securePrefs.getSetting("default_project", "")
+        if (configured.isNotBlank() && java.io.File(configured).exists()) return configured
         return "/storage/emulated/0"
     }
 

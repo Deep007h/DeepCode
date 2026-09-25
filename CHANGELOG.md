@@ -4,6 +4,40 @@ All notable changes and milestones for **DeepCode for Android** are documented b
 
 ---
 
+## [1.5.0] - 2026-09-25
+
+### Added & Enhanced
+- **PC-Environment Direct Execution for Root Users**:
+  - Unrestricted superuser execution: AI operates as an autonomous Linux coding agent with direct, friction-free tool invocation without confirmation prompts.
+  - Universal root elevation across all file tools: `read_file`, `write_file`, `edit_file`, `list_directory`, `create_file`, `delete_file`, `grep_search`, and `run_command` automatically inherit root privileges when root mode is enabled or granted.
+  - Arbitrary-size root file writes using temporary file streaming via `context.cacheDir` + root `cp -f` with `chmod 644`, bypassing command-line length limits (`ARG_MAX`).
+  - Native root `edit_file` with string replacement supporting protected system/data paths.
+  - Expanded tool aliases (`view_file`, `write_to_file`, `list_dir`, `ls`, `touch`, `mkdir`, `rm`, `remove_file`, `bash`, `sh`, `exec`) and alternative parameter keys (`command`, `cmd`, `script`, `input`, `code`).
+- **Storage & System Privileges**:
+  - Silent AppOps grant: Automatically executes `appops set <package> MANAGE_EXTERNAL_STORAGE allow` upon root detection, providing unrestricted access to `/storage/emulated/0` without manual SAF prompts.
+  - Startup Superuser Auto-Detection: Added non-blocking `checkSuAlreadyGranted()` in `detectInitialState()` to recognize active root privileges on app launch.
+  - Fixed `resolvePath` to expand `~` to the home directory and removed path traversal clamping.
+- **AI Tool Calling Robustness**:
+  - Text-based tool call execution: Models emitting `<tool_call>`, `<tool_calls>`, `<invoke>`, `<function=...>`, or markdown code blocks have their tools automatically parsed and executed in `sendMessage` on the first turn.
+  - Dynamic tool inclusion & provider latency optimization (`shouldIncludeTools`): Excludes massive tool schemas for simple conversational turns, reducing time-to-first-token by ~95% on reasoning models (e.g., Atria).
+  - Increased OkHttp `readTimeout` to 90s, `writeTimeout` to 60s, `connectTimeout` to 20s.
+  - Capped redundant retry attempts and preserved `_deferredResponse` on network errors to eliminate the "Thinking..." UI bubble glitch.
+- **Telegram-Style Swipe-to-Reply & Quote Threading**:
+  - Swipe-to-reply gesture on messages with animated reply preview bar and `[reply author="..." id="..."]...[/reply]` quote threading.
+- **Security & Integrity**:
+  - Sentinel Arbiter integration, Credential Surrogation, Network Sentinel, and muse.ai Video Intelligence Plugin.
+
+---
+
+## [1.4.0] - 2026-09-20
+
+### Added & Improved
+- OpenCode Zen wire protocol fixes and streaming stability.
+- Multi-key rotation across configured API key slots.
+- Variable refresh rate support (60Hz–144Hz) and UI smoothness enhancements.
+
+---
+
 ## [1.3.0] - 2026-09-18
 
 ### Added

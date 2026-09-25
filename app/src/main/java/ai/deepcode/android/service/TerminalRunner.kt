@@ -124,24 +124,37 @@ class TerminalRunner {
         private const val MAX_OUTPUT_CHARS = 256 * 1024
         private const val COMMAND_TIMEOUT_SECONDS = 60L
 
+        fun escapeShellArg(arg: String): String = "'" + arg.replace("'", "'\\''") + "'"
+
         fun runCommand(command: String, workingDir: String, useRoot: Boolean): String {
             return try {
-                val workingDirFile = File(workingDir)
-                if (!workingDirFile.exists()) {
-                    workingDirFile.mkdirs()
-                }
                 val translatedCmd = ai.deepcode.android.util.RootSystem.translateAdbOrShellCommand(command)
                 val shellCmd = if (useRoot) {
                     val suBin = ai.deepcode.android.util.RootSystem.getSuBinaryPath()
-                    arrayOf(suBin, "-c", translatedCmd)
+                    val cdPrefix = if (workingDir.isNotBlank() && workingDir != "/") {
+                        "cd ${escapeShellArg(workingDir)} 2>/dev/null; "
+                    } else ""
+                    arrayOf(suBin, "-c", cdPrefix + translatedCmd)
                 } else {
                     arrayOf("/system/bin/sh", "-c", translatedCmd)
                 }
+
+                val dirToUse = if (useRoot) {
+                    val f = File(workingDir)
+                    if (f.exists() && f.canRead()) f else File("/")
+                } else {
+                    val workingDirFile = File(workingDir)
+                    if (!workingDirFile.exists()) {
+                        try { workingDirFile.mkdirs() } catch (_: Exception) {}
+                    }
+                    if (workingDirFile.exists() && workingDirFile.canRead()) workingDirFile else File("/")
+                }
+
                 val pb = ProcessBuilder(*shellCmd)
-                    .directory(workingDirFile)
+                    .directory(dirToUse)
                     .redirectErrorStream(true)
                 val env = pb.environment()
-                env["PATH"] = (env["PATH"] ?: "") + ":/sbin:/system/sbin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/data/adb/ksu/bin:/data/adb/ap/bin"
+                env["PATH"] = (env["PATH"] ?: "") + ":/sbin:/system/sbin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk"
                 val proc = pb.start()
                 try {
                     // Read output in chunks with a hard cap (prevents OOM from

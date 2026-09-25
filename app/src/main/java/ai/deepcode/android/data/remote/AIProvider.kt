@@ -37,7 +37,74 @@ import java.io.File
 
 
 fun shouldIncludeTools(messages: List<Message>, tools: List<Tool>?): Boolean {
-    return !tools.isNullOrEmpty()
+    if (tools.isNullOrEmpty()) return false
+
+    // 1. If conversation has active tool history or recent assistant tool calls, tools must be included
+    val hasActiveToolHistory = messages.takeLast(10).any {
+        it.role == "tool" || it.isToolCall || !it.toolCallsJson.isNullOrEmpty() ||
+        it.content.contains("<tool_call>", ignoreCase = true) ||
+        it.content.contains("<invoke ", ignoreCase = true)
+    }
+    if (hasActiveToolHistory) return true
+
+    // 2. Extract latest user query (clean of reply quotes)
+    val lastUserMsg = messages.lastOrNull { it.role == "user" }?.content?.trim() ?: ""
+    if (lastUserMsg.isEmpty()) return false
+
+    val cleanPrompt = lastUserMsg.replace(
+        Regex("""\[reply\s+author="[^"]*"\s+id="[^"]*"\].*?\[/reply\]""", RegexOption.DOT_MATCHES_ALL),
+        ""
+    ).trim()
+    if (cleanPrompt.isEmpty()) return false
+
+    val lower = cleanPrompt.lowercase()
+
+    // 3. Fast check: Simple greetings, pleasantries, and purely conversational expressions
+    val isPureGreeting = lower in setOf(
+        "hi", "hello", "hey", "hola", "yo", "sup", "howdy", "heya",
+        "good morning", "good afternoon", "good evening", "good night",
+        "who are you", "who are you?", "what is your name", "what is your name?",
+        "what can you do", "what can you do?", "how are you", "how are you?",
+        "how're you", "how're you?", "how are you doing", "how are you doing?",
+        "test", "ping", "pong", "are you there", "are you there?", "are you alive", "are you alive?",
+        "thanks", "thank you", "thanks!", "thank you!", "thx", "ok", "okay", "cool", "nice", "great", "awesome",
+        "bye", "goodbye", "see you", "see ya"
+    ) || lower.matches(Regex("""^(hi|hello|hey|yo|greetings|hola)\s+([a-zA-Z0-9_\-\s]{1,20})[!?.]*$"""))
+    if (isPureGreeting) return false
+
+    // 4. Creative / pure explanation queries without tool keywords
+    val isGeneralCreativeOrExpl = (
+        lower.startsWith("explain ") || lower.startsWith("what is ") || lower.startsWith("why is ") ||
+        lower.startsWith("how does ") || lower.startsWith("tell me about ") || lower.startsWith("write a poem") ||
+        lower.startsWith("write a story") || lower.startsWith("tell a joke") || lower.startsWith("write a song") ||
+        lower.startsWith("can you explain") || lower.startsWith("how do i reverse") || lower.startsWith("how to solve")
+    ) && !listOf("file", "folder", "run", "search", "github", "pdf", "terminal", "cmd", "command").any { lower.contains(it) }
+    if (isGeneralCreativeOrExpl) return false
+
+    // 5. Tool intent keywords / file markers
+    val toolIntentKeywords = setOf(
+        "file", "files", "folder", "dir", "directory", "read_file", "write_file", "edit_file",
+        "run_command", "run", "exec", "execute", "command", "terminal", "bash", "shell", "adb", "root", "su",
+        "search", "google", "web", "fetch", "browse", "url", "http", "https", "link", "website",
+        "github", "git", "repo", "repository", "commit", "branch", "pr", "pull request", "issue", "clone",
+        "notion", "drive", "pdf", "tts", "audio", "voice", "speak", "image", "photo", "picture",
+        "video", "apk", "automation", "automate", "cron", "schedule", "battery", "memory", "screenshot",
+        "install", "uninstall", "remove", "delete", "create", "make", "list", "cat", "ls", "grep",
+        "find", "logcat", "status", "ps", "top", "free", "storage", "sdcard", "packages", "package",
+        "pm", "am", "dumpsys", "system", "setting", "settings", "download", "documents"
+    )
+    val words = lower.split(Regex("""[\s,;.!?'"()\[\]{}]+""")).toSet()
+    val hasToolKeyword = words.any { it in toolIntentKeywords } ||
+        listOf("/", "\\", ".kt", ".py", ".js", ".json", ".txt", ".pdf", ".apk").any { cleanPrompt.contains(it) } ||
+        lower.contains("save to") || lower.contains("write to")
+
+    if (hasToolKeyword) return true
+
+    // Short queries without tool keywords are conversational
+    if (cleanPrompt.length < 60) return false
+
+    // Default for longer ambiguous queries: include tools to be safe
+    return true
 }
 interface AIProvider {
     val name: String
@@ -355,9 +422,9 @@ private val client = OkHttpClient.Builder()
     .socketFactory(KeepAliveSocketFactory())
     .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
     .connectionPool(okhttp3.ConnectionPool(16, 5, TimeUnit.MINUTES))
-    .connectTimeout(15, TimeUnit.SECONDS)
-    .readTimeout(35, TimeUnit.SECONDS)
-    .writeTimeout(30, TimeUnit.SECONDS)
+    .connectTimeout(20, TimeUnit.SECONDS)
+    .readTimeout(90, TimeUnit.SECONDS)
+    .writeTimeout(60, TimeUnit.SECONDS)
     .proxySelector(object : java.net.ProxySelector() {
         override fun select(uri: java.net.URI?): List<java.net.Proxy> {
             val activeProxy = ai.deepcode.android.util.VpnManager.getActiveProxy()
@@ -2544,6 +2611,12 @@ private suspend fun streamOpenAiCompatible(
                             itemsObj.addProperty("type", (itemsVal?.get("type") ?: "string").toString())
                             propObj.add("items", itemsObj)
                         }
+                        val enumVal = propVal?.get("enum") as? List<*>
+                        if (!enumVal.isNullOrEmpty()) {
+                            val enumArr = JsonArray()
+                            enumVal.forEach { enumArr.add(it.toString()) }
+                            propObj.add("enum", enumArr)
+                        }
                         properties.add(propKey, propObj)
                         
                         val isReq = (tool.inputSchema["required"] as? List<*>)?.contains(propKey) ?: false
@@ -2583,8 +2656,15 @@ private suspend fun streamOpenAiCompatible(
             call.execute().use { response ->
                 if (!response.isSuccessful) {
                     val errBody = response.body?.string()?.take(1024) ?: ""
+                    val cleanErrMsg = try {
+                        val errObj = JsonParser.parseString(errBody).asJsonObject
+                        errObj.getAsJsonObject("error")?.get("message")?.asString
+                            ?: errObj.get("message")?.asString
+                    } catch (_: Exception) { null }
+                    val displayErrMsg = cleanErrMsg?.ifBlank { null } ?: errBody
+
                     if (ApiKeyRotator.isRotatableError(null, response.code, errBody)) {
-                        throw RateLimitException(providerName ?: effectiveModel, response.code, "API Error ${response.code}: $errBody")
+                        throw RateLimitException(providerName ?: effectiveModel, response.code, "API Error ${response.code}: $displayErrMsg")
                     }
                     // Auto-recovery for model_decommissioned (e.g. Groq HTTP 400)
                     if (response.code == 400 && (errBody.contains("model_decommissioned", ignoreCase = true) || errBody.contains("decommissioned", ignoreCase = true))) {
@@ -2612,7 +2692,7 @@ private suspend fun streamOpenAiCompatible(
                             return@withContext
                         }
                     }
-                    throw Exception("API Error ${response.code}: $errBody")
+                    throw Exception("API Error ${response.code}: $displayErrMsg")
                 }
                 val contentType = response.header("Content-Type") ?: ""
                 val body = response.body ?: throw Exception("Empty response body")

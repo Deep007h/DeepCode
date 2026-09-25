@@ -626,12 +626,12 @@ class AgentEngine(private val context: Context) {
                 "shell", "run_command", "adb_command", "adb", "terminal_command" -> {
                     val command = args.get("command")?.asString ?: args.get("cmd")?.asString ?: return@withContext "Error: Missing command"
                     val executor = ToolExecutor(context)
-                    val useRoot = securePrefs.getBooleanSetting("root_mode", false)
+                    val useRoot = securePrefs.getBooleanSetting("root_mode", false) || ai.deepcode.android.util.RootSystem.isRootGranted.value
                     executor.executeTool(name, """{"command":${gson.toJson(command)}}""", "", useRoot)
                 }
                 "android_system_control", "system_control", "root_system_control" -> {
                     val executor = ToolExecutor(context)
-                    val useRoot = securePrefs.getBooleanSetting("root_mode", false)
+                    val useRoot = securePrefs.getBooleanSetting("root_mode", false) || ai.deepcode.android.util.RootSystem.isRootGranted.value
                     executor.executeTool(name, argsJson, "", useRoot)
                 }
                 "create_pdf" -> {
@@ -669,21 +669,25 @@ class AgentEngine(private val context: Context) {
                     val content = args.get("content")?.asString ?: return@withContext "Error: Missing content"
                     val storage = try { args.get("storage")?.takeIf { !it.isJsonNull }?.asString } catch (_: Exception) { null }
                     val executor = ToolExecutor(context)
-                    executor.executeTool("file_write", """{"path":${gson.toJson(path)},"content":${gson.toJson(content)},"storage":${gson.toJson(storage)}}""", "", false)
+                    val useRoot = securePrefs.getBooleanSetting("root_mode", false) || ai.deepcode.android.util.RootSystem.isRootGranted.value
+                    executor.executeTool("file_write", """{"path":${gson.toJson(path)},"content":${gson.toJson(content)},"storage":${gson.toJson(storage)}}""", "", useRoot)
                 }
                 "file_read" -> {
                     val path = args.get("path")?.asString ?: return@withContext "Error: Missing path"
                     val executor = ToolExecutor(context)
-                    executor.executeTool("file_read", """{"path":${gson.toJson(path)}}""", "", false)
+                    val useRoot = securePrefs.getBooleanSetting("root_mode", false) || ai.deepcode.android.util.RootSystem.isRootGranted.value
+                    executor.executeTool("file_read", """{"path":${gson.toJson(path)}}""", "", useRoot)
                 }
                 "list" -> {
                     val path = args.get("path")?.asString ?: "."
                     val executor = ToolExecutor(context)
-                    executor.executeTool("list", """{"path":${gson.toJson(path)}}""", "", false)
+                    val useRoot = securePrefs.getBooleanSetting("root_mode", false) || ai.deepcode.android.util.RootSystem.isRootGranted.value
+                    executor.executeTool("list", """{"path":${gson.toJson(path)}}""", "", useRoot)
                 }
                 else -> {
                     val executor = ToolExecutor(context)
-                    executor.executeTool(name, argsJson, "", false)
+                    val useRoot = securePrefs.getBooleanSetting("root_mode", false) || ai.deepcode.android.util.RootSystem.isRootGranted.value
+                    executor.executeTool(name, argsJson, "", useRoot)
                 }
             }
         } catch (e: Exception) {
@@ -1778,13 +1782,13 @@ class AgentEngine(private val context: Context) {
                             } else {
                                 basePrompt
                             }
-                            val rootMode = securePrefs.getBooleanSetting("root_mode", false)
+                            val rootMode = securePrefs.getBooleanSetting("root_mode", false) || ai.deepcode.android.util.RootSystem.isRootGranted.value
                             val rootFlavor = securePrefs.getSetting("root_flavor", "su")
                             val rootPromptAddition = if (rootMode) {
-                                "\n\n[ROOT & NATIVE TERMINAL / ADB ACCESS ENABLED]\n" +
+                                "\n\n[ROOT & LINUX/PC-ENVIRONMENT ACCESS ENABLED]\n" +
                                 "The user has granted this app Superuser / Root access via $rootFlavor (uid=0).\n" +
                                 "You have native access to run terminal, shell, and ADB commands on this Android device using 'run_command', 'adb_command', or 'android_system_control' (for battery, memory, app freezing/control, and instant screenshots).\n" +
-                                "Commands run directly with root (uid=0) privileges without needing a PC. You can inspect system state, package manager (pm), activity manager (am), dumpsys, settings, logs, and files."
+                                "Commands run directly with root (uid=0) privileges without needing a PC. You can inspect system state, package manager (pm), activity manager (am), dumpsys, settings, logs, and files. Execute tools directly without asking for confirmation."
                             } else ""
                             val promptWithRoot = promptWithMemory + rootPromptAddition
 

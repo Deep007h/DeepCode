@@ -300,6 +300,10 @@ class ToolExecutor(private val context: Context? = null) {
 
     private fun executeToolInternal(name: String, args: JsonObject, workingDir: String, useRoot: Boolean): String {
         return try {
+            val effectiveRoot = useRoot ||
+                (context != null && ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context).getBooleanSetting("root_mode", false)) ||
+                ai.deepcode.android.util.RootSystem.isRootGranted.value
+
             if (name == "summon_agents") {
                 val taskDesc = args.get("task")?.asString ?: args.get("description")?.asString ?: return "Missing task/description argument"
                 return runOrchestration(taskDesc)
@@ -310,30 +314,34 @@ class ToolExecutor(private val context: Context? = null) {
                 val ctx = context ?: return "Context not available for video intelligence"
                 plugin.execute(name, args, ctx)
             }
-                "read_file", "file_read" -> {
-                    val path = optString(args, "path") ?: return "Missing path argument"
-                    readFile(path, workingDir, useRoot)
+                "read_file", "file_read", "view_file" -> {
+                    val path = optString(args, "path") ?: optString(args, "file") ?: optString(args, "target") ?: return "Missing path argument"
+                    readFile(path, workingDir, effectiveRoot)
                 }
-                "write_file", "file_write" -> {
-                    val path = optString(args, "path") ?: return "Missing path argument"
-                    val content = optString(args, "content") ?: return "Missing content argument"
+                "write_file", "file_write", "write_to_file" -> {
+                    val path = optString(args, "path") ?: optString(args, "file") ?: optString(args, "target") ?: return "Missing path argument"
+                    val content = optString(args, "content") ?: optString(args, "text") ?: return "Missing content argument"
                     val storage = optString(args, "storage") ?: ""
-                    writeFile(path, content, workingDir, useRoot, storage)
+                    writeFile(path, content, workingDir, effectiveRoot, storage)
                 }
                 "edit_file", "replace_file_content", "edit", "str_replace", "replace" -> {
-                    val path = optString(args, "path") ?: optString(args, "file_path") ?: return "Missing path argument"
+                    val path = optString(args, "path") ?: optString(args, "file_path") ?: optString(args, "file") ?: return "Missing path argument"
                     val oldStr = optString(args, "old_str") ?: optString(args, "target") ?: optString(args, "search") ?: return "Missing old_str argument"
                     val newStr = optString(args, "new_str") ?: optString(args, "replacement") ?: optString(args, "replace") ?: ""
                     val replaceAll = args.get("replace_all")?.takeIf { !it.isJsonNull }?.asBoolean ?: false
-                    editFile(path, oldStr, newStr, replaceAll, workingDir, useRoot)
+                    editFile(path, oldStr, newStr, replaceAll, workingDir, effectiveRoot)
                 }
-                "list_directory", "list", "glob" -> {
-                    val path = optString(args, "path") ?: "."
-                    listDirectory(path, workingDir, useRoot)
+                "list_directory", "list_dir", "list", "glob", "ls" -> {
+                    val path = optString(args, "path") ?: optString(args, "dir") ?: optString(args, "directory") ?: "."
+                    listDirectory(path, workingDir, effectiveRoot)
                 }
-                "run_command", "shell", "git_operations", "node_exec", "npm_exec", "curl", "adb_command", "adb", "terminal_command", "terminal_exec" -> {
-                    val command = optString(args, "command") ?: optString(args, "cmd") ?: return "Missing command argument"
-                    val effectiveRoot = useRoot || (context != null && ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context).getBooleanSetting("root_mode", false))
+                "run_command", "shell", "bash", "sh", "exec", "execute", "cmd", "terminal_command", "terminal_exec", "adb_command", "adb", "git_operations", "node_exec", "npm_exec", "curl" -> {
+                    val command = optString(args, "command")
+                        ?: optString(args, "cmd")
+                        ?: optString(args, "script")
+                        ?: optString(args, "input")
+                        ?: optString(args, "code")
+                        ?: return "Missing command argument"
                     TerminalRunner.runCommand(command, workingDir, effectiveRoot)
                 }
                 "android_system_control", "system_control", "root_system_control" -> {
@@ -351,24 +359,24 @@ class ToolExecutor(private val context: Context? = null) {
                     }
                 }
                 "grep_search", "grep" -> {
-                    val query = optString(args, "query") ?: return "Missing query argument"
+                    val query = optString(args, "query") ?: optString(args, "pattern") ?: return "Missing query argument"
                     val path = optString(args, "path") ?: "."
-                    grepSearch(query, path, workingDir, useRoot)
+                    grepSearch(query, path, workingDir, effectiveRoot)
                 }
-                "create_file" -> {
-                    val path = optString(args, "path") ?: return "Missing path argument"
-                    val isDir = args.get("isDirectory")?.takeIf { !it.isJsonNull }?.asBoolean ?: false
-                    createFileOrDirectory(path, isDir, workingDir, useRoot)
+                "create_file", "touch", "mkdir" -> {
+                    val path = optString(args, "path") ?: optString(args, "file") ?: return "Missing path argument"
+                    val isDir = (name == "mkdir") || (args.get("isDirectory")?.takeIf { !it.isJsonNull }?.asBoolean ?: false)
+                    createFileOrDirectory(path, isDir, workingDir, effectiveRoot)
                 }
-                "delete_file" -> {
-                    val path = optString(args, "path") ?: return "Missing path argument"
-                    deleteFileOrDirectory(path, workingDir, useRoot)
+                "delete_file", "remove_file", "rm" -> {
+                    val path = optString(args, "path") ?: optString(args, "file") ?: return "Missing path argument"
+                    deleteFileOrDirectory(path, workingDir, effectiveRoot)
                 }
                 "apply_patch" -> {
                     val path = args.get("path")?.asString ?: return "Missing path argument"
                     val content = args.get("content")?.asString ?: args.get("patch")?.asString ?: return "Missing content/patch argument"
                     val storage = args.get("storage")?.asString ?: ""
-                    writeFile(path, content, workingDir, useRoot, storage)
+                    writeFile(path, content, workingDir, effectiveRoot, storage)
                 }
                 "web_fetch" -> {
                     val url = args.get("url")?.asString ?: return "Missing url argument"
@@ -3055,22 +3063,40 @@ class ToolExecutor(private val context: Context? = null) {
     }
 
     private fun resolvePath(path: String, workingDir: String): File {
-        val file = File(path)
-        val base = if (file.isAbsolute) file else File(workingDir, path)
-        // Contain `..` escapes inside workingDir when a project dir is set — absolute paths outside are still allowed.
+        val trimmed = path.trim()
+        val expandedPath = when {
+            trimmed.startsWith("~/") -> {
+                val home = System.getenv("HOME") ?: "/data/data/${context?.packageName ?: "ai.deepcode.android"}/files"
+                home + trimmed.removePrefix("~")
+            }
+            trimmed == "~" -> {
+                System.getenv("HOME") ?: "/data/data/${context?.packageName ?: "ai.deepcode.android"}/files"
+            }
+            else -> trimmed
+        }
+        val file = File(expandedPath)
+        val base = if (file.isAbsolute) file else {
+            val effectiveWorkingDir = if (workingDir.isBlank()) "/storage/emulated/0" else workingDir
+            File(effectiveWorkingDir, expandedPath)
+        }
         return try {
-            if (workingDir.isNotBlank() && !file.isAbsolute) {
-                val root = File(workingDir).canonicalFile
-                val canon = base.canonicalFile
-                if (!canon.path.startsWith(root.path)) File(root, base.name) else canon
-            } else base.canonicalFile
-        } catch (_: Exception) { base }
+            base.canonicalFile
+        } catch (_: Exception) {
+            base.absoluteFile
+        }
     }
 
     private fun readFile(path: String, workingDir: String, useRoot: Boolean): String {
         val file = resolvePath(path, workingDir)
         val maxChars = 256 * 1024
         val maxBytes = 256 * 1024L
+
+        // For binary files (PDF, images, etc.), return the path with a file marker instead of raw bytes
+        val name = file.name.lowercase()
+        if (name.endsWith(".pdf") || name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".gif") || name.endsWith(".docx") || name.endsWith(".xlsx") || name.endsWith(".pptx")) {
+            return "[file:${file.absolutePath}] (${file.length()} bytes)"
+        }
+
         if (useRoot) {
             val escapedPath = escapeShellArg(file.absolutePath)
             val result = TerminalRunner.runCommand("cat $escapedPath", workingDir, true)
@@ -3083,17 +3109,21 @@ class ToolExecutor(private val context: Context? = null) {
             }
         }
         if (file.exists() && file.isFile) {
-            // For binary files (PDF, images, etc.), return the path with a file marker instead of raw bytes
-            val name = file.name.lowercase()
-            if (name.endsWith(".pdf") || name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".gif") || name.endsWith(".docx") || name.endsWith(".xlsx") || name.endsWith(".pptx")) {
-                return "[file:${file.absolutePath}] (${file.length()} bytes)"
-            }
             if (file.length() > maxBytes) {
                 val bytes = ByteArray(maxBytes.toInt())
                 file.inputStream().use { it.read(bytes) }
                 return String(bytes, Charsets.UTF_8) + "\n\n... [TRUNCATED: File size (${file.length()} bytes) exceeds 256KB preview limit]"
             }
-            return file.readText()
+            return try {
+                file.readText()
+            } catch (e: Exception) {
+                if (useRoot) {
+                    val escapedPath = escapeShellArg(file.absolutePath)
+                    TerminalRunner.runCommand("cat $escapedPath", workingDir, true)
+                } else {
+                    throw e
+                }
+            }
         }
         val drive = telegramDrive
         if (drive != null && drive.isConfigured()) {
@@ -3138,11 +3168,29 @@ class ToolExecutor(private val context: Context? = null) {
         val file = resolvePath(path, workingDir)
         if (useRoot) {
             val escapedPath = escapeShellArg(file.absolutePath)
-            val base64Content = android.util.Base64.encodeToString(content.toByteArray(), android.util.Base64.NO_WRAP)
             val parentDir = file.parentFile
             if (parentDir != null) {
                 TerminalRunner.runCommand("mkdir -p ${escapeShellArg(parentDir.absolutePath)}", workingDir, true)
             }
+            // Use temporary file in accessible cache dir to support arbitrary file size without shell arg length limits
+            val cacheDir = context?.cacheDir ?: File("/data/local/tmp")
+            val tempFile = File(cacheDir, "write_${System.currentTimeMillis()}_${(1000..9999).random()}.tmp")
+            val writeViaTempSuccess = try {
+                if (!cacheDir.exists()) cacheDir.mkdirs()
+                tempFile.writeText(content)
+                val copyCmd = "cp -f ${escapeShellArg(tempFile.absolutePath)} $escapedPath && chmod 644 $escapedPath"
+                val cpResult = TerminalRunner.runCommand(copyCmd, workingDir, true)
+                tempFile.delete()
+                cpResult.isBlank() || !cpResult.contains("error", ignoreCase = true)
+            } catch (_: Exception) {
+                try { tempFile.delete() } catch (_: Exception) {}
+                false
+            }
+            if (writeViaTempSuccess) {
+                return "Successfully wrote file (root): ${file.absolutePath}"
+            }
+            // Fallback to base64 pipe if temp file copy failed
+            val base64Content = android.util.Base64.encodeToString(content.toByteArray(), android.util.Base64.NO_WRAP)
             val cmd = "echo '$base64Content' | base64 -d > $escapedPath"
             val result = TerminalRunner.runCommand(cmd, workingDir, true)
             if (result.trim().isEmpty() || result.contains("success")) {
@@ -3157,41 +3205,52 @@ class ToolExecutor(private val context: Context? = null) {
             file.writeText(content)
             "Successfully wrote file: ${file.absolutePath}"
         } catch (e: Exception) {
-            "Failed to write file: ${e.message}"
+            if (useRoot) {
+                "Failed to write file as root: ${e.message}"
+            } else {
+                "Failed to write file: ${e.message}"
+            }
         }
     }
 
     private fun editFile(path: String, oldStr: String, newStr: String, replaceAll: Boolean, workingDir: String, useRoot: Boolean): String {
         val file = resolvePath(path, workingDir)
-        if (!file.exists()) return "Error: File does not exist: ${file.absolutePath}"
-        if (!file.isFile) return "Error: Path is not a file: ${file.absolutePath}"
-        return try {
-            val content = file.readText()
-            if (!content.contains(oldStr)) {
-                return "Error: old_str not found in file: ${file.absolutePath}"
-            }
-            if (!replaceAll && content.indexOf(oldStr) != content.lastIndexOf(oldStr)) {
-                return "Error: Multiple occurrences of old_str found in ${file.name}. Provide a larger surrounding code block or set replace_all=true."
-            }
-            val newContent = if (replaceAll) {
-                content.replace(oldStr, newStr)
-            } else {
-                content.replaceFirst(oldStr, newStr)
-            }
-            if (useRoot) {
-                val escapedPath = escapeShellArg(file.absolutePath)
-                val base64Content = android.util.Base64.encodeToString(newContent.toByteArray(), android.util.Base64.NO_WRAP)
-                val cmd = "echo '$base64Content' | base64 -d > $escapedPath"
-                val result = TerminalRunner.runCommand(cmd, workingDir, true)
-                if (result.trim().isEmpty() || result.contains("success")) {
-                    return "Successfully edited file (root): ${file.absolutePath}"
+        val content = try {
+            if (file.exists() && file.isFile) {
+                file.readText()
+            } else if (useRoot) {
+                val rootRead = readFile(path, workingDir, true)
+                if (rootRead.startsWith("File does not exist") || rootRead.startsWith("Error running command")) {
+                    return "Error: File does not exist: ${file.absolutePath}"
                 }
+                rootRead
+            } else {
+                return "Error: File does not exist: ${file.absolutePath}"
             }
-            file.writeText(newContent)
-            "Successfully edited file: ${file.absolutePath}"
         } catch (e: Exception) {
-            "Failed to edit file: ${e.message}"
+            if (useRoot) {
+                val rootRead = readFile(path, workingDir, true)
+                if (rootRead.startsWith("File does not exist") || rootRead.startsWith("Error running command")) {
+                    return "Error reading file: ${e.message}"
+                }
+                rootRead
+            } else {
+                return "Error reading file: ${e.message}"
+            }
         }
+
+        if (!content.contains(oldStr)) {
+            return "Error: old_str not found in file: ${file.absolutePath}"
+        }
+        if (!replaceAll && content.indexOf(oldStr) != content.lastIndexOf(oldStr)) {
+            return "Error: Multiple occurrences of old_str found in ${file.name}. Provide a larger surrounding code block or set replace_all=true."
+        }
+        val newContent = if (replaceAll) {
+            content.replace(oldStr, newStr)
+        } else {
+            content.replaceFirst(oldStr, newStr)
+        }
+        return writeFile(path, newContent, workingDir, useRoot)
     }
 
     private fun listDirectory(path: String, workingDir: String, useRoot: Boolean): String {
@@ -3209,7 +3268,7 @@ class ToolExecutor(private val context: Context? = null) {
         if (useRoot) {
             val escapedPath = escapeShellArg(dir.absolutePath)
             val result = TerminalRunner.runCommand("ls -la $escapedPath", workingDir, true)
-            if (!result.startsWith("Error running command:") && !result.contains("Permission denied")) {
+            if (!result.startsWith("Error running command:") && !result.contains("Permission denied") && !result.contains("No such file")) {
                 return result
             }
         }
@@ -3222,6 +3281,9 @@ class ToolExecutor(private val context: Context? = null) {
                     "${if (f.isDirectory) "d" else "f"} | ${f.name} | ${f.length()} bytes"
                 }
             }
+        } else if (useRoot) {
+            val escapedPath = escapeShellArg(dir.absolutePath)
+            TerminalRunner.runCommand("ls -la $escapedPath", workingDir, true)
         } else {
             "Directory does not exist or is a file: ${dir.absolutePath}"
         }
@@ -3234,7 +3296,8 @@ class ToolExecutor(private val context: Context? = null) {
         if (useRoot) {
             val escapedQuery = escapeShellArg(query)
             val escapedPath = escapeShellArg(target.absolutePath)
-            return TerminalRunner.runCommand("grep -rnw $escapedPath -e $escapedQuery | head -n 100", workingDir, true)
+            val res = TerminalRunner.runCommand("grep -rn $escapedPath -e $escapedQuery 2>/dev/null | head -n 100", workingDir, true)
+            if (res.isNotBlank() && !res.startsWith("Error running command:")) return res
         }
         return try {
             val results = mutableListOf<String>()
@@ -3266,9 +3329,13 @@ class ToolExecutor(private val context: Context? = null) {
         val file = resolvePath(path, workingDir)
         if (useRoot) {
             val escapedPath = escapeShellArg(file.absolutePath)
-            val cmd = if (isDir) "mkdir -p $escapedPath" else "touch $escapedPath"
+            val cmd = if (isDir) "mkdir -p $escapedPath" else "mkdir -p ${escapeShellArg(file.parentFile?.absolutePath ?: "/")} && touch $escapedPath"
             val result = TerminalRunner.runCommand(cmd, workingDir, true)
-            return "File/Directory creation command executed. Output: $result"
+            return if (result.isBlank()) {
+                "${if (isDir) "Directory" else "File"} created successfully (root): ${file.absolutePath}"
+            } else {
+                "File/Directory creation command executed. Output: $result"
+            }
         }
         return try {
             if (isDir) {
@@ -3291,14 +3358,14 @@ class ToolExecutor(private val context: Context? = null) {
         val file = resolvePath(trimmed, workingDir)
         try {
             val canon = file.canonicalPath
-            if (canon == "/" || canon == "/storage" || canon == "/storage/emulated" || canon == "/storage/emulated/0") {
+            if (canon == "/" || canon == "/storage" || canon == "/storage/emulated" || canon == "/storage/emulated/0" || canon == "/system" || canon == "/data") {
                 return "Delete failed: refusing to delete system path $canon"
             }
         } catch (_: Exception) {}
         if (useRoot) {
             val escapedPath = escapeShellArg(file.absolutePath)
             val result = TerminalRunner.runCommand("rm -rf $escapedPath", workingDir, true)
-            return "Delete command executed. Output: $result"
+            return if (result.isBlank()) "Deleted successfully (root): ${file.absolutePath}" else "Delete command executed: $result"
         }
         return try {
             if (file.deleteRecursively()) "Deleted successfully: ${file.absolutePath}" else "Delete failed"

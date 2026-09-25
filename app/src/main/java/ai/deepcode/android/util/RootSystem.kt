@@ -66,11 +66,40 @@ object RootSystem {
         val suPath = findSuBinary()
         if (suPath != null) {
             _isRootAvailable.value = true
-            _rootFlavor.value = detectFlavor()
+            val flavor = detectFlavor()
+            _rootFlavor.value = flavor
+            checkSuAlreadyGranted()
         } else {
             _isRootAvailable.value = false
             _rootFlavor.value = RootFlavor.NONE
+            _isRootGranted.value = false
         }
+    }
+
+    private fun checkSuAlreadyGranted() {
+        try {
+            val suBin = getSuBinaryPath()
+            val pb = ProcessBuilder(suBin, "-c", "id").redirectErrorStream(true)
+            val env = pb.environment()
+            env["PATH"] = (env["PATH"] ?: "") + ":/sbin:/system/sbin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/data/adb/ksu/bin:/data/adb/ap/bin:/data/adb/magisk"
+            val proc = pb.start()
+            val out = proc.inputStream.bufferedReader().readText().trim()
+            val finished = proc.waitFor(1500, TimeUnit.MILLISECONDS)
+            if (finished && proc.exitValue() == 0 && (out.contains("uid=0") || out.contains("root"))) {
+                _isRootGranted.value = true
+                _lastOutput.value = out
+                grantAllFilesAccessViaRoot("ai.deepcode.android")
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun grantAllFilesAccessViaRoot(packageName: String = "ai.deepcode.android") {
+        try {
+            val cleanPkg = packageName.trim()
+            if (cleanPkg.isNotBlank()) {
+                executeAsRoot("appops set $cleanPkg MANAGE_EXTERNAL_STORAGE allow 2>/dev/null; pm grant $cleanPkg android.permission.READ_EXTERNAL_STORAGE 2>/dev/null; pm grant $cleanPkg android.permission.WRITE_EXTERNAL_STORAGE 2>/dev/null")
+            }
+        } catch (_: Exception) {}
     }
 
     fun findSuBinary(): String? {
@@ -222,6 +251,7 @@ object RootSystem {
             if (isGranted) {
                 prefs.saveBooleanSetting("root_mode", true)
                 prefs.saveSetting("root_flavor", flavor.displayName)
+                grantAllFilesAccessViaRoot(context.packageName)
                 RootCheckResult(
                     isAvailable = true,
                     isGranted = true,

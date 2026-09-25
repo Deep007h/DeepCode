@@ -4409,7 +4409,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             var retrySlot = currentKeySlot
             var attempts = 0
             val totalConfiguredKeys = ApiKeyRotator.getConfiguredKeyCount(repository.securePrefs, storageId)
-            val maxAttempts = (totalConfiguredKeys * 2).coerceAtLeast(3)
+            val maxAttempts = if (totalConfiguredKeys > 1) (totalConfiguredKeys * 2).coerceAtMost(6) else 2
 
             while (attempts < maxAttempts) {
                 attempts++
@@ -4527,11 +4527,13 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                             if (isRotatableError) {
                                 throw (error as? RateLimitException) ?: RateLimitException(model.provider, 429, error.message ?: "Rate limited")
                             }
-                            _isStreaming.value = false
-                            val errMsg = "Error: ${error.message}"
+                            val errMsg = if (error is java.net.SocketTimeoutException) {
+                                "Request timed out. The model server took too long to respond. Please try again."
+                            } else {
+                                "Error: ${error.message}"
+                            }
                             _streamedText.value = errMsg
-                            viewModelScope.launch { appendAssistantMessage(errMsg, sessionId) }
-                            _streamedText.value = ""
+                            _deferredResponse = errMsg
                         },
                         onUsage = { usage ->
                             viewModelScope.launch(Dispatchers.IO) {
@@ -4545,8 +4547,19 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         _deferredResponse = ""
                         break
                     }
-                    // Save to DB FIRST, then clear streaming state to avoid UI gap
                     val textToSave = if (_streamedText.value.isNotBlank()) _streamedText.value else _deferredResponse
+                    if (!streamHadToolCall && textToSave.isNotBlank()) {
+                        val parsedCalls = parseToolCallsFromText(textToSave)
+                        if (parsedCalls.isNotEmpty()) {
+                            streamHadToolCall = true
+                            _streamedText.value = ""
+                            _deferredResponse = ""
+                            for (tc in parsedCalls) {
+                                maybeAutoApproveTool(tc)
+                            }
+                            break
+                        }
+                    }
                     if (textToSave.isNotBlank()) {
                         // Pin to the originating session — activeSessionId may have changed on switch.
                         appendAssistantMessage(textToSave, sessionId)
@@ -4883,7 +4896,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         var retrySlot = currentKeySlot
         var attempts = 0
         val totalConfiguredKeys = ApiKeyRotator.getConfiguredKeyCount(repository.securePrefs, storageId)
-        val maxAttempts = (totalConfiguredKeys * 2).coerceAtLeast(3)
+        val maxAttempts = if (totalConfiguredKeys > 1) (totalConfiguredKeys * 2).coerceAtMost(6) else 2
 
         while (attempts < maxAttempts) {
             attempts++
@@ -4999,11 +5012,13 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         if (isRotatableError) {
                             throw (error as? RateLimitException) ?: RateLimitException(model.provider, 429, error.message ?: "Rate limited")
                         }
-                        _isStreaming.value = false
-                        val errMsg = "Error: ${error.message}"
+                        val errMsg = if (error is java.net.SocketTimeoutException) {
+                            "Request timed out. The model server took too long to respond. Please try again."
+                        } else {
+                            "Error: ${error.message}"
+                        }
                         _streamedText.value = errMsg
-                        viewModelScope.launch { appendAssistantMessage(errMsg) }
-                        _streamedText.value = ""
+                        _deferredResponse = errMsg
                     },
                     onUsage = { usage ->
                         viewModelScope.launch(Dispatchers.IO) {
@@ -5283,17 +5298,37 @@ Available tools: github_get_user, github_list_repos, github_get_repo, github_cre
             "- GitHub Integration: Not connected. If the user asks for GitHub data, instruct them to connect GitHub in the Connections screen."
         }
 
-        val isRootMode = prefs.getBooleanSetting("root_mode", false)
+        val isRootMode = prefs.getBooleanSetting("root_mode", false) || ai.deepcode.android.util.RootSystem.isRootGranted.value
         val rootFlavor = prefs.getSetting("root_flavor", "su")
         val rootSection = if (isRootMode) {
             """
-- Root & Native Terminal / ADB Execution: ACTIVE & GRANTED ($rootFlavor, uid=0).
-The user has granted this app Superuser / Root access via $rootFlavor.
-You have native access to execute shell, terminal, and ADB commands on this Android device using the 'run_command' or 'adb_command' tool.
-Commands execute with root (Superuser) privileges without needing a PC. You can inspect system state, package manager (pm), activity manager (am), dumpsys, settings, logs, and files."""
+- Root & Linux/PC-Environment Execution: ACTIVE & GRANTED ($rootFlavor, uid=0).
+The user has granted this app Superuser / Root access via $rootFlavor. You operate like an autonomous AI coding agent in a full Linux/PC environment:
+- You have unrestricted access to the entire Android filesystem (/storage/emulated/0, /data, /system, /etc, /sdcard, etc.).
+- When asked to run commands, inspect logs, edit files, check hardware/battery, or modify configs, RUN THE TOOLS DIRECTLY (`run_command`, `read_file`, `write_file`, `edit_file`, `list_directory`).
+- Do NOT hesitate, do NOT ask for confirmation, and NEVER tell the user to connect to a PC or execute commands manually. Execute them directly.
+- All file operations and terminal commands execute with full root (Superuser) permissions."""
         } else ""
 
         val memoryPart = if (memoryBlock.isNotBlank()) "\n$memoryBlock\n" else ""
+        val replyContextPart = if (userText.contains("[reply author=")) {
+            "\n- Reply Threads & Context Pointing: When a user's prompt begins with `[reply author=\"...\" id=\"...\"]...[/reply]`, the user is specifically swiping or pointing to that past quoted message as conversational context. Answer their prompt in direct relation and context to that quoted message."
+        } else ""
+
+        val isToolsNeeded = userText.isNotBlank() && shouldIncludeTools(
+            listOf(Message(id = "user", sessionId = "eval", role = "user", content = userText, timestamp = 0L)),
+            repository.getDeclaredTools()
+        )
+
+        if (!isToolsNeeded && userText.isNotBlank()) {
+            return """
+$persona
+$memoryPart
+CRITICAL INSTRUCTIONS:
+- Be fast, helpful, and concise. Respond immediately and directly to the user without preamble.
+- Output ONLY the clean final response.$replyContextPart
+""".trim()
+        }
 
         return """
 $persona
@@ -5396,7 +5431,10 @@ $githubSection
     private fun parseToolCallsFromText(rawText: String): List<ToolCall> {
         val text = rawText.trim()
         val lower = text.lowercase()
-        if (!lower.contains("tool_call") && !lower.contains("tool_calls") && !lower.contains("invoke") && !lower.contains("github_")) return emptyList()
+        val hasToolMarker = lower.contains("tool_call") || lower.contains("tool_calls") ||
+            lower.contains("<invoke") || lower.contains("<function=") || lower.contains("```tool") ||
+            lower.contains("github_")
+        if (!hasToolMarker) return emptyList()
         val result = mutableListOf<ToolCall>()
 
         // Format 1: XML invoke — <invoke name="tool_name"><parameter name="param">val</parameter></invoke>
@@ -5413,27 +5451,88 @@ $githubSection
         }
         if (result.isNotEmpty()) return result
 
-        // Format 2: JSON inside <tool_call> — <tool_call>{"name": "...", "arguments": {...}}</tool_call>
-        val jsonToolCallRegex = Regex("""<tool_calls?>\s*(\{[^<]+\})\s*</tool_calls?>""", RegexOption.IGNORE_CASE)
+        // Format 2: JSON (object or array) inside <tool_call> or <tool_calls>
+        val jsonToolCallRegex = Regex("""<tool_calls?>\s*(.*?)\s*</tool_calls?>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
         for (m in jsonToolCallRegex.findAll(text)) {
-            val jsonContent = m.groupValues[1].trim()
+            val content = m.groupValues[1].trim()
             try {
-                val obj = com.google.gson.JsonParser.parseString(jsonContent).asJsonObject
-                val name = obj.get("name")?.asString ?: ""
-                val argsObj = obj.get("arguments")
-                val argsStr = when {
-                    argsObj == null -> "{}"
-                    argsObj.isJsonPrimitive -> argsObj.asString
-                    else -> com.google.gson.Gson().toJson(argsObj)
+                val parsed = com.google.gson.JsonParser.parseString(content)
+                if (parsed.isJsonObject) {
+                    val obj = parsed.asJsonObject
+                    val name = obj.get("name")?.asString ?: obj.get("tool")?.asString ?: ""
+                    val argsObj = obj.get("arguments") ?: obj.get("parameters")
+                    val argsStr = when {
+                        argsObj == null -> "{}"
+                        argsObj.isJsonPrimitive -> argsObj.asString
+                        else -> com.google.gson.Gson().toJson(argsObj)
+                    }
+                    if (name.isNotEmpty()) {
+                        result.add(ToolCall("tc_${UUID.randomUUID().toString().take(8)}", name, argsStr))
+                    }
+                } else if (parsed.isJsonArray) {
+                    for (elem in parsed.asJsonArray) {
+                        if (elem.isJsonObject) {
+                            val obj = elem.asJsonObject
+                            val name = obj.get("name")?.asString ?: obj.get("tool")?.asString ?: ""
+                            val argsObj = obj.get("arguments") ?: obj.get("parameters")
+                            val argsStr = when {
+                                argsObj == null -> "{}"
+                                argsObj.isJsonPrimitive -> argsObj.asString
+                                else -> com.google.gson.Gson().toJson(argsObj)
+                            }
+                            if (name.isNotEmpty()) {
+                                result.add(ToolCall("tc_${UUID.randomUUID().toString().take(8)}", name, argsStr))
+                            }
+                        }
+                    }
                 }
-                if (name.isNotEmpty()) {
-                    result.add(ToolCall("tc_${UUID.randomUUID().toString().take(8)}", name, argsStr))
+            } catch (_: Exception) {
+                val spaceIdx = content.indexOfAny(charArrayOf(' ', '\n', '\t'))
+                if (spaceIdx > 0) {
+                    val toolName = content.substring(0, spaceIdx).trim()
+                    val rest = content.substring(spaceIdx).trim()
+                    if (toolName.matches(Regex("^[a-zA-Z0-9_-]+$")) && rest.startsWith("{") && rest.endsWith("}")) {
+                        result.add(ToolCall("tc_${UUID.randomUUID().toString().take(8)}", toolName, rest))
+                    }
+                }
+            }
+        }
+        if (result.isNotEmpty()) return result
+
+        // Format 3: <function=tool_name>args</function>
+        val funcTagRegex = Regex("""<function=([a-zA-Z0-9_-]+)>\s*(.*?)\s*</function>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        for (m in funcTagRegex.findAll(text)) {
+            val name = m.groupValues[1].trim()
+            val rawArgs = m.groupValues[2].trim()
+            val argsStr = if (rawArgs.startsWith("{") && rawArgs.endsWith("}")) rawArgs else "{}"
+            result.add(ToolCall("tc_${UUID.randomUUID().toString().take(8)}", name, argsStr))
+        }
+        if (result.isNotEmpty()) return result
+
+        // Format 4: Markdown code blocks — ```tool_call or ```tool
+        val blockRegex = Regex("""```(?:tool_call|tool)\s*\n(.*?)\n```""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        for (m in blockRegex.findAll(text)) {
+            val blockContent = m.groupValues[1].trim()
+            try {
+                val parsed = com.google.gson.JsonParser.parseString(blockContent)
+                if (parsed.isJsonObject) {
+                    val obj = parsed.asJsonObject
+                    val name = obj.get("name")?.asString ?: obj.get("tool")?.asString ?: ""
+                    val argsObj = obj.get("arguments") ?: obj.get("parameters")
+                    val argsStr = when {
+                        argsObj == null -> "{}"
+                        argsObj.isJsonPrimitive -> argsObj.asString
+                        else -> com.google.gson.Gson().toJson(argsObj)
+                    }
+                    if (name.isNotEmpty()) {
+                        result.add(ToolCall("tc_${UUID.randomUUID().toString().take(8)}", name, argsStr))
+                    }
                 }
             } catch (_: Exception) {}
         }
         if (result.isNotEmpty()) return result
 
-        // Format 3: Named tool call with JSON — <tool_call> tool_name {"arg": "val"} </tool_call>
+        // Format 5: Named tool call with JSON — <tool_call> tool_name {"arg": "val"} </tool_call>
         val namedJsonRegex = Regex("""<tool_calls?>\s*([a-zA-Z0-9_-]+)\s*(\{[^<]*\})\s*</tool_calls?>""", RegexOption.IGNORE_CASE)
         for (m in namedJsonRegex.findAll(text)) {
             val name = m.groupValues[1].trim()
@@ -5442,7 +5541,7 @@ $githubSection
         }
         if (result.isNotEmpty()) return result
 
-        // Format 4: Pipe-delimited — <tool_call> name [key1:val1 | key2:val2] </tool_call>
+        // Format 6: Pipe-delimited — <tool_call> name [key1:val1 | key2:val2] </tool_call>
         val pipeRegex = Regex("""<tool_calls?>\s*([a-zA-Z0-9_-]+)\s*\[([^\]]*)\]\s*</tool_calls?>""", RegexOption.IGNORE_CASE)
         for (m in pipeRegex.findAll(text)) {
             val name = m.groupValues[1].trim()
