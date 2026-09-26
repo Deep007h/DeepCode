@@ -108,7 +108,7 @@ fun ManageTemplatesScreen(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            contentPadding = PaddingValues(bottom = 24.dp)
+            contentPadding = PaddingValues(bottom = 12.dp)
         ) {
             item {
                 Spacer(Modifier.height(4.dp))

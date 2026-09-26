@@ -4148,7 +4148,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
 
             val msgText = if (replyToMessage != null) {
                 val author = if (replyToMessage.role == "user") "You" else "DeepCode"
-                val snippet = cleanSnippetForReply(replyToMessage.content).replace("\n", " ").take(160)
+                val snippet = cleanSnippetForReply(replyToMessage.content).take(4000).trim()
                 """[reply author="$author" id="${replyToMessage.id}"]$snippet[/reply]""" + "\n\n" + cleanBaseText
             } else {
                 cleanBaseText
@@ -4885,8 +4885,14 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS -> {
                 com.jarves.mh.runtime.DshRuntimeBridge(context) { prof ->
                     vault.getSecret(prof.kind.name)
+                        ?: appPrefs.preferences.getString("provider_dsh_app_id", null)?.let { appId ->
+                            vault.getSecret(appId)
+                                ?: repository.securePrefs.getApiKey(appId)
+                                ?: repository.securePrefs.getApiKeySlot(appId, 1).takeIf { it.isNotEmpty() }
+                        }
                         ?: repository.securePrefs.getApiKey(prof.kind.name.lowercase())
                         ?: repository.securePrefs.getApiKey(prof.kind.title.lowercase())
+                        ?: (if (prof.kind == com.jarves.mh.model.ProviderKind.OPENCODE_ZEN) "zen-free" else null)
                 }
             }
             com.jarves.mh.model.AgentKind.CLAUDE_CODE -> {

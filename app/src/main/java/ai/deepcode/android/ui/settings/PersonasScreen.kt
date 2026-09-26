@@ -80,7 +80,7 @@ fun PersonasScreen(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(bottom = 24.dp)
+            contentPadding = PaddingValues(bottom = 12.dp)
         ) {
             item {
                 Spacer(Modifier.height(2.dp))

@@ -4,6 +4,24 @@ All notable changes and milestones for **DeepCode for Android** are documented b
 
 ---
 
+## [1.5.6] - 2026-09-26
+
+### Fixed & Enhanced
+- **Telegram Reply & Audio Synthesis Context**:
+  - Fixed audio generation when replying to messages: quoting a poem, story, or text and requesting *"create audio of this message"* now speaks the quoted replied message content rather than speaking literal instructions or meta words.
+  - Stripped `[reply]` quotes before calculating meta-reference string length thresholds to avoid false negatives on long poems.
+  - Preserved up to 4000 characters of replied content in chat threading and added full text resolution across user and assistant messages in `TelegramBridgeService` and `ToolExecutor`.
+  - Added strict guardrail in `synthesizeSpeechWithResult`: pronoun/meta-reference phrases are never synthesized directly; system falls back to conversation context or prompts for clarification.
+- **YouTube Music Playback & Real-Time Query Reasoning**:
+  - Fixed query reasoning for song playback: requests like *"play new karan aujla song in youtube music"* now reason over the artist, query web search for recent releases/track titles, and resolve the actual target song name.
+  - Added Android 11+ `<queries>` package visibility for `com.google.android.apps.youtube.music`, `com.google.android.youtube`, `com.spotify.music`, and intent actions.
+  - Enhanced intent resolution with `MEDIA_PLAY_FROM_SEARCH` and explicit YouTube Music component fallback.
+- **Setup Wizard Navigation & UX**:
+  - Added back button / gesture handler in `SetupWizardScreen` to allow stepping backwards through onboarding steps.
+  - Dynamic notification titles in `RuntimeExecutionService`.
+
+---
+
 ## [1.5.0] - 2026-09-25
 
 ### Added & Enhanced

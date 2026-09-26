@@ -234,6 +234,7 @@ fun VoiceModelSettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                windowInsets = WindowInsets(0.dp),
                 title = {
                     Column {
                         Text(
@@ -263,6 +264,7 @@ fun VoiceModelSettingsScreen(
                 )
             )
         },
+        contentWindowInsets = WindowInsets(0.dp),
         containerColor = AppScreenBg
     ) { innerPadding ->
         LazyColumn(
@@ -270,6 +272,7 @@ fun VoiceModelSettingsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(top = 2.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Section 1: Priority Menu

@@ -109,8 +109,14 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE id = :messageId")
     suspend fun deleteMessageById(messageId: String)
 
+    @Query("SELECT * FROM messages WHERE id = :messageId LIMIT 1")
+    suspend fun getMessageById(messageId: String): MessageEntity?
+
     @Query("SELECT * FROM messages WHERE role = 'assistant' ORDER BY timestamp DESC LIMIT 20")
     suspend fun getRecentAssistantMessages(): List<MessageEntity>
+
+    @Query("SELECT * FROM messages ORDER BY timestamp DESC LIMIT 30")
+    suspend fun getRecentMessages(): List<MessageEntity>
 
     @Query("SELECT * FROM messages")
     suspend fun getAllMessagesList(): List<MessageEntity>

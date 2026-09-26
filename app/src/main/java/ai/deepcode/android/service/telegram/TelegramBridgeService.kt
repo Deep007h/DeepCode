@@ -1028,7 +1028,6 @@ class TelegramBridgeService : Service() {
                 if (targetText == null && ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(cleanPrompt)) {
                     val history = repository.getMessagesListForSession(sessionId)
                     val lastMsg = history.lastOrNull { msg ->
-                        msg.role == "assistant" &&
                         !msg.isToolCall &&
                         !msg.content.startsWith("Executing tool") &&
                         !msg.content.startsWith("Running tool") &&
@@ -1036,10 +1035,13 @@ class TelegramBridgeService : Service() {
                         !msg.content.startsWith("Tool result:") &&
                         !msg.content.startsWith("I will generate") &&
                         !ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(msg.content) &&
+                        !ai.deepcode.android.service.tools.ToolExecutor.isAudioCreationRequest(msg.content) &&
                         msg.content.replace(Regex("""\[(audio|file|image|video):[^\]]+\]"""), "").trim().length > 3
                     }
                     if (lastMsg != null) {
-                        targetText = lastMsg.content
+                        val replyExtract = Regex("""\[reply\s+[^\]]*\]([\s\S]*?)\[/reply\]""").find(lastMsg.content)
+                        val contentToUse = replyExtract?.groupValues?.get(1)?.trim() ?: lastMsg.content
+                        targetText = contentToUse
                             .replace(Regex("""\[(audio|file|image|video):[^\]]+\]"""), "")
                             .trim()
                     }
@@ -1333,6 +1335,15 @@ class TelegramBridgeService : Service() {
             }
 
             // Orchestration summary omitted for cleaner reply
+            try {
+                repository.insertMessage(Message(
+                    id = UUID.randomUUID().toString(),
+                    sessionId = sessionId,
+                    role = "assistant",
+                    content = finalResponse,
+                    timestamp = System.currentTimeMillis()
+                ))
+            } catch (_: Exception) {}
 
             val maxLen = 4000
             if (finalResponse.length <= maxLen) {

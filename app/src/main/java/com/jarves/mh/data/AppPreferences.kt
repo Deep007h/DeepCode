@@ -18,7 +18,11 @@ import java.io.File
 import java.time.Instant
 
 class AppPreferences(private val context: Context) {
-    private val preferences = context.getSharedPreferences("pocket_preferences", Context.MODE_PRIVATE)
+    val preferences = context.getSharedPreferences("pocket_preferences", Context.MODE_PRIVATE)
+
+    var dshAppProviderId: String?
+        get() = preferences.getString("provider_dsh_app_id", null)
+        set(value) { preferences.edit().putString("provider_dsh_app_id", value).apply() }
 
     var onboardingComplete: Boolean
         get() = preferences.getBoolean("onboarding_complete", false)

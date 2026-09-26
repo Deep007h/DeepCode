@@ -211,6 +211,57 @@ class ToolExecutorTest {
         assertFalse(handler.requiresReasoning("play Shape of You"))
         assertFalse(handler.requiresReasoning("play Bohemian Rhapsody by Queen"))
     }
+
+    @Test
+    fun testCleanTextForSpeechWithReplyQuote() {
+        val executor = ToolExecutor()
+        val poemWithReply = """
+            [reply author="DeepCode" id="101"]
+            Two roads diverged in a yellow wood,
+            And sorry I could not travel both
+            And be one traveler, long I stood
+            And looked down one as far as I could
+            To where it bent in the undergrowth;
+            [/reply]
+
+            create audio of this message
+        """.trimIndent()
+
+        val cleaned = executor.cleanTextForSpeech(poemWithReply)
+        println("=== CLEANED REPLIED POEM FOR SPEECH ===")
+        println(cleaned)
+
+        // The poem content must be preserved for speech!
+        assertTrue(cleaned.contains("Two roads diverged in a yellow wood"))
+        assertTrue(cleaned.contains("And sorry I could not travel both"))
+
+        // The meta-instruction itself must NOT be spoken!
+        assertFalse(cleaned.contains("create audio of this message"))
+        assertFalse(cleaned.contains("[reply"))
+        assertFalse(cleaned.contains("[/reply]"))
+    }
+
+    @Test
+    fun testReplyWithLongPoemIsMetaReference() {
+        val longPoemWithReply = """
+            [reply author="DeepCode" id="102"]
+            In the quiet twilight of a winter eve,
+            When ancient pines in velvet shadows grieve,
+            The starlight dances on the frosted lake,
+            And silent dreams in slumbering forests wake.
+            Through winding paths where silver whispers blow,
+            Beneath the tapestry of fallen snow,
+            A gentle stillness settles on the land,
+            Held softly in the evening's peaceful hand.
+            [/reply]
+
+            create audio of this message
+        """.trimIndent()
+
+        assertTrue(ToolExecutor.isMetaReferenceText(longPoemWithReply))
+        assertTrue(ToolExecutor.isAudioCreationRequest(longPoemWithReply))
+        assertTrue(ToolExecutor.isPureAudioCreationRequest(longPoemWithReply))
+    }
 }
 
 

@@ -112,12 +112,12 @@ fun ThemesAndWallpapersScreen(
 
     Scaffold(
         containerColor = AppScreenBg,
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
@@ -160,7 +160,7 @@ fun ThemesAndWallpapersScreen(
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(22.dp),
-            contentPadding = PaddingValues(top = 4.dp, bottom = 40.dp)
+            contentPadding = PaddingValues(top = 2.dp, bottom = 12.dp)
         ) {
             // ═══════════════════════════════════════════════
             // 1. LIVE CHAT PREVIEW CARD

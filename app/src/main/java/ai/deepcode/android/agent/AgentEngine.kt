@@ -1857,8 +1857,11 @@ class AgentEngine(private val context: Context) {
 
                             // Smart TTS: detect references to "this", "last response", "the poem", replies, etc.
                             // and inject the actual content so the AI speaks real content.
-                            val isAudioReq = ai.deepcode.android.service.tools.ToolExecutor.isAudioCreationRequest(userPrompt)
-                            val isMetaRef = ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(userPrompt)
+                            val unquotedPrompt = userPrompt.replace(Regex("""^\[reply[\s\S]*?\[/reply\]\s*""", RegexOption.IGNORE_CASE), "").trim()
+                            val isAudioReq = ai.deepcode.android.service.tools.ToolExecutor.isAudioCreationRequest(unquotedPrompt) ||
+                                    ai.deepcode.android.service.tools.ToolExecutor.isAudioCreationRequest(userPrompt)
+                            val isMetaRef = ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(unquotedPrompt) ||
+                                    ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(userPrompt)
                             val replyMatch = Regex("""\[reply\s+author="([^"]*)"\s+id="([^"]*)"\]([\s\S]*?)\[/reply\]""").find(userPrompt)
                             val repliedContent = replyMatch?.groupValues?.get(3)?.trim()
 
@@ -1880,19 +1883,19 @@ class AgentEngine(private val context: Context) {
                                 )
                                 finalHistory.add(ttsHint)
                             } else if (isAudioReq && isMetaRef) {
-                                val lastAssistantMsg = rawHistory
+                                val lastEligibleMsg = rawHistory
                                     .filter { msg ->
-                                        msg.role == "assistant" &&
                                         !msg.isToolCall &&
                                         !msg.content.startsWith("Executing tool") &&
                                         !msg.content.startsWith("Running tool") &&
                                         !msg.content.startsWith("I've completed") &&
                                         !ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(msg.content) &&
+                                        !ai.deepcode.android.service.tools.ToolExecutor.isAudioCreationRequest(msg.content) &&
                                         msg.content.replace(Regex("\\[(audio|file|image|video):[^\\]]+\\]"), "").trim().length > 3
                                     }
                                     .lastOrNull()
-                                if (lastAssistantMsg != null) {
-                                    val cleanContent = lastAssistantMsg.content
+                                if (lastEligibleMsg != null) {
+                                    val cleanContent = lastEligibleMsg.content
                                         .replace(Regex("\\[audio:[^\\]]+\\]"), "")
                                         .replace(Regex("\\[file:[^\\]]+\\]"), "")
                                         .replace(Regex("\\[image:[^\\]]+\\]"), "")
@@ -1902,11 +1905,11 @@ class AgentEngine(private val context: Context) {
                                         id = UUID.randomUUID().toString(),
                                         sessionId = sessionId,
                                         role = "system",
-                                        content = "The user wants you to generate audio of the previous assistant response (e.g. poem/story/text). " +
-                                            "Here is the EXACT content of that response that you must pass to edge_tts:\n\n" +
-                                            "=== PREVIOUS RESPONSE START ===\n" +
+                                        content = "The user wants you to generate audio of the previous conversation content (e.g. poem/story/text). " +
+                                            "Here is the EXACT content of that message that you must pass to edge_tts:\n\n" +
+                                            "=== PREVIOUS CONTENT START ===\n" +
                                             cleanContent +
-                                            "\n=== PREVIOUS RESPONSE END ===\n\n" +
+                                            "\n=== PREVIOUS CONTENT END ===\n\n" +
                                             "Call edge_tts with the above text. Do NOT use placeholder words like 'this message', 'this', or 'last response' as the text — use the actual content shown above.",
                                         timestamp = 0
                                     )

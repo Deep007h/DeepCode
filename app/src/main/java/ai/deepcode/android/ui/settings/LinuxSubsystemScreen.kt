@@ -44,6 +44,153 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+data class AppWorkflowProvider(
+    val id: String,
+    val name: String,
+    val providerKind: ProviderKind,
+    val defaultBaseUrl: String,
+    val defaultModel: String,
+    val dshApi: String,
+    val storageKeys: List<String>
+)
+
+val APP_WORKFLOW_PROVIDERS = listOf(
+    AppWorkflowProvider(
+        id = "zen",
+        name = "Zen AI (Free)",
+        providerKind = ProviderKind.OPENCODE_ZEN,
+        defaultBaseUrl = "https://opencode.ai/zen/v1",
+        defaultModel = "deepseek-v4-flash",
+        dshApi = "openai-responses",
+        storageKeys = listOf("zen", "opencode-zen", "opencode")
+    ),
+    AppWorkflowProvider(
+        id = "deepseek",
+        name = "DeepSeek",
+        providerKind = ProviderKind.DEEPSEEK,
+        defaultBaseUrl = "https://api.deepseek.com/anthropic",
+        defaultModel = "deepseek-v4-flash",
+        dshApi = "anthropic-messages",
+        storageKeys = listOf("deepseek")
+    ),
+    AppWorkflowProvider(
+        id = "openrouter",
+        name = "OpenRouter",
+        providerKind = ProviderKind.LLM_ROUTER,
+        defaultBaseUrl = "https://openrouter.ai/api",
+        defaultModel = "~anthropic/claude-sonnet-latest",
+        dshApi = "anthropic-messages",
+        storageKeys = listOf("openrouter")
+    ),
+    AppWorkflowProvider(
+        id = "openai",
+        name = "OpenAI",
+        providerKind = ProviderKind.CUSTOM,
+        defaultBaseUrl = "https://api.openai.com/v1",
+        defaultModel = "gpt-4o",
+        dshApi = "openai-completions",
+        storageKeys = listOf("openai")
+    ),
+    AppWorkflowProvider(
+        id = "anthropic",
+        name = "Anthropic",
+        providerKind = ProviderKind.ANTHROPIC,
+        defaultBaseUrl = "https://api.anthropic.com",
+        defaultModel = "claude-sonnet-4-6",
+        dshApi = "anthropic-messages",
+        storageKeys = listOf("anthropic")
+    ),
+    AppWorkflowProvider(
+        id = "gemini",
+        name = "Google Gemini",
+        providerKind = ProviderKind.CUSTOM,
+        defaultBaseUrl = "https://generativelanguage.googleapis.com/v1beta/openai",
+        defaultModel = "gemini-2.5-flash",
+        dshApi = "openai-completions",
+        storageKeys = listOf("gemini", "google gemini", "google-gemini", "google")
+    ),
+    AppWorkflowProvider(
+        id = "groq",
+        name = "Groq",
+        providerKind = ProviderKind.CUSTOM,
+        defaultBaseUrl = "https://api.groq.com/openai/v1",
+        defaultModel = "llama-3.3-70b-versatile",
+        dshApi = "openai-completions",
+        storageKeys = listOf("groq")
+    ),
+    AppWorkflowProvider(
+        id = "nvidia",
+        name = "NVIDIA NIM",
+        providerKind = ProviderKind.NVIDIA_NIM,
+        defaultBaseUrl = "https://integrate.api.nvidia.com/v1",
+        defaultModel = "qwen/qwen2.5-coder-32b-instruct",
+        dshApi = "openai-completions",
+        storageKeys = listOf("nvidia", "nvidia-nim")
+    ),
+    AppWorkflowProvider(
+        id = "together",
+        name = "Together AI",
+        providerKind = ProviderKind.CUSTOM,
+        defaultBaseUrl = "https://api.together.xyz/v1",
+        defaultModel = "deepseek-ai/DeepSeek-V3",
+        dshApi = "openai-completions",
+        storageKeys = listOf("together", "together-ai")
+    ),
+    AppWorkflowProvider(
+        id = "mistral",
+        name = "Mistral AI",
+        providerKind = ProviderKind.CUSTOM,
+        defaultBaseUrl = "https://api.mistral.ai/v1",
+        defaultModel = "codestral-latest",
+        dshApi = "openai-completions",
+        storageKeys = listOf("mistral")
+    ),
+    AppWorkflowProvider(
+        id = "cerebras",
+        name = "Cerebras",
+        providerKind = ProviderKind.CUSTOM,
+        defaultBaseUrl = "https://api.cerebras.ai/v1",
+        defaultModel = "qwen-3.8-27b",
+        dshApi = "openai-completions",
+        storageKeys = listOf("cerebras", "cerebrus")
+    ),
+    AppWorkflowProvider(
+        id = "kimi",
+        name = "Moonshot Kimi",
+        providerKind = ProviderKind.KIMI,
+        defaultBaseUrl = "https://api.moonshot.ai/anthropic",
+        defaultModel = "kimi-k2.6",
+        dshApi = "anthropic-messages",
+        storageKeys = listOf("kimi")
+    ),
+    AppWorkflowProvider(
+        id = "custom",
+        name = "Custom Endpoint",
+        providerKind = ProviderKind.CUSTOM,
+        defaultBaseUrl = "",
+        defaultModel = "",
+        dshApi = "openai-completions",
+        storageKeys = listOf("custom")
+    )
+)
+
+fun getSavedKeyForWorkflowProvider(provider: AppWorkflowProvider, securePrefs: EncryptedPrefs, vault: ApiKeyVault): String {
+    vault.getSecret(provider.providerKind.name)?.takeIf { it.isNotBlank() }?.let { return it }
+    vault.getSecret(provider.id)?.takeIf { it.isNotBlank() }?.let { return it }
+    for (k in provider.storageKeys) {
+        val key = securePrefs.getApiKey(k)
+        if (key.isNotBlank()) return key
+        val slotKey = securePrefs.getApiKeySlot(k, 1)
+        if (slotKey.isNotBlank()) return slotKey
+    }
+    return ""
+}
+
+fun isWorkflowProviderConfigured(provider: AppWorkflowProvider, securePrefs: EncryptedPrefs, vault: ApiKeyVault): Boolean {
+    if (provider.id == "zen") return true
+    return getSavedKeyForWorkflowProvider(provider, securePrefs, vault).isNotBlank()
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LinuxSubsystemScreen(
@@ -58,10 +205,23 @@ fun LinuxSubsystemScreen(
 
     var workflowMode by remember { mutableStateOf(securePrefs.getWorkflowMode()) }
     val initialProfile = remember { appPrefs.loadProvider(vault, AgentKind.DEEPSEEK_HARNESS) }
+    val savedAppId = remember { appPrefs.preferences.getString("provider_dsh_app_id", null) }
+    val initialSelectedProvider = remember {
+        APP_WORKFLOW_PROVIDERS.find { it.id == savedAppId }
+            ?: APP_WORKFLOW_PROVIDERS.find { it.providerKind == initialProfile.kind }
+            ?: APP_WORKFLOW_PROVIDERS.first()
+    }
+    var selectedWorkflowProvider by remember { mutableStateOf(initialSelectedProvider) }
     var dshProviderKind by remember { mutableStateOf(initialProfile.kind) }
+    var dshDshApi by remember { mutableStateOf(initialProfile.dshApi.ifBlank { initialSelectedProvider.dshApi }) }
     var dshBaseUrl by remember { mutableStateOf(initialProfile.baseUrl) }
     var dshModel by remember { mutableStateOf(initialProfile.model) }
-    var dshApiKey by remember { mutableStateOf(vault.getSecret(initialProfile.kind.name) ?: securePrefs.getApiKey(initialProfile.kind.name.lowercase())) }
+    var dshApiKey by remember {
+        mutableStateOf(
+            getSavedKeyForWorkflowProvider(initialSelectedProvider, securePrefs, vault)
+                .ifBlank { vault.getSecret(initialProfile.kind.name) ?: securePrefs.getApiKey(initialProfile.kind.name.lowercase()) }
+        )
+    }
     var showDshKey by remember { mutableStateOf(false) }
 
     var isInstalled by remember { mutableStateOf(installer.isInstalled()) }
@@ -112,6 +272,7 @@ fun LinuxSubsystemScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                windowInsets = WindowInsets(0.dp),
                 title = {
                     Text("Linux Subsystem & Runtimes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = AppWhite)
                 },
@@ -123,13 +284,15 @@ fun LinuxSubsystemScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurface)
             )
         },
+        contentWindowInsets = WindowInsets(0.dp),
         containerColor = AppScreenBg
     ) { paddingValues ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            contentPadding = PaddingValues(bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Workflow Selection Card
@@ -189,7 +352,7 @@ fun LinuxSubsystemScreen(
 
             // DeepSeek Harness Provider Configuration Card
             item {
-                Text("DeepSeek Harness (DSH) Provider", fontWeight = FontWeight.Bold, color = AppWhite, fontSize = 14.sp)
+                Text("Workflow API Provider (DeepSeek Harness)", fontWeight = FontWeight.Bold, color = AppWhite, fontSize = 14.sp)
                 Spacer(Modifier.height(8.dp))
                 Surface(
                     color = AppSurface,
@@ -197,41 +360,74 @@ fun LinuxSubsystemScreen(
                     border = androidx.compose.foundation.BorderStroke(1.dp, AppBorder)
                 ) {
                     Column(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Configure the API provider and model used by DeepSeek Harness:", color = AppMuted, fontSize = 12.sp)
+                        Text("Select from API providers configured in DeepCode to power autonomous agents:", color = AppMuted, fontSize = 12.sp)
 
-                        val dshProviders = listOf(
-                            ProviderKind.DEEPSEEK,
-                            ProviderKind.LLM_ROUTER,
-                            ProviderKind.OPENCODE_ZEN,
-                            ProviderKind.NVIDIA_NIM,
-                            ProviderKind.KIMI,
-                            ProviderKind.ANTHROPIC,
-                            ProviderKind.CUSTOM
-                        )
-
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(dshProviders) { p ->
-                                val isSelected = p == dshProviderKind
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(APP_WORKFLOW_PROVIDERS) { p ->
+                                val isSelected = p.id == selectedWorkflowProvider.id
+                                val isConfigured = isWorkflowProviderConfigured(p, securePrefs, vault)
                                 FilterChip(
                                     selected = isSelected,
                                     onClick = {
-                                        dshProviderKind = p
+                                        selectedWorkflowProvider = p
+                                        dshProviderKind = p.providerKind
+                                        dshDshApi = p.dshApi
                                         dshBaseUrl = p.defaultBaseUrl
                                         dshModel = p.defaultModel
+                                        val saved = getSavedKeyForWorkflowProvider(p, securePrefs, vault)
+                                        if (saved.isNotBlank()) {
+                                            dshApiKey = saved
+                                        }
                                     },
-                                    label = { Text(p.title, fontSize = 12.sp) },
+                                    leadingIcon = if (isConfigured) {
+                                        {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF22C55E))
+                                            )
+                                        }
+                                    } else null,
+                                    label = {
+                                        Text(
+                                            p.name,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    },
                                     colors = FilterChipDefaults.filterChipColors(
                                         selectedContainerColor = AppPrimary.copy(alpha = 0.2f),
                                         selectedLabelColor = AppPrimary,
                                         containerColor = AppSurfaceVariant,
-                                        labelColor = AppMuted
+                                        labelColor = if (isConfigured) AppWhite else AppMuted
                                     ),
                                     border = FilterChipDefaults.filterChipBorder(
                                         enabled = true,
                                         selected = isSelected,
-                                        borderColor = if (isSelected) AppPrimary else AppBorder
+                                        borderColor = if (isSelected) AppPrimary else if (isConfigured) Color(0xFF22C55E).copy(alpha = 0.5f) else AppBorder
                                     )
                                 )
+                            }
+                        }
+
+                        if (isWorkflowProviderConfigured(selectedWorkflowProvider, securePrefs, vault) && selectedWorkflowProvider.id != "custom") {
+                            Surface(
+                                color = Color(0xFF22C55E).copy(alpha = 0.1f),
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF22C55E).copy(alpha = 0.3f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF22C55E), modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Using API credentials already saved in DeepCode", fontSize = 11.sp, color = Color(0xFF22C55E))
+                                }
                             }
                         }
 
@@ -272,8 +468,8 @@ fun LinuxSubsystemScreen(
                         OutlinedTextField(
                             value = dshApiKey,
                             onValueChange = { dshApiKey = it },
-                            label = { Text("API Key (${dshProviderKind.title})") },
-                            placeholder = { Text("sk-...") },
+                            label = { Text("API Key (${selectedWorkflowProvider.name})") },
+                            placeholder = { Text(if (selectedWorkflowProvider.id == "zen") "Free (no key required)" else "sk-...") },
                             singleLine = true,
                             visualTransformation = if (showDshKey) VisualTransformation.None else PasswordVisualTransformation(),
                             trailingIcon = {
@@ -303,15 +499,19 @@ fun LinuxSubsystemScreen(
                                     kind = dshProviderKind,
                                     baseUrl = dshBaseUrl,
                                     model = dshModel,
-                                    hasSecret = dshApiKey.isNotBlank()
+                                    hasSecret = dshApiKey.isNotBlank(),
+                                    dshApi = dshDshApi
                                 )
                                 appPrefs.saveProvider(prof, AgentKind.DEEPSEEK_HARNESS)
+                                appPrefs.preferences.edit().putString("provider_dsh_app_id", selectedWorkflowProvider.id).apply()
                                 if (dshApiKey.isNotBlank()) {
                                     vault.putSecret(dshProviderKind.name, dshApiKey.trim())
-                                    securePrefs.saveApiKey(dshProviderKind.name.lowercase(), dshApiKey.trim())
-                                    securePrefs.saveApiKey("deepseek", dshApiKey.trim())
+                                    vault.putSecret(selectedWorkflowProvider.id, dshApiKey.trim())
+                                    selectedWorkflowProvider.storageKeys.forEach { k ->
+                                        securePrefs.saveApiKey(k, dshApiKey.trim())
+                                    }
                                 }
-                                Toast.makeText(context, "Saved DeepSeek Harness provider settings", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Saved ${selectedWorkflowProvider.name} for autonomous workflows", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = AppPrimary),
                             shape = RoundedCornerShape(10.dp),
@@ -319,7 +519,7 @@ fun LinuxSubsystemScreen(
                         ) {
                             Icon(Icons.Default.Save, null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Save DSH Provider Settings")
+                            Text("Save Workflow Provider Settings")
                         }
                     }
                 }

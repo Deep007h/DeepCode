@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaPlayer
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -62,6 +63,7 @@ import com.jarves.mh.model.AgentKind
 import com.jarves.mh.model.DevStack
 import com.jarves.mh.model.ProviderKind
 import com.jarves.mh.model.ProviderProfile
+import com.jarves.mh.model.defaultDshApiForProvider
 import com.jarves.mh.runtime.RuntimeInstallProgress
 import com.jarves.mh.runtime.RuntimeInstaller
 import kotlinx.coroutines.Dispatchers
@@ -88,6 +90,14 @@ fun SetupWizardScreen(
 
     val totalSteps = 5
     var currentStep by remember { mutableIntStateOf(0) }
+
+    BackHandler(enabled = true) {
+        if (currentStep > 0) {
+            currentStep--
+        } else {
+            onBack?.invoke()
+        }
+    }
 
     // Step 0: Profile & Identity
     var name by remember { mutableStateOf("") }
@@ -176,17 +186,26 @@ fun SetupWizardScreen(
         if (workflowMode == WORKFLOW_DEEPSEEK_HARNESS) {
             val agent = AgentKind.DEEPSEEK_HARNESS
             appPrefs.agentKind = agent.stableId
+            val matchedProv = ai.deepcode.android.ui.settings.APP_WORKFLOW_PROVIDERS.find {
+                it.providerKind == dshProviderKind && (it.defaultBaseUrl.isBlank() || it.defaultBaseUrl == dshBaseUrl)
+            }
             val profile = ProviderProfile(
                 kind = dshProviderKind,
                 baseUrl = dshBaseUrl,
                 model = dshModel,
-                hasSecret = dshApiKey.isNotBlank()
+                hasSecret = dshApiKey.isNotBlank(),
+                dshApi = matchedProv?.dshApi ?: defaultDshApiForProvider(dshProviderKind)
             )
             appPrefs.saveProvider(profile, agent)
+            matchedProv?.let {
+                appPrefs.preferences.edit().putString("provider_dsh_app_id", it.id).apply()
+            }
             if (dshApiKey.isNotBlank()) {
                 vault.putSecret(dshProviderKind.name, dshApiKey.trim())
-                securePrefs.saveApiKey(dshProviderKind.name.lowercase(), dshApiKey.trim())
-                securePrefs.saveApiKey("deepseek", dshApiKey.trim())
+                matchedProv?.let { vault.putSecret(it.id, dshApiKey.trim()) }
+                matchedProv?.storageKeys?.forEach { k ->
+                    securePrefs.saveApiKey(k, dshApiKey.trim())
+                }
             }
         } else if (workflowMode == WORKFLOW_CLAUDE_CODE) {
             appPrefs.agentKind = AgentKind.CLAUDE_CODE.stableId
@@ -738,27 +757,21 @@ private fun StepProvider(
             color = AppMuted
         )
 
-        val dshProviders = listOf(
-            ProviderKind.DEEPSEEK,
-            ProviderKind.LLM_ROUTER,
-            ProviderKind.OPENCODE_ZEN,
-            ProviderKind.NVIDIA_NIM,
-            ProviderKind.KIMI,
-            ProviderKind.ANTHROPIC,
-            ProviderKind.CUSTOM
-        )
-
         Text("Select API Provider", fontWeight = FontWeight.SemiBold, color = AppWhite, fontSize = 13.sp)
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            items(dshProviders) { prov ->
-                val isSelected = prov == dshProviderKind
+            items(ai.deepcode.android.ui.settings.APP_WORKFLOW_PROVIDERS) { prov ->
+                val isSelected = prov.providerKind == dshProviderKind && (prov.defaultBaseUrl.isBlank() || prov.defaultBaseUrl == dshBaseUrl)
                 FilterChip(
                     selected = isSelected,
-                    onClick = { onDshProviderChange(prov) },
-                    label = { Text(prov.title, fontSize = 12.sp) },
+                    onClick = {
+                        onDshProviderChange(prov.providerKind)
+                        onDshBaseUrlChange(prov.defaultBaseUrl)
+                        onDshModelChange(prov.defaultModel)
+                    },
+                    label = { Text(prov.name, fontSize = 12.sp) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = ActiveAccent.primary.copy(alpha = 0.2f),
                         selectedLabelColor = ActiveAccent.primary,

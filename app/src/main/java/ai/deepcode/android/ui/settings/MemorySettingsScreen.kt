@@ -133,7 +133,7 @@ fun MemorySettingsScreen(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(bottom = 32.dp)
+            contentPadding = PaddingValues(bottom = 12.dp)
         ) {
             // Master Controls Card
             item {

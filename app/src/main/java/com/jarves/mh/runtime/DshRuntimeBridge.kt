@@ -710,7 +710,7 @@ internal object DshRouteMapper {
                 name = "mh-custom",
                 keyEnv = DshRuntimeBridge.FALLBACK_KEY_ENV,
                 defaultModel = model,
-                custom = DshCustomRoute(profile.dshApi.ifBlank { "anthropic-messages" }, profile.resolvedBaseUrl),
+                custom = DshCustomRoute(profile.dshApi.ifBlank { "openai-completions" }, profile.resolvedBaseUrl),
             )
             ProviderKind.CLAUDE -> throw IllegalArgumentException("Claude subscription login is not supported by DeepSeek Harness")
         }

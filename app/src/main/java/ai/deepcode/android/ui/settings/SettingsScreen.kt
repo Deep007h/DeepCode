@@ -125,7 +125,7 @@ fun SettingsScreen(
             .background(AppScreenBg)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)
+        contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp)
     ) {
         // Settings Header
         item {
@@ -134,7 +134,7 @@ fun SettingsScreen(
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = AppWhite,
-                modifier = Modifier.padding(vertical = 8.dp)
+                modifier = Modifier.padding(top = 2.dp, bottom = 6.dp)
             )
         }
 
@@ -276,24 +276,16 @@ fun SettingsScreen(
 
                 val currentWorkflowMode by securePrefs.workflowModeFlow.collectAsState()
                 val workflowSubtitle = when (currentWorkflowMode) {
-                    ai.deepcode.android.data.local.WORKFLOW_DEEPSEEK_HARNESS -> "DeepSeek Harness (Autonomous CLI)"
-                    ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE -> "Claude Code CLI"
-                    ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY -> "Google Antigravity CLI"
-                    else -> "Direct In-App Engine (Native Android)"
+                    ai.deepcode.android.data.local.WORKFLOW_DEEPSEEK_HARNESS -> "DeepSeek Harness (CLI)"
+                    ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE -> "Claude Code (CLI)"
+                    ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY -> "Google Antigravity (CLI)"
+                    else -> "Direct In-App Engine"
                 }
-
-                SettingsNavRow(
-                    icon = Icons.Default.AltRoute,
-                    title = "Agent Workflow Engine",
-                    subtitle = workflowSubtitle,
-                    onClick = onNavigateToLinuxSubsystem
-                )
-                HorizontalDivider(color = AppDivider, thickness = 1.dp)
 
                 SettingsNavRow(
                     icon = Icons.Default.Dns,
                     title = "Linux Subsystem & Runtimes",
-                    subtitle = "Ubuntu 20.04 · PRoot · Claude / Antigravity / DSH",
+                    subtitle = "$workflowSubtitle · Ubuntu 20.04 PRoot",
                     onClick = onNavigateToLinuxSubsystem
                 )
                 HorizontalDivider(color = AppDivider, thickness = 1.dp)

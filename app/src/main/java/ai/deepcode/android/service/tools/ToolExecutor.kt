@@ -213,8 +213,13 @@ class ToolExecutor(private val context: Context? = null) {
             return layouts
         }
 
-        fun isMetaReferenceText(input: String): Boolean {
-            val clean = input.trim().lowercase()
+        fun stripReplyQuote(text: String): String {
+            return text.replace(Regex("""^\[reply[\s\S]*?\[/reply\]\s*""", RegexOption.IGNORE_CASE), "").trim()
+        }
+
+        fun isMetaReferenceText(text: String): Boolean {
+            val unquoted = stripReplyQuote(text)
+            val clean = (if (unquoted.isNotEmpty()) unquoted else text).trim().lowercase()
             if (clean.length > 250) return false
 
             // Exact pronouns or short deictic phrases
@@ -283,8 +288,9 @@ class ToolExecutor(private val context: Context? = null) {
         }
 
         fun isAudioCreationRequest(input: String): Boolean {
-            val clean = input.trim().lowercase()
-            if (clean.length > 250) return false
+            val unquoted = stripReplyQuote(input)
+            val clean = (if (unquoted.isNotEmpty()) unquoted else input).trim().lowercase()
+            if (clean.length > 300) return false
             val isMeta = isMetaReferenceText(clean)
             val hasAudioWord = clean.contains("audio") || clean.contains("speak") ||
                     clean.contains("read") || clean.contains("voice") || clean.contains("tts") ||
@@ -296,13 +302,17 @@ class ToolExecutor(private val context: Context? = null) {
             )
             if (audioCommandRegex.containsMatchIn(clean)) return true
 
-            val audioPattern = Regex("""\b(audio|voice|speech|tts|mp3)\s+(?:of|for|from|to)\b""")
-            return audioPattern.containsMatchIn(clean)
+            val audioPattern = Regex("""\b(audio|voice|speech|tts|mp3)\s+(?:of|for|from|to|about)\b""")
+            if (audioPattern.containsMatchIn(clean)) return true
+
+            val readAloudPattern = Regex("""\b(read|speak)\s+(?:this|that|it|the|aloud|out\s+loud|me)\b""")
+            return readAloudPattern.containsMatchIn(clean)
         }
 
         fun isPureAudioCreationRequest(input: String): Boolean {
-            val clean = input.trim().lowercase()
-            if (clean.length > 200) return false
+            val unquoted = stripReplyQuote(input)
+            val clean = (if (unquoted.isNotEmpty()) unquoted else input).trim().lowercase()
+            if (clean.length > 250) return false
 
             val generativeKeywords = listOf(
                 "write ", "compose ", "tell me ", "generate a story", "write a poem", "create a story",
@@ -1505,7 +1515,7 @@ class ToolExecutor(private val context: Context? = null) {
         return try {
             val db = ai.deepcode.android.data.local.AppDatabase.getDatabase(ctx)
             val messages = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                db.messageDao().getRecentAssistantMessages()
+                db.messageDao().getRecentMessages()
             }
             val target = messages.firstOrNull { msg ->
                 !msg.isToolCall &&
@@ -1516,14 +1526,24 @@ class ToolExecutor(private val context: Context? = null) {
                 !msg.content.startsWith("I will generate") &&
                 !msg.content.startsWith("Converting to speech") &&
                 !isMetaReferenceText(msg.content) &&
+                !isAudioCreationRequest(msg.content) &&
                 msg.content.replace(Regex("\\[(audio|file|image|video):[^\\]]+\\]"), "").trim().length > 5
             }
-            target?.content
-                ?.replace(Regex("\\[audio:[^\\]]+\\]"), "")
-                ?.replace(Regex("\\[file:[^\\]]+\\]"), "")
-                ?.replace(Regex("\\[image:[^\\]]+\\]"), "")
-                ?.replace(Regex("\\[video:[^\\]]+\\]"), "")
-                ?.trim()
+            val rawContent = target?.content ?: return null
+            val replyMatch = Regex("""\[reply\s+[^\]]*\]([\s\S]*?)\[/reply\]""").find(rawContent)
+            val effectiveContent = if (replyMatch != null) {
+                val quoted = replyMatch.groupValues[1].trim()
+                val body = rawContent.substring(replyMatch.range.last + 1).trim()
+                if (body.length > 5 && !isMetaReferenceText(body) && !isAudioCreationRequest(body)) body else quoted
+            } else {
+                rawContent
+            }
+            effectiveContent
+                .replace(Regex("\\[audio:[^\\]]+\\]"), "")
+                .replace(Regex("\\[file:[^\\]]+\\]"), "")
+                .replace(Regex("\\[image:[^\\]]+\\]"), "")
+                .replace(Regex("\\[video:[^\\]]+\\]"), "")
+                .trim()
         } catch (e: Exception) {
             AppLogger.e("TTS", "Failed to resolve last assistant message", e)
             null
@@ -1531,13 +1551,24 @@ class ToolExecutor(private val context: Context? = null) {
     }
 
     internal fun cleanTextForSpeech(raw: String): String {
-        // First strip any [reply author="..." id="..."]...[/reply] quote wrapper if present
-        val withoutReply = raw.replace(Regex("""^\[reply[\s\S]*?\[/reply\]\s*""", RegexOption.IGNORE_CASE), "").trim()
+        // If raw contains [reply author="..." id="..."]...[/reply]:
+        val replyMatch = Regex("""^\[reply\s+author="[^"]*"\s+id="[^"]*"\]([\s\S]*?)\[/reply\]\s*""", RegexOption.IGNORE_CASE).find(raw)
+        val candidate = if (replyMatch != null) {
+            val quoted = replyMatch.groupValues[1].trim()
+            val remaining = raw.substring(replyMatch.range.last + 1).trim()
+            if (remaining.isBlank() || isMetaReferenceText(remaining) || isAudioCreationRequest(remaining)) {
+                quoted
+            } else {
+                remaining
+            }
+        } else {
+            raw.trim()
+        }
 
         // Handle code blocks: if it has an actual programming language tag, replace with [code snippet].
         // If it's a plain block without language, or marked as text/poem/markdown/lyrics, preserve the inner text.
         val codeLangRegex = Regex("(?i)```(python|kotlin|java|c|cpp|csharp|cs|go|rust|javascript|js|typescript|ts|sh|bash|sql|html|css|xml|json|yaml|yml)\\n([\\s\\S]*?)```")
-        val withCodeCleaned = codeLangRegex.replace(withoutReply) { " [code snippet] " }
+        val withCodeCleaned = codeLangRegex.replace(candidate) { " [code snippet] " }
 
         val plainBlockRegex = Regex("```[a-zA-Z0-9_-]*\\n?([\\s\\S]*?)```")
         val textUnwrapped = plainBlockRegex.replace(withCodeCleaned) { match -> match.groupValues[1] }
@@ -1808,21 +1839,41 @@ class ToolExecutor(private val context: Context? = null) {
         var textToSpeak = text
         val isMeta = isMetaReferenceText(text)
         if (!verbatim || isMeta) {
-            if (isMeta) {
+            // Check if text has an embedded [reply ...]...[/reply] block
+            val replyMatch = Regex("""\[reply\s+[^\]]*\]([\s\S]*?)\[/reply\]""").find(text)
+            val quoted = replyMatch?.groupValues?.get(1)?.trim()
+            if (!quoted.isNullOrBlank()) {
+                textToSpeak = quoted
+            } else if (isMeta) {
                 val resolved = resolveLastAssistantMessage(ctx)
                 if (!resolved.isNullOrBlank()) {
-                    AppLogger.i("TTS", "Resolved meta-reference '$text' to actual last assistant message (${resolved.length} chars)")
+                    AppLogger.i("TTS", "Resolved meta-reference '$text' to actual message content (${resolved.length} chars)")
                     textToSpeak = resolved
                 } else {
                     return SpeechSynthesisResult(
                         audioPath = null,
                         engineUsed = "None",
-                        message = "Could not locate a previous assistant response in conversation. Please provide the text or file context you'd like me to convert to audio."
+                        message = "❓ What would you like me to create audio of? Please reply to the message, poem, or text you want converted, or provide the text directly."
                     )
                 }
             }
         }
         textToSpeak = cleanTextForSpeech(textToSpeak)
+
+        // Strict guardrail: never synthesize a literal meta-reference instruction
+        if (isMetaReferenceText(textToSpeak)) {
+            val resolved = resolveLastAssistantMessage(ctx)
+            if (!resolved.isNullOrBlank() && !isMetaReferenceText(resolved)) {
+                textToSpeak = cleanTextForSpeech(resolved)
+            } else {
+                return SpeechSynthesisResult(
+                    audioPath = null,
+                    engineUsed = "None",
+                    message = "❓ What would you like me to create audio of? Please reply to the message, poem, or text you want converted, or provide the text directly."
+                )
+            }
+        }
+
         if (textToSpeak.isBlank()) {
             return SpeechSynthesisResult(
                 audioPath = null,
