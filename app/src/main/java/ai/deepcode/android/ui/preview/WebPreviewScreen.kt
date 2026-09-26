@@ -4,7 +4,7 @@ import android.net.Uri
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
@@ -232,6 +232,7 @@ fun WebPreviewScreen(
                             webView = this
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
+                            settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                             settings.allowFileAccess = false
                             settings.allowContentAccess = false
 
@@ -259,14 +260,6 @@ fun WebPreviewScreen(
                                     }
                                     address = target.toString()
                                     return false
-                                }
-
-                                override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
-                                    val target = request?.url ?: return null
-                                    if (!target.isLoopbackPreviewUrl()) {
-                                        return WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden", emptyMap(), "Blocked by security filter".byteInputStream())
-                                    }
-                                    return null
                                 }
                             }
 

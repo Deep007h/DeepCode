@@ -267,7 +267,7 @@ fun SettingsScreen(
                 }
 
                 SettingsNavRow(
-                    icon = Icons.Default.VolumeUp,
+                    icon = Icons.AutoMirrored.Filled.VolumeUp,
                     title = "Voice / Speech Model",
                     subtitle = voiceSubtitle,
                     onClick = onNavigateToVoiceModel

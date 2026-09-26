@@ -165,7 +165,8 @@ internal class LocalFormatGateway(
     }
 
     private fun callProvider(body: JSONObject): Pair<Int, String> {
-        val endpoint = profile.baseUrl.trimEnd('/') + "/chat/completions"
+        val base = profile.baseUrl.trimEnd('/')
+        val endpoint = if (base.endsWith("/chat/completions")) base else "$base/chat/completions"
         val connection = URL(endpoint).openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = "POST"
@@ -174,6 +175,8 @@ internal class LocalFormatGateway(
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Authorization", "Bearer $apiKey")
+            connection.setRequestProperty("HTTP-Referer", "https://deepcode.ai")
+            connection.setRequestProperty("X-Title", "DeepCode")
             connection.outputStream.use { it.write(body.toString().toByteArray()) }
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream

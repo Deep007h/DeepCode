@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -139,30 +140,54 @@ fun TerminalScreen(
                             TerminalMode.LINUX_PROOT -> {
                                 if (installer.isInstalled()) {
                                     val rt = installer.installedRuntime()
+                                    rt.proot.setExecutable(true, false)
                                     val prootPath = rt.proot.absolutePath
                                     val rootfsPath = rt.rootfs.absolutePath
+                                    val prootTemp = File(context.cacheDir, "proot-tmp").apply { mkdirs() }
                                     val env = mutableMapOf(
                                         "TERM" to "xterm-256color",
                                         "HOME" to "/root",
                                         "USER" to "root",
-                                        "PATH" to "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                                        "LANG" to "C.UTF-8",
+                                        "PATH" to "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                                        "LD_LIBRARY_PATH" to context.applicationInfo.nativeLibraryDir,
+                                        "PROOT_NO_SECCOMP" to "1",
+                                        "PROOT_TMP_DIR" to prootTemp.absolutePath,
+                                        "PROOT_LOADER" to File(context.applicationInfo.nativeLibraryDir, "libprootloader.so").absolutePath,
+                                        "GLIBC_TUNABLES" to "glibc.pthread.rseq=0"
                                     )
-                                    val argv = listOf(
-                                        prootPath,
-                                        "--kill-on-exit",
-                                        "-0",
-                                        "-r", rootfsPath,
-                                        "-b", "/dev",
-                                        "-b", "/proc",
-                                        "-b", "/sys",
-                                        "-b", "${context.filesDir.absolutePath}:/data/data/${context.packageName}",
-                                        "-w", "/root",
-                                        "/usr/bin/bash", "-c", trimmed
-                                    )
+                                    val hostBinds = listOf("/system", "/apex", "/vendor", "/product").filter { File(it).exists() }
+                                    val argv = buildList {
+                                        add(prootPath)
+                                        add("--kill-on-exit")
+                                        add("-0")
+                                        add("-r")
+                                        add(rootfsPath)
+                                        add("-b")
+                                        add("/dev")
+                                        add("-b")
+                                        add("/proc")
+                                        add("-b")
+                                        add("/sys")
+                                        for (h in hostBinds) {
+                                            add("-b")
+                                            add(h)
+                                        }
+                                        add("-b")
+                                        add("${context.filesDir.absolutePath}:/data/data/${context.packageName}")
+                                        add("-b")
+                                        add("${File(workingDir).absolutePath}:/workspace")
+                                        add("-w")
+                                        add("/workspace")
+                                        add("/usr/bin/bash")
+                                        add("-c")
+                                        add(trimmed)
+                                    }
                                     val pb = ProcessBuilder(argv).redirectErrorStream(true)
                                     pb.environment().putAll(env)
                                     val proc = pb.start()
                                     activeProcess = proc
+                                    activeWriter = proc.outputStream.bufferedWriter()
                                     val reader = InputStreamReader(proc.inputStream)
                                     val buffer = CharArray(1024)
                                     var count: Int
@@ -175,11 +200,13 @@ fun TerminalScreen(
                                         }
                                     }
                                     val code = proc.waitFor()
+                                    runCatching { activeWriter?.close() }
                                     withContext(Dispatchers.Main) {
                                         lines = lines + TerminalOutputLine(command = trimmed, output = fullSb.toString(), exitCode = code)
                                         currentLiveOutput = ""
                                         isRunning = false
                                         activeProcess = null
+                                        activeWriter = null
                                     }
                                 } else {
                                     withContext(Dispatchers.Main) {
@@ -193,6 +220,7 @@ fun TerminalScreen(
                                 val pb = ProcessBuilder(suCmd, "-c", trimmed).directory(File(workingDir)).redirectErrorStream(true)
                                 val proc = pb.start()
                                 activeProcess = proc
+                                activeWriter = proc.outputStream.bufferedWriter()
                                 val reader = InputStreamReader(proc.inputStream)
                                 val buffer = CharArray(1024)
                                 var count: Int
@@ -205,17 +233,20 @@ fun TerminalScreen(
                                     }
                                 }
                                 val code = proc.waitFor()
+                                runCatching { activeWriter?.close() }
                                 withContext(Dispatchers.Main) {
                                     lines = lines + TerminalOutputLine(command = trimmed, output = fullSb.toString(), exitCode = code)
                                     currentLiveOutput = ""
                                     isRunning = false
                                     activeProcess = null
+                                    activeWriter = null
                                 }
                             }
                             TerminalMode.STANDARD_SH -> {
                                 val pb = ProcessBuilder("/system/bin/sh", "-c", trimmed).directory(File(workingDir)).redirectErrorStream(true)
                                 val proc = pb.start()
                                 activeProcess = proc
+                                activeWriter = proc.outputStream.bufferedWriter()
                                 val reader = InputStreamReader(proc.inputStream)
                                 val buffer = CharArray(1024)
                                 var count: Int
@@ -228,20 +259,24 @@ fun TerminalScreen(
                                     }
                                 }
                                 val code = proc.waitFor()
+                                runCatching { activeWriter?.close() }
                                 withContext(Dispatchers.Main) {
                                     lines = lines + TerminalOutputLine(command = trimmed, output = fullSb.toString(), exitCode = code)
                                     currentLiveOutput = ""
                                     isRunning = false
                                     activeProcess = null
+                                    activeWriter = null
                                 }
                             }
                         }
                     } catch (e: Exception) {
+                        runCatching { activeWriter?.close() }
                         withContext(Dispatchers.Main) {
                             lines = lines + TerminalOutputLine(command = trimmed, output = "Error: ${e.message}", exitCode = 1)
                             currentLiveOutput = ""
                             isRunning = false
                             activeProcess = null
+                            activeWriter = null
                         }
                     }
                 }
@@ -504,7 +539,7 @@ fun TerminalScreen(
                         enabled = commandInput.text.isNotBlank()
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Send,
+                            imageVector = Icons.AutoMirrored.Filled.Send,
                             contentDescription = "Send",
                             tint = if (commandInput.text.isNotBlank()) AppPrimary else AppMuted
                         )

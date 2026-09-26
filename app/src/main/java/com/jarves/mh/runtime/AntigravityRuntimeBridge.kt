@@ -153,6 +153,22 @@ class AntigravityRuntimeBridge(
 
     fun configureProjectRoot(projectId: String, rootPath: String) = checkpoints.configureProjectRoot(projectId, rootPath)
 
+    private fun buildAntigravityEnvironment(): Map<String, String> {
+        val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context)
+        val geminiKey = prefs.getApiKey("gemini")
+            .ifBlank { prefs.getApiKey("google gemini") }
+            .ifBlank { prefs.getApiKey("google") }
+            .ifBlank { prefs.getSetting("api_key_gemini", "") }
+            .ifBlank { prefs.getSetting("gemini_api_key", "") }
+            .trim()
+        return buildMap {
+            if (geminiKey.isNotBlank()) {
+                put("GEMINI_API_KEY", geminiKey)
+                put("GOOGLE_API_KEY", geminiKey)
+            }
+        }
+    }
+
     /**
      * Lightweight connectivity probe: sends a tiny hello to agy and returns its
      * reply text. No foreground service, no checkpoints, no saved conversation.
@@ -180,7 +196,7 @@ class AntigravityRuntimeBridge(
                     installed.proot,
                     installed.rootfs,
                     probeDir,
-                    emptyMap(),
+                    buildAntigravityEnvironment(),
                     command,
                     guestWorkspacePath = "/workspace/hello",
                     emulateHardLinks = false,
@@ -292,7 +308,7 @@ class AntigravityRuntimeBridge(
                 installed.proot,
                 installed.rootfs,
                 workspace,
-                emptyMap(),
+                buildAntigravityEnvironment(),
                 command,
                 guestWorkspacePath = "/workspace/$projectSlug",
                 emulateHardLinks = false,

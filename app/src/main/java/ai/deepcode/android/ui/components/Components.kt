@@ -48,7 +48,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -615,7 +618,7 @@ fun ToolCallCard(
         "create_pdf", "analyze_pdf", "list_reference_layouts", "get_layout_instructions" -> Icons.Default.Description
         "shell", "run_shell", "cmd" -> Icons.Default.Terminal
         "file_write", "file_read", "write_file", "read_file" -> Icons.Default.Folder
-        "edge_tts" -> Icons.Default.VolumeUp
+        "edge_tts" -> Icons.AutoMirrored.Filled.VolumeUp
         else -> Icons.Default.Build
     }
 
@@ -2124,7 +2127,7 @@ fun FileCard(filePath: String) {
         }
         // Open button
         Icon(
-            imageVector = Icons.Default.OpenInNew,
+            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
             contentDescription = "Open",
             tint = AppPrimary,
             modifier = Modifier
@@ -2184,7 +2187,7 @@ data class ReferenceLayoutOption(
 
 val referenceLayoutOptions = listOf(
     ReferenceLayoutOption(Icons.Default.Edit, "Field Notes", "Spiral notebook style — for study notes", "field-notes"),
-    ReferenceLayoutOption(Icons.Default.Article, "Editorial Journal", "Scholarly two-column format", "editorial-journal"),
+    ReferenceLayoutOption(Icons.AutoMirrored.Filled.Article, "Editorial Journal", "Scholarly two-column format", "editorial-journal"),
     ReferenceLayoutOption(Icons.Default.Assessment, "Executive Briefing", "Slide-deck style for reports", "executive-briefing"),
     ReferenceLayoutOption(Icons.Default.Build, "Blueprint", "Technical blueprint style", "blueprint"),
     ReferenceLayoutOption(Icons.Default.PlayArrow, "Quickstart Guide", "Step-by-step tutorial layout", "quickstart-guide"),
