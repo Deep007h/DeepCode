@@ -28,6 +28,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ai.deepcode.android.data.local.EncryptedPrefs
+import ai.deepcode.android.data.remote.ApiKeyRotator
+import ai.deepcode.android.service.tools.SpeechSynthesisResult
 import ai.deepcode.android.service.tools.ToolExecutor
 import ai.deepcode.android.ui.theme.depthCard
 import ai.deepcode.android.ui.theme.*
@@ -163,6 +165,33 @@ fun VoiceModelSettingsScreen(
     var isPlayingAudio by remember { mutableStateOf(false) }
     var activeMediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
 
+    val hasGeminiKey = remember(prefs) {
+        prefs.getApiKey("gemini").isNotBlank() ||
+        prefs.getApiKey("google gemini").isNotBlank() ||
+        prefs.getApiKeys("gemini").any { it.isNotBlank() } ||
+        prefs.getApiKeys("google gemini").any { it.isNotBlank() } ||
+        ApiKeyRotator.getNextAvailableKey(prefs, "gemini")?.first?.isNotBlank() == true ||
+        ApiKeyRotator.getNextAvailableKey(prefs, "google gemini")?.first?.isNotBlank() == true
+    }
+
+    val hasOpenAiKey = remember(prefs) {
+        prefs.getApiKey("openai").isNotBlank() ||
+        prefs.getApiKeys("openai").any { it.isNotBlank() } ||
+        prefs.getSetting("openai_api_key", "").isNotBlank() ||
+        ApiKeyRotator.getNextAvailableKey(prefs, "openai")?.first?.isNotBlank() == true
+    }
+
+    var previewText by remember {
+        mutableStateOf(
+            if (ttsModel.contains("gemini", ignoreCase = true)) {
+                "[excited] Hello! I am Gemini 3.8 Flash Speech with expressive dynamic emotion sensing. How does my cadence sound?"
+            } else {
+                "Hello! This is a test of your configured text to speech voice in DeepCode."
+            }
+        )
+    }
+    var previewResultStatus by remember { mutableStateOf<SpeechSynthesisResult?>(null) }
+
     DisposableEffect(Unit) {
         onDispose {
             try {
@@ -255,53 +284,102 @@ fun VoiceModelSettingsScreen(
                 }
             }
 
-            // Section 2: Audio Test & Preview Bar
+            // Section 2: Interactive Audio & Emotion Preview Studio
             item {
+                SectionTitle(
+                    title = "Interactive Voice & Emotion Preview",
+                    subtitle = "Test emotional cadence, expressive tags ([excited], [whispering]), and real-time audio playback"
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = true)
-                        .padding(14.dp)
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    // Quick Preset Emotion Chips
+                    Text(
+                        text = "Quick Emotion Presets:",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AppMuted
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val presets = listOf(
+                            "🌟 Excited" to "[excited] Hello! I am Gemini 3.8 Flash Speech with dynamic emotion sensing. How does my cadence sound?",
+                            "💖 Empathy" to "[empathetic] I'm right here with you. Take your time, everything is going to be just fine.",
+                            "🎭 Dramatic" to "[dramatic] Suddenly, the silence shattered... and in that moment, everything changed forever.",
+                            "💼 Pro" to "[professional] All systems are operating normally. The diagnostics report has completed successfully."
+                        )
+                        presets.forEach { (label, presetString) ->
+                            val isCurrent = previewText == presetString
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isCurrent) AppPrimary.copy(alpha = 0.2f) else AppScreenBg.copy(alpha = 0.7f))
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isCurrent) AppPrimary else Color.White.copy(alpha = 0.08f),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable { previewText = presetString }
+                                    .padding(horizontal = 8.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = label,
+                                    fontSize = 11.sp,
+                                    color = if (isCurrent) AppPrimary else AppWhite,
+                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+
+                    // Editable Test Phrase TextField
+                    OutlinedTextField(
+                        value = previewText,
+                        onValueChange = { previewText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 12.sp, color = AppWhite),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = AppPrimary,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
+                            focusedContainerColor = AppScreenBg.copy(alpha = 0.5f),
+                            unfocusedContainerColor = AppScreenBg.copy(alpha = 0.5f)
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        maxLines = 3,
+                        label = { Text("Sample Text (Include stage directions like [whispering] or *laughs*)", fontSize = 10.sp, color = AppMuted) }
+                    )
+
+                    // Audio Action Row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(AppPrimary.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = if (isPlayingAudio) Icons.Default.VolumeUp else Icons.Default.PlayArrow,
-                                    contentDescription = null,
-                                    tint = AppPrimary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "Preview Voice & Emotion",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = AppWhite
-                                )
-                                Text(
-                                    text = when (ttsPriority) {
-                                        "provider_first" -> "Active: $ttsProvider • $ttsModel"
-                                        else -> "Active: Microsoft Edge Neural TTS (Default)"
-                                    },
-                                    fontSize = 11.sp,
-                                    color = AppMuted,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = when (ttsPriority) {
+                                    "provider_first" -> "Target: $ttsProvider • $ttsModel"
+                                    else -> "Target: Microsoft Edge Neural TTS (Default)"
+                                },
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AppWhite,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = if (isPlayingAudio) "🔊 Playing audio..." else if (isTestingAudio) "⚡ Synthesizing speech..." else "Tap to synthesize and play",
+                                fontSize = 11.sp,
+                                color = if (isPlayingAudio) Color(0xFF10B981) else AppMuted
+                            )
                         }
 
                         Button(
@@ -318,50 +396,65 @@ fun VoiceModelSettingsScreen(
                                     scope.launch(Dispatchers.IO) {
                                         try {
                                             val executor = ToolExecutor(context)
-                                            val sampleText = if (ttsModel.contains("gemini", ignoreCase = true)) {
-                                                "[excited] Hello! I am Gemini 3.8 Flash Speech with expressive dynamic emotion sensing. How does my cadence sound?"
-                                            } else {
-                                                "Hello! This is a test of your configured text to speech voice in DeepCode."
-                                            }
-                                            val result = if (ttsPriority == "provider_first" && ttsModel.contains("gemini", ignoreCase = true)) {
-                                                executor.executeGeminiTts(sampleText, ttsModel, prefs, context)
-                                            } else if (ttsPriority == "provider_first" && ttsModel.startsWith("tts-", ignoreCase = true)) {
-                                                executor.executeOpenAiTts(sampleText, ttsModel, prefs, context)
-                                            } else {
-                                                executor.executeTool("edge_tts", """{"text":"$sampleText"}""", "", false)
-                                            }
+                                            val result = executor.synthesizeSpeechWithResult(
+                                                text = previewText,
+                                                preferredProvider = if (ttsPriority == "provider_first") ttsProvider else "Default",
+                                                preferredModel = if (ttsPriority == "provider_first") ttsModel else null,
+                                                verbatim = true
+                                            )
 
                                             withContext(Dispatchers.Main) {
-                                                isTestingAudio = false
-                                                if (result != null && result.contains("[audio:")) {
-                                                    val path = result.substringAfter("[audio:").substringBefore("]")
-                                                    val file = File(path)
-                                                    if (file.exists()) {
+                                                previewResultStatus = result
+                                                if (!result.audioPath.isNullOrBlank()) {
+                                                    val file = File(result.audioPath)
+                                                    if (file.exists() && file.length() > 0) {
                                                         try {
+                                                            activeMediaPlayer?.stop()
                                                             activeMediaPlayer?.release()
-                                                            val player = MediaPlayer()
-                                                            player.setDataSource(file.absolutePath)
-                                                            player.prepare()
-                                                            player.setOnCompletionListener {
-                                                                isPlayingAudio = false
+                                                            activeMediaPlayer = null
+
+                                                            val player = MediaPlayer().apply {
+                                                                setAudioAttributes(
+                                                                    android.media.AudioAttributes.Builder()
+                                                                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                                                                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                                                                        .build()
+                                                                )
+                                                                setDataSource(file.absolutePath)
+                                                                setOnPreparedListener { mp ->
+                                                                    mp.start()
+                                                                    isPlayingAudio = true
+                                                                    isTestingAudio = false
+                                                                }
+                                                                setOnCompletionListener {
+                                                                    isPlayingAudio = false
+                                                                }
+                                                                setOnErrorListener { _, what, extra ->
+                                                                    isPlayingAudio = false
+                                                                    isTestingAudio = false
+                                                                    Toast.makeText(context, "Playback error ($what, $extra)", Toast.LENGTH_SHORT).show()
+                                                                    true
+                                                                }
+                                                                prepareAsync()
                                                             }
-                                                            player.start()
                                                             activeMediaPlayer = player
-                                                            isPlayingAudio = true
                                                         } catch (e: Exception) {
-                                                            Toast.makeText(context, "Playback error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                            isTestingAudio = false
+                                                            Toast.makeText(context, "Audio playback error: ${e.message}", Toast.LENGTH_SHORT).show()
                                                         }
                                                     } else {
-                                                        Toast.makeText(context, "Audio file not found", Toast.LENGTH_SHORT).show()
+                                                        isTestingAudio = false
+                                                        Toast.makeText(context, "Audio file empty or not generated", Toast.LENGTH_SHORT).show()
                                                     }
                                                 } else {
-                                                    Toast.makeText(context, "Synthesis failed: $result", Toast.LENGTH_SHORT).show()
+                                                    isTestingAudio = false
+                                                    Toast.makeText(context, result.message ?: "Synthesis failed", Toast.LENGTH_LONG).show()
                                                 }
                                             }
                                         } catch (e: Exception) {
                                             withContext(Dispatchers.Main) {
                                                 isTestingAudio = false
-                                                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "Synthesis error: ${e.message}", Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     }
@@ -381,12 +474,61 @@ fun VoiceModelSettingsScreen(
                                     strokeWidth = 2.dp
                                 )
                             } else {
-                                Text(
-                                    text = if (isPlayingAudio) "Stop" else "Test Voice",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = AppWhite
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = if (isPlayingAudio) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (isPlayingAudio) "Stop" else "Test Voice",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = AppWhite
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Diagnostic result banner
+                    previewResultStatus?.let { status ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (status.isFallback) Color(0xFFF59E0B).copy(alpha = 0.12f) else Color(0xFF10B981).copy(alpha = 0.12f))
+                                .border(
+                                    width = 1.dp,
+                                    color = if (status.isFallback) Color(0xFFF59E0B).copy(alpha = 0.4f) else Color(0xFF10B981).copy(alpha = 0.4f),
+                                    shape = RoundedCornerShape(8.dp)
                                 )
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (status.isFallback) Icons.Default.Info else Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = if (status.isFallback) Color(0xFFF59E0B) else Color(0xFF10B981),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = status.engineUsed,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (status.isFallback) Color(0xFFF59E0B) else Color(0xFF10B981)
+                                )
+                                status.message?.let { msg ->
+                                    Text(
+                                        text = msg,
+                                        fontSize = 10.sp,
+                                        color = AppMuted,
+                                        lineHeight = 13.sp
+                                    )
+                                }
                             }
                         }
                     }
@@ -399,6 +541,31 @@ fun VoiceModelSettingsScreen(
                     title = "Google Gemini Speech Models",
                     subtitle = "Expressive Neural Audio with real-time emotion & style sensing"
                 )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Gemini Key Status Banner
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (hasGeminiKey) Color(0xFF10B981).copy(alpha = 0.10f) else Color(0xFFF59E0B).copy(alpha = 0.10f))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (hasGeminiKey) Icons.Default.CheckCircle else Icons.Default.KeyOff,
+                        contentDescription = null,
+                        tint = if (hasGeminiKey) Color(0xFF10B981) else Color(0xFFF59E0B),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (hasGeminiKey) "Gemini API Key Configured • Direct synthesis active" else "No Gemini API Key set in Settings → API Keys (Falls back to Edge Neural)",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (hasGeminiKey) Color(0xFF10B981) else Color(0xFFF59E0B)
+                    )
+                }
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Column(
@@ -535,6 +702,31 @@ fun VoiceModelSettingsScreen(
                     title = "OpenAI Speech Models",
                     subtitle = "OpenAI Audio API speech synthesis models"
                 )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // OpenAI Key Status Banner
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (hasOpenAiKey) Color(0xFF10B981).copy(alpha = 0.10f) else Color(0xFFF59E0B).copy(alpha = 0.10f))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (hasOpenAiKey) Icons.Default.CheckCircle else Icons.Default.KeyOff,
+                        contentDescription = null,
+                        tint = if (hasOpenAiKey) Color(0xFF10B981) else Color(0xFFF59E0B),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (hasOpenAiKey) "OpenAI API Key Configured • Direct synthesis active" else "No OpenAI API Key set in Settings → API Keys (Falls back to Edge Neural)",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (hasOpenAiKey) Color(0xFF10B981) else Color(0xFFF59E0B)
+                    )
+                }
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Column(

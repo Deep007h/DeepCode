@@ -44,6 +44,13 @@ data class ReferenceLayoutInfo(
     val instructions: String  // markdown instruction manual for the AI
 )
 
+data class SpeechSynthesisResult(
+    val audioPath: String?,
+    val engineUsed: String,
+    val isFallback: Boolean = false,
+    val message: String? = null
+)
+
 class ToolExecutor(private val context: Context? = null) {
     private val gson = Gson()
     private var orchestratorEngine: ai.deepcode.android.orchestrator.OrchestratorEngine? = null
@@ -1267,16 +1274,16 @@ class ToolExecutor(private val context: Context? = null) {
                     val ctx = context ?: return "Audio generation requires an Android context"
                     val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
                     val model = optString(args, "model") ?: prefs.getSetting("tts_model", "gemini-3.8-flash-tts")
-                    val result = executeGeminiTts(text, model, prefs, ctx)
-                    result ?: executeEdgeTts(text, "", "", "", workingDir, true)
+                    val result = synthesizeSpeechWithResult(text, preferredProvider = "Google Gemini", preferredModel = model, verbatim = true)
+                    if (result.audioPath != null) "[audio:${result.audioPath}]" else (result.message ?: "Audio generation failed")
                 }
                 "openai_tts" -> {
                     val text = optString(args, "text") ?: return "Missing text argument"
                     val ctx = context ?: return "Audio generation requires an Android context"
                     val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
                     val model = optString(args, "model") ?: prefs.getSetting("tts_model", "tts-1")
-                    val result = executeOpenAiTts(text, model, prefs, ctx)
-                    result ?: executeEdgeTts(text, "", "", "", workingDir, true)
+                    val result = synthesizeSpeechWithResult(text, preferredProvider = "OpenAI", preferredModel = model, verbatim = true)
+                    if (result.audioPath != null) "[audio:${result.audioPath}]" else (result.message ?: "Audio generation failed")
                 }
                 "set_tts_priority" -> {
                     val priority = optString(args, "priority") ?: return "Missing priority argument (provider_first or default_first)"
@@ -1563,59 +1570,141 @@ class ToolExecutor(private val context: Context? = null) {
         } catch (_: Exception) {}
     }
 
+    /**
+     * Unified speech synthesis with provider priority, automatic fallback, and rich diagnostic feedback.
+     * Guaranteed never to fail with null or leave the user without audio when network is available.
+     */
+    fun synthesizeSpeechWithResult(
+        text: String,
+        preferredProvider: String? = null,
+        preferredModel: String? = null,
+        verbatim: Boolean = false
+    ): SpeechSynthesisResult {
+        val ctx = context ?: return SpeechSynthesisResult(
+            audioPath = null,
+            engineUsed = "None",
+            isFallback = false,
+            message = "Audio generation requires an Android context"
+        )
+        val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
+
+        var textToSpeak = text
+        if (!verbatim) {
+            val isMeta = isMetaReferenceText(text)
+            if (isMeta) {
+                val resolved = resolveLastAssistantMessage(ctx)
+                if (!resolved.isNullOrBlank()) {
+                    AppLogger.i("TTS", "Resolved meta-reference '$text' to actual last assistant message (${resolved.length} chars)")
+                    textToSpeak = resolved
+                } else {
+                    return SpeechSynthesisResult(
+                        audioPath = null,
+                        engineUsed = "None",
+                        message = "Could not locate a previous assistant response in conversation."
+                    )
+                }
+            }
+        }
+        textToSpeak = cleanTextForSpeech(textToSpeak)
+        if (textToSpeak.isBlank()) {
+            return SpeechSynthesisResult(
+                audioPath = null,
+                engineUsed = "None",
+                message = "Text to speak is empty"
+            )
+        }
+        if (textToSpeak.length > 5000) {
+            textToSpeak = textToSpeak.take(5000)
+        }
+
+        val ttsPriority = prefs.getSetting("tts_priority", "provider_first")
+        val effectiveProvider = preferredProvider ?: prefs.getSetting("tts_provider", "Google Gemini")
+        val effectiveModel = preferredModel ?: prefs.getSetting("tts_model", "gemini-3.8-flash-tts")
+
+        val shouldUseProvider = (ttsPriority == "provider_first" || preferredProvider != null) &&
+            !effectiveProvider.equals("Default", ignoreCase = true)
+
+        if (shouldUseProvider) {
+            if (effectiveProvider.contains("Gemini", ignoreCase = true) || effectiveModel.contains("gemini", ignoreCase = true)) {
+                AppLogger.i("TTS", "Priority Engine: Invoking Google Gemini TTS ($effectiveModel)")
+                val geminiResult = executeGeminiTts(textToSpeak, effectiveModel, prefs, ctx)
+                if (!geminiResult.isNullOrBlank() && geminiResult.startsWith("[audio:")) {
+                    val path = geminiResult.substringAfter("[audio:").substringBefore("]")
+                    val voice = prefs.getSetting("tts_gemini_voice", "Puck")
+                    return SpeechSynthesisResult(
+                        audioPath = path,
+                        engineUsed = "Google Gemini ($effectiveModel • $voice)",
+                        isFallback = false,
+                        message = "Expressive dynamic speech generated by Google Gemini."
+                    )
+                }
+                AppLogger.w("TTS", "Gemini TTS unavailable or quota hit; falling back to Microsoft Edge Neural TTS")
+                val fallbackResult = executeDefaultTtsDirect(textToSpeak, prefs, ctx)
+                val fallbackPath = if (fallbackResult.startsWith("[audio:")) fallbackResult.substringAfter("[audio:").substringBefore("]") else null
+                return SpeechSynthesisResult(
+                    audioPath = fallbackPath,
+                    engineUsed = "Microsoft Edge Neural TTS (Fallback)",
+                    isFallback = true,
+                    message = "No Gemini API key set in Settings → API Keys (or quota exceeded). Synthesized using Edge Neural TTS."
+                )
+            } else if (effectiveProvider.contains("OpenAI", ignoreCase = true) || effectiveModel.startsWith("tts-", ignoreCase = true)) {
+                AppLogger.i("TTS", "Priority Engine: Invoking OpenAI TTS ($effectiveModel)")
+                val openAiResult = executeOpenAiTts(textToSpeak, effectiveModel, prefs, ctx)
+                if (!openAiResult.isNullOrBlank() && openAiResult.startsWith("[audio:")) {
+                    val path = openAiResult.substringAfter("[audio:").substringBefore("]")
+                    val voice = prefs.getSetting("tts_openai_voice", "alloy")
+                    return SpeechSynthesisResult(
+                        audioPath = path,
+                        engineUsed = "OpenAI ($effectiveModel • $voice)",
+                        isFallback = false,
+                        message = "Neural speech generated by OpenAI Audio."
+                    )
+                }
+                AppLogger.w("TTS", "OpenAI TTS unavailable; falling back to Microsoft Edge Neural TTS")
+                val fallbackResult = executeDefaultTtsDirect(textToSpeak, prefs, ctx)
+                val fallbackPath = if (fallbackResult.startsWith("[audio:")) fallbackResult.substringAfter("[audio:").substringBefore("]") else null
+                return SpeechSynthesisResult(
+                    audioPath = fallbackPath,
+                    engineUsed = "Microsoft Edge Neural TTS (Fallback)",
+                    isFallback = true,
+                    message = "No OpenAI API key set in Settings → API Keys. Synthesized using Edge Neural TTS."
+                )
+            }
+        }
+
+        // Direct Default Built-in Engine
+        val defaultResult = executeDefaultTtsDirect(textToSpeak, prefs, ctx)
+        val defaultPath = if (defaultResult.startsWith("[audio:")) defaultResult.substringAfter("[audio:").substringBefore("]") else null
+        val defaultBackend = prefs.getSetting("tts_backend", "edge_tts")
+        val defaultName = when (defaultBackend) {
+            "kokoro" -> "Kokoro Neural TTS"
+            "android" -> "Android System TTS"
+            "google" -> "Google Translate TTS"
+            else -> "Microsoft Edge Neural TTS"
+        }
+        return SpeechSynthesisResult(
+            audioPath = defaultPath,
+            engineUsed = defaultName,
+            isFallback = false,
+            message = if (defaultPath != null) "Synthesized using $defaultName." else defaultResult
+        )
+    }
+
     private fun executeEdgeTts(text: String, voice: String, rate: String, pitch: String, workingDir: String, verbatim: Boolean = false): String {
-        val ctx = context ?: return "Audio generation requires an Android context"
+        val result = synthesizeSpeechWithResult(text, preferredProvider = null, preferredModel = null, verbatim = verbatim)
+        return if (!result.audioPath.isNullOrBlank()) {
+            "[audio:${result.audioPath}]"
+        } else {
+            result.message ?: "Audio generation failed"
+        }
+    }
+
+    /**
+     * Executes speech synthesis on the default built-in engines (Edge Neural, Kokoro, Android TTS, Google TTS)
+     * with cascade failover.
+     */
+    fun executeDefaultTtsDirect(textToSpeak: String, prefs: ai.deepcode.android.data.local.EncryptedPrefs, ctx: Context): String {
         return try {
-            var textToSpeak = text
-            if (!verbatim) {
-                val isMeta = isMetaReferenceText(text)
-                if (isMeta) {
-                    val resolved = resolveLastAssistantMessage(ctx)
-                    if (!resolved.isNullOrBlank()) {
-                        AppLogger.i("TTS", "Resolved meta-reference '$text' to actual last assistant message (${resolved.length} chars)")
-                        textToSpeak = resolved
-                    } else {
-                        return "Audio generation error: Could not locate a previous assistant response in the conversation to convert to speech."
-                    }
-                }
-            } else {
-                AppLogger.i("TTS", "verbatim=true — speaking literal text without meta/topic rewrite")
-            }
-            textToSpeak = cleanTextForSpeech(textToSpeak)
-            if (textToSpeak.isBlank()) {
-                return "Audio generation failed: text to speak is empty"
-            }
-            if (textToSpeak.length > 5000) {
-                AppLogger.w("TTS", "Text too long (${textToSpeak.length} chars), truncating to 5000")
-                textToSpeak = textToSpeak.take(5000)
-            }
-
-            val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
-
-            // Priority Engine: Check if user configured a provider model to take priority over default engine
-            val ttsPriority = prefs.getSetting("tts_priority", "provider_first")
-            val ttsProvider = prefs.getSetting("tts_provider", "Google Gemini")
-            val ttsModel = prefs.getSetting("tts_model", "gemini-3.8-flash-tts")
-
-            if (ttsPriority == "provider_first") {
-                if (ttsProvider.contains("Gemini", ignoreCase = true) || ttsModel.contains("gemini", ignoreCase = true)) {
-                    AppLogger.i("TTS", "Priority Engine: Provider first active -> invoking Google Gemini TTS ($ttsModel)")
-                    val geminiResult = executeGeminiTts(textToSpeak, ttsModel, prefs, ctx)
-                    if (!geminiResult.isNullOrBlank()) {
-                        return geminiResult
-                    }
-                    AppLogger.w("TTS", "Priority Engine: Gemini TTS failed or quota exceeded, falling back to default Edge-TTS")
-                } else if (ttsProvider.contains("OpenAI", ignoreCase = true) || ttsModel.startsWith("tts-", ignoreCase = true)) {
-                    AppLogger.i("TTS", "Priority Engine: Provider first active -> invoking OpenAI TTS ($ttsModel)")
-                    val openAiResult = executeOpenAiTts(textToSpeak, ttsModel, prefs, ctx)
-                    if (!openAiResult.isNullOrBlank()) {
-                        return openAiResult
-                    }
-                    AppLogger.w("TTS", "Priority Engine: OpenAI TTS failed, falling back to default Edge-TTS")
-                }
-            }
-
-            // ALWAYS use saved settings — completely ignore the AI's voice/rate/pitch params
             val savedLocale = prefs.getSetting("tts_voice", "en-US")
             val savedExactVoice = prefs.getSetting("tts_edge_voice", "")
             val char = prefs.getSetting("tts_voice_character", "default")
@@ -1635,7 +1724,6 @@ class ToolExecutor(private val context: Context? = null) {
             }
             val styleName = getEdgeStyleAttr(tone)
 
-            // Map locale -> Kokoro voice (Kokoro uses its own voice IDs, not Edge Neural names).
             val kokoroVoiceMap = mapOf(
                 "en-US" to "af_bella", "en-GB" to "bf_emma", "hi-IN" to "hf_alpha",
                 "es-ES" to "ef_dora", "fr-FR" to "ff_siwis", "de-DE" to "df_dora",
@@ -1645,7 +1733,6 @@ class ToolExecutor(private val context: Context? = null) {
             val kokoroVoice = kokoroVoiceMap[savedLocale] ?: kokoroVoiceMap[savedLocale.substringBefore("-") + "-US"]
                 ?: kokoroVoiceMap.values.firstOrNull { it.startsWith(savedLocale.substringBefore("-").lowercase()) } ?: "af_bella"
 
-            // Hash cache: identical text+voice+backend reuses file without network.
             try {
                 val cacheDir = File(ctx.cacheDir, "audio")
                 val ext0 = if (ttsBackend == "android") "wav" else "mp3"
@@ -1657,7 +1744,6 @@ class ToolExecutor(private val context: Context? = null) {
                 }
             } catch (_: Exception) {}
 
-            // Execute based on selected TTS backend
             val audioData = when (ttsBackend) {
                 "android" -> {
                     AppLogger.i("TTS", "Using Android built-in TTS backend")
@@ -1666,7 +1752,6 @@ class ToolExecutor(private val context: Context? = null) {
                 "google" -> {
                     AppLogger.i("TTS", "Using Google Translate TTS backend")
                     val gResult = try { googleTranslateTts(textToSpeak, savedLocale, ctx) } catch (_: Exception) { "" }
-                    // googleTranslateTts returns "[audio:path]" on success or an error string — only return on success so fallbacks can run.
                     if (gResult.startsWith("[audio:")) return gResult
                     AppLogger.w("TTS", "Google TTS failed ($gResult), trying fallbacks")
                     null
@@ -1685,7 +1770,6 @@ class ToolExecutor(private val context: Context? = null) {
                 else -> {
                     try {
                         val ssml = buildEdgeSsml(textToSpeak, voiceName, savedLocale, "", "", styleName)
-                        AppLogger.i("EdgeTTS", "SSML: $ssml")
                         val result = edgeWsSynthesize(ssml)
                         AppLogger.i("EdgeTTS", "Edge TTS result: ${if (result != null) "${result.size} bytes" else "null"}")
                         result
@@ -1706,13 +1790,10 @@ class ToolExecutor(private val context: Context? = null) {
                     outputFile.writeBytes(audioData)
                     trimAudioCache(audioDir)
                 } catch (_: Exception) {}
-                if (!outputFile.exists() || outputFile.length() <= 0) {
-                    return "Audio generation failed: no audio produced"
+                if (outputFile.exists() && outputFile.length() > 0) {
+                    AppLogger.i("TTS", "${ttsBackend} TTS succeeded — ${audioData.size} bytes to ${outputFile.name}")
+                    return "[audio:${outputFile.absolutePath}]"
                 }
-                AppLogger.i("TTS", "${ttsBackend} TTS succeeded — ${audioData.size} bytes to ${outputFile.name}")
-                return "[audio:${outputFile.absolutePath}]"
-            } else if (audioData != null) {
-                AppLogger.w("TTS", "Primary $ttsBackend returned ${audioData.size} bytes (likely truncated/corrupt) — trying fallbacks")
             }
 
             // Fallback 1: Edge TTS (if primary wasn't edge_tts)
@@ -1759,13 +1840,13 @@ class ToolExecutor(private val context: Context? = null) {
                 }
             }
 
-            // Fallback 3: Google Translate TTS (skip if it was already the primary and failed).
+            // Fallback 3: Google Translate TTS
             if (ttsBackend != "google") {
                 AppLogger.w("TTS", "Android TTS failed, falling back to Google TTS")
-                googleTranslateTts(textToSpeak, savedLocale, ctx)
-            } else {
-                "Audio generation failed: all TTS backends failed"
+                return googleTranslateTts(textToSpeak, savedLocale, ctx)
             }
+
+            "Audio generation failed: all TTS backends failed"
         } catch (e: java.net.UnknownHostException) {
             "Audio generation failed: no internet connection"
         } catch (e: Exception) {
@@ -1802,91 +1883,111 @@ class ToolExecutor(private val context: Context? = null) {
                 return "[audio:${cachedFile.absolutePath}]"
             }
 
-            val configuredKeys = prefs.getApiKeys("gemini") + listOf(
-                prefs.getApiKey("gemini"),
-                prefs.getApiKey("google gemini"),
-                System.getenv("GEMINI_API_KEY") ?: ""
-            )
-            val candidateKeys = configuredKeys
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-                .distinct()
+            val configuredKeys = (
+                listOf(
+                    ai.deepcode.android.data.remote.ApiKeyRotator.getNextAvailableKey(prefs, "gemini")?.first ?: "",
+                    ai.deepcode.android.data.remote.ApiKeyRotator.getNextAvailableKey(prefs, "google gemini")?.first ?: ""
+                ) +
+                prefs.getApiKeys("gemini") +
+                prefs.getApiKeys("google gemini") +
+                listOf(
+                    prefs.getApiKey("gemini"),
+                    prefs.getApiKey("google gemini"),
+                    System.getenv("GEMINI_API_KEY") ?: ""
+                )
+            ).map { it.trim() }.filter { it.isNotBlank() }.distinct()
+
+            if (configuredKeys.isEmpty()) {
+                AppLogger.w("GeminiTTS", "No Gemini API key found in preferences or rotator")
+                return null
+            }
 
             val client = OkHttpClient.Builder()
                 .connectTimeout(25, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)
                 .build()
 
-            for (apiKey in candidateKeys) {
-                val url = "https://generativelanguage.googleapis.com/v1beta/models/$effectiveModel:generateContent?key=$apiKey"
-                val payload = JsonObject().apply {
-                    val contents = JsonArray().apply {
-                        val turn = JsonObject().apply {
-                            val parts = JsonArray().apply {
-                                val part = JsonObject().apply {
-                                    addProperty("text", truncatedText)
-                                    val speechMeta = JsonObject().apply {
-                                        addProperty("style", detectedStyle)
+            // Try requested model first, fallback to stable multimodal audio models
+            val modelCandidates = listOf(effectiveModel, "gemini-2.5-flash", "gemini-2.0-flash").distinct()
+
+            for (apiKey in configuredKeys) {
+                for (candModel in modelCandidates) {
+                    val url = "https://generativelanguage.googleapis.com/v1beta/models/$candModel:generateContent?key=$apiKey"
+                    val payload = JsonObject().apply {
+                        val contents = JsonArray().apply {
+                            val turn = JsonObject().apply {
+                                val parts = JsonArray().apply {
+                                    val part = JsonObject().apply {
+                                        addProperty("text", "Read this text aloud expressively and naturally with style '$detectedStyle'. Do not add commentary:\n\n$truncatedText")
+                                        val speechMeta = JsonObject().apply {
+                                            addProperty("style", detectedStyle)
+                                        }
+                                        add("speechMetadata", speechMeta)
                                     }
-                                    add("speechMetadata", speechMeta)
+                                    add(part)
                                 }
-                                add(part)
+                                add("parts", parts)
                             }
-                            add("parts", parts)
+                            add(turn)
                         }
-                        add(turn)
-                    }
-                    add("contents", contents)
+                        add("contents", contents)
 
-                    val genConfig = JsonObject().apply {
-                        val speechConfig = JsonObject().apply {
-                            val voiceConfig = JsonObject().apply {
-                                val prebuiltVoiceConfig = JsonObject().apply {
-                                    addProperty("voiceName", voiceName)
+                        val genConfig = JsonObject().apply {
+                            val modalities = JsonArray().apply { add("AUDIO") }
+                            add("responseModalities", modalities)
+                            val speechConfig = JsonObject().apply {
+                                val voiceConfig = JsonObject().apply {
+                                    val prebuiltVoiceConfig = JsonObject().apply {
+                                        addProperty("voiceName", voiceName)
+                                    }
+                                    add("prebuiltVoiceConfig", prebuiltVoiceConfig)
                                 }
-                                add("prebuiltVoiceConfig", prebuiltVoiceConfig)
+                                add("voiceConfig", voiceConfig)
                             }
-                            add("voiceConfig", voiceConfig)
+                            add("speechConfig", speechConfig)
                         }
-                        add("speechConfig", speechConfig)
+                        add("generationConfig", genConfig)
                     }
-                    add("generationConfig", genConfig)
-                }
 
-                val request = Request.Builder()
-                    .url(url)
-                    .post(gson.toJson(payload).toRequestBody("application/json".toMediaType()))
-                    .header("Content-Type", "application/json")
-                    .build()
+                    val request = Request.Builder()
+                        .url(url)
+                        .post(gson.toJson(payload).toRequestBody("application/json".toMediaType()))
+                        .header("Content-Type", "application/json")
+                        .build()
 
-                try {
-                    val response = client.newCall(request).execute()
-                    response.use { resp ->
-                        if (resp.isSuccessful) {
-                            val bodyStr = resp.body?.string() ?: ""
-                            val json = gson.fromJson(bodyStr, JsonObject::class.java)
-                            val cand = json.getAsJsonArray("candidates")?.get(0)?.asJsonObject
-                            val parts = cand?.getAsJsonObject("content")?.getAsJsonArray("parts")
-                            val inlineData = parts?.get(0)?.asJsonObject?.getAsJsonObject("inlineData")
-                            val b64 = inlineData?.get("data")?.asString
-                            if (!b64.isNullOrEmpty()) {
-                                val audioBytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-                                if (isValidAudioData(audioBytes, "wav")) {
-                                    cachedFile.writeBytes(audioBytes)
-                                    trimAudioCache(cacheDir)
-                                    AppLogger.i("GeminiTTS", "Gemini TTS succeeded ($effectiveModel, voice=$voiceName, style='$detectedStyle') — ${audioBytes.size} bytes")
-                                    return "[audio:${cachedFile.absolutePath}]"
+                    try {
+                        val response = client.newCall(request).execute()
+                        response.use { resp ->
+                            if (resp.isSuccessful) {
+                                val bodyStr = resp.body?.string() ?: ""
+                                val json = gson.fromJson(bodyStr, JsonObject::class.java)
+                                val cand = json.getAsJsonArray("candidates")?.get(0)?.asJsonObject
+                                val parts = cand?.getAsJsonObject("content")?.getAsJsonArray("parts")
+                                val inlineData = parts?.get(0)?.asJsonObject?.getAsJsonObject("inlineData")
+                                val b64 = inlineData?.get("data")?.asString
+                                if (!b64.isNullOrEmpty()) {
+                                    val audioBytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                                    if (isValidAudioData(audioBytes, "wav")) {
+                                        cachedFile.writeBytes(audioBytes)
+                                        trimAudioCache(cacheDir)
+                                        AppLogger.i("GeminiTTS", "Gemini TTS succeeded ($candModel, voice=$voiceName, style='$detectedStyle') — ${audioBytes.size} bytes")
+                                        return "[audio:${cachedFile.absolutePath}]"
+                                    }
                                 }
+                            } else if (resp.code == 429) {
+                                AppLogger.w("GeminiTTS", "Gemini quota exhausted (HTTP 429), rotating key...")
+                                break // try next key
+                            } else if (resp.code == 404) {
+                                AppLogger.w("GeminiTTS", "Model $candModel returned 404, trying candidate fallback...")
+                                continue // try next model candidate
+                            } else {
+                                val err = resp.body?.string()?.take(200)
+                                AppLogger.w("GeminiTTS", "Gemini TTS HTTP ${resp.code}: $err")
                             }
-                        } else if (resp.code == 429) {
-                            AppLogger.w("GeminiTTS", "Gemini quota exhausted (HTTP 429), rotating key...")
-                        } else {
-                            val err = resp.body?.string()?.take(200)
-                            AppLogger.w("GeminiTTS", "Gemini TTS HTTP ${resp.code}: $err")
                         }
+                    } catch (e: Exception) {
+                        AppLogger.w("GeminiTTS", "Request error with key on $candModel: ${e.message}")
                     }
-                } catch (e: Exception) {
-                    AppLogger.w("GeminiTTS", "Request error with key: ${e.message}")
                 }
             }
             null
@@ -1920,10 +2021,11 @@ class ToolExecutor(private val context: Context? = null) {
                 return "[audio:${cachedFile.absolutePath}]"
             }
 
-            val openAiKeys = (prefs.getApiKeys("openai") + listOf(prefs.getApiKey("openai"), prefs.getSetting("openai_api_key", "")))
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-                .distinct()
+            val openAiKeys = (
+                listOf(ai.deepcode.android.data.remote.ApiKeyRotator.getNextAvailableKey(prefs, "openai")?.first ?: "") +
+                prefs.getApiKeys("openai") +
+                listOf(prefs.getApiKey("openai"), prefs.getSetting("openai_api_key", ""))
+            ).map { it.trim() }.filter { it.isNotBlank() }.distinct()
 
             if (openAiKeys.isEmpty()) {
                 AppLogger.w("OpenAITTS", "No OpenAI API key found")

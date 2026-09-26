@@ -1714,7 +1714,8 @@ private fun TopBar(
                     Popup(
                         alignment = Alignment.TopEnd,
                         offset = IntOffset(0, offsetPx),
-                        onDismissRequest = { expandedSelectorDropdown = false }
+                        onDismissRequest = { expandedSelectorDropdown = false },
+                        properties = PopupProperties(focusable = true)
                     ) {
                         ModelSelectionOverlay(
                             repository = repository,
@@ -3394,19 +3395,17 @@ fun ModelSelectionOverlay(
         }
     }
 
-    val scrollState = rememberScrollState()
-
-    Column(modifier = Modifier
-        .width(280.dp)
-        .heightIn(max = 480.dp)
-        .depthCard(
-            shape = RoundedCornerShape(22.dp),
-            elevation = 6.dp,
-            isDark = isDarkThemeActive
-        )
-        .verticalScroll(scrollState)
-        .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Box(
+        modifier = Modifier
+            .width(280.dp)
+            .heightIn(max = 480.dp)
+            .depthCard(
+                shape = RoundedCornerShape(22.dp),
+                elevation = 6.dp,
+                isDark = isDarkThemeActive
+            )
+            .padding(10.dp)
+    ) {
         if (configuredProviders.isEmpty()) {
             Column(
                 modifier = Modifier
@@ -3476,123 +3475,68 @@ fun ModelSelectionOverlay(
                 }
             }
         } else {
-            // Header: "All Providers" with global refresh icon
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            val lazyListState = rememberLazyListState()
+
+            LazyColumn(
+                state = lazyListState,
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text(
-                    text = "All Providers",
-                    color = AppWhite,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
-                )
-                IconButton(
-                    onClick = { refreshAllProviders() },
-                    modifier = Modifier.size(28.dp),
-                    enabled = !isRefreshingAll && refreshingProviders.isEmpty()
-                ) {
-                    if (isRefreshingAll) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            strokeWidth = 2.dp,
-                            color = AppPrimary
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh all providers",
-                            tint = AppMuted,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-            }
-            HorizontalDivider(color = AppDivider, modifier = Modifier.padding(bottom = 2.dp))
-
-            configuredProviders.forEach { provider ->
-                val isProviderExpanded = expandedProviderName == provider.name
-                val providerColor = when (provider.name) {
-                    "Google Gemini" -> Color(0xFF8B5CF6); "Zen AI" -> Color(0xFF8B5CF6); "Zen (Free)" -> Color(0xFF8B5CF6)
-                    "Mistral AI" -> Color(0xFFEC4899); "Ollama Cloud" -> Color(0xFF6B7280)
-                    "Omniroute" -> Color(0xFF10B981); else -> Color(0xFF8B5CF6)
-                }
-
-                Column(modifier = Modifier
-                    .fillMaxWidth()
-                    .depthCard(
-                        shape = RoundedCornerShape(16.dp),
-                        elevation = 1.5.dp,
-                        isDark = isDarkThemeActive
-                    )
-                    .padding(10.dp)) {
+                // Header: "All Providers" with global refresh icon
+                item(key = "header_all_providers") {
                     Row(
-                        Modifier
+                        modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 2.dp),
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { expandedProviderName = if (isProviderExpanded) "" else provider.name }
-                                .padding(vertical = 4.dp)
+                        Text(
+                            text = "All Providers",
+                            color = AppWhite,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                        IconButton(
+                            onClick = { refreshAllProviders() },
+                            modifier = Modifier.size(28.dp),
+                            enabled = !isRefreshingAll && refreshingProviders.isEmpty()
                         ) {
-                            ProviderMiniLogo(provider.name)
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                if (provider.name == "Zen (Free)" || provider.name == "Zen AI") "Zen AI" else provider.name,
-                                color = if (isProviderExpanded) providerColor else AppWhite,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            val isRefreshingThis = refreshingProviders.contains(provider.name) || isRefreshingAll
-                            IconButton(
-                                onClick = { refreshSingleProvider(provider) },
-                                modifier = Modifier.size(28.dp),
-                                enabled = !isRefreshingThis
-                            ) {
-                                if (isRefreshingThis) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(14.dp),
-                                        strokeWidth = 2.dp,
-                                        color = providerColor
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Default.Refresh,
-                                        contentDescription = "Refresh ${provider.name} models",
-                                        tint = if (isProviderExpanded) providerColor else AppMuted,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                            IconButton(
-                                onClick = { expandedProviderName = if (isProviderExpanded) "" else provider.name },
-                                modifier = Modifier.size(28.dp)
-                            ) {
+                            if (isRefreshingAll) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    strokeWidth = 2.dp,
+                                    color = AppPrimary
+                                )
+                            } else {
                                 Icon(
-                                    imageVector = if (isProviderExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                    contentDescription = if (isProviderExpanded) "Collapse" else "Expand",
-                                    tint = if (isProviderExpanded) providerColor else AppMuted,
-                                    modifier = Modifier.size(18.dp)
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Refresh all providers",
+                                    tint = AppMuted,
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
                         }
                     }
+                    HorizontalDivider(color = AppDivider, modifier = Modifier.padding(bottom = 2.dp))
+                }
 
-                    if (isProviderExpanded) {
-                        Spacer(Modifier.height(8.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.animateContentSize()) {
+                items(
+                    items = configuredProviders,
+                    key = { it.name }
+                ) { provider ->
+                    val isProviderExpanded = expandedProviderName == provider.name
+                    val providerColor = when (provider.name) {
+                        "Google Gemini" -> Color(0xFF8B5CF6); "Zen AI" -> Color(0xFF8B5CF6); "Zen (Free)" -> Color(0xFF8B5CF6)
+                        "Mistral AI" -> Color(0xFFEC4899); "Ollama Cloud" -> Color(0xFF6B7280)
+                        "Omniroute" -> Color(0xFF10B981); else -> Color(0xFF8B5CF6)
+                    }
+                    val isRefreshingThis = refreshingProviders.contains(provider.name) || isRefreshingAll
+
+                    // Memoize models for this provider so scrolling never does disk reads or splits
+                    val finalModels = remember(provider.name, catalog[provider.name], isProviderExpanded) {
+                        if (!isProviderExpanded) emptyList()
+                        else {
                             val fetchedModels = catalog[provider.name].orEmpty().ifEmpty {
                                 ModelCatalog.getModelsForProvider(provider.name, securePrefs)
                             }
@@ -3606,50 +3550,140 @@ fun ModelSelectionOverlay(
                             }
                             val storageId = providerStorageId(provider.name)
                             val selectedIdsStr = securePrefs.getSetting("selected_models_$storageId", "")
-                            val finalModels = if (selectedIdsStr.isNotBlank()) {
+                            if (selectedIdsStr.isNotBlank()) {
                                 val selectedIdSet = selectedIdsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
                                 val matched = filteredModels.filter { it.id in selectedIdSet }
                                 if (matched.isNotEmpty()) matched else filteredModels
                             } else {
                                 filteredModels
                             }
-                            finalModels.forEach { model ->
-                                val isSelected = activeModel.id == model.id
-                                val rowModifier = if (isSelected) {
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .depthPill(
-                                            shape = RoundedCornerShape(14.dp),
-                                            elevation = 1.5.dp,
-                                            isDark = isDarkThemeActive,
-                                            customGradient = listOf(Color(0xFF8B5CF6).copy(alpha = 0.25f), Color(0xFF8B5CF6).copy(alpha = 0.12f)),
-                                            customBorderColor = Color(0xFF8B5CF6).copy(alpha = 0.6f)
-                                        )
-                                } else {
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(14.dp))
-                                }
-                                Row(
-                                    Modifier
-                                        .then(rowModifier)
-                                        .bouncyClickable(provideHaptic = true) { onModelSelected(model) }
-                                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                        }
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .depthCard(
+                                shape = RoundedCornerShape(16.dp),
+                                elevation = 1.5.dp,
+                                isDark = isDarkThemeActive
+                            )
+                            .padding(10.dp)
+                    ) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { expandedProviderName = if (isProviderExpanded) "" else provider.name }
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                ProviderMiniLogo(provider.name)
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    if (provider.name == "Zen (Free)" || provider.name == "Zen AI") "Zen AI" else provider.name,
+                                    color = if (isProviderExpanded) providerColor else AppWhite,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { refreshSingleProvider(provider) },
+                                    modifier = Modifier.size(28.dp),
+                                    enabled = !isRefreshingThis
                                 ) {
-                                    Text(model.name, color = AppWhite, fontSize = 12.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
-                                    if (isSelected) Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF8B5CF6), modifier = Modifier.size(16.dp))
-                                    else if (model.isFree) Text("FREE", color = Color(0xFF10B981), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    if (isRefreshingThis) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            strokeWidth = 2.dp,
+                                            color = providerColor
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = "Refresh ${provider.name} models",
+                                            tint = if (isProviderExpanded) providerColor else AppMuted,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                                IconButton(
+                                    onClick = { expandedProviderName = if (isProviderExpanded) "" else provider.name },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isProviderExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                        contentDescription = if (isProviderExpanded) "Collapse" else "Expand",
+                                        tint = if (isProviderExpanded) providerColor else AppMuted,
+                                        modifier = Modifier.size(18.dp)
+                                    )
                                 }
                             }
-                            Spacer(Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
-                                Icon(Icons.Default.Info, null, tint = AppMuted, modifier = Modifier.size(12.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("All models are provided by ${if (provider.name == "Zen (Free)" || provider.name == "Zen AI") "Zen AI" else provider.name}.",
-                                    fontSize = 10.sp, color = AppMuted)
+                        }
+
+                        if (isProviderExpanded) {
+                            Spacer(Modifier.height(8.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                finalModels.forEach { model ->
+                                    val isSelected = activeModel.id == model.id
+                                    val rowModifier = if (isSelected) {
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .depthPill(
+                                                shape = RoundedCornerShape(14.dp),
+                                                elevation = 1.5.dp,
+                                                isDark = isDarkThemeActive,
+                                                customGradient = listOf(Color(0xFF8B5CF6).copy(alpha = 0.25f), Color(0xFF8B5CF6).copy(alpha = 0.12f)),
+                                                customBorderColor = Color(0xFF8B5CF6).copy(alpha = 0.6f)
+                                            )
+                                    } else {
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(14.dp))
+                                    }
+                                    Row(
+                                        Modifier
+                                            .then(rowModifier)
+                                            .clickable { onModelSelected(model) }
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            model.name,
+                                            color = AppWhite,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                        if (isSelected) {
+                                            Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF8B5CF6), modifier = Modifier.size(16.dp))
+                                        } else if (model.isFree) {
+                                            Text("FREE", color = Color(0xFF10B981), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.Info, null, tint = AppMuted, modifier = Modifier.size(12.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "All models are provided by ${if (provider.name == "Zen (Free)" || provider.name == "Zen AI") "Zen AI" else provider.name}.",
+                                        fontSize = 10.sp,
+                                        color = AppMuted
+                                    )
+                                }
                             }
                         }
                     }
