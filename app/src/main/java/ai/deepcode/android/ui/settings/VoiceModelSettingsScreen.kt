@@ -56,11 +56,27 @@ data class ProviderTtsModel(
 
 val GEMINI_TTS_MODELS = listOf(
     ProviderTtsModel(
+        id = "gemini-2.5-flash-preview-tts",
+        name = "Gemini 2.5 Flash Preview TTS",
+        provider = "Google Gemini",
+        badge = "High Availability / Fast",
+        description = "High-availability neural speech synthesis with rapid response times and expressive dynamic prosody.",
+        isExpressive = true
+    ),
+    ProviderTtsModel(
+        id = "gemini-3.1-flash-tts-preview",
+        name = "Gemini 3.1 Flash TTS Preview",
+        provider = "Google Gemini",
+        badge = "Next Gen Preview",
+        description = "Google's newest preview speech model with advanced cadence and emotional inflections.",
+        isExpressive = true
+    ),
+    ProviderTtsModel(
         id = "gemini-3.8-flash-tts",
         name = "Gemini 3.8 Flash TTS",
         provider = "Google Gemini",
         badge = "Expressive / Emotion",
-        description = "Latest Gemini neural speech engine. Supports dynamic sentiment, emotion sensing, and dramatic pauses.",
+        description = "Gemini 3.8 neural speech engine. Supports dynamic sentiment, emotion sensing, and dramatic pauses.",
         isExpressive = true
     ),
     ProviderTtsModel(
@@ -69,6 +85,14 @@ val GEMINI_TTS_MODELS = listOf(
         provider = "Google Gemini",
         badge = "Ultra Low Latency",
         description = "High-speed expressive neural audio synthesis optimized for rapid conversational turns.",
+        isExpressive = true
+    ),
+    ProviderTtsModel(
+        id = "gemini-2.5-pro-preview-tts",
+        name = "Gemini 2.5 Pro Preview TTS",
+        provider = "Google Gemini",
+        badge = "Studio Pro",
+        description = "Studio-grade neural voice synthesis powered by Gemini 2.5 Pro.",
         isExpressive = true
     )
 )
@@ -168,8 +192,12 @@ fun VoiceModelSettingsScreen(
     val hasGeminiKey = remember(prefs) {
         prefs.getApiKey("gemini").isNotBlank() ||
         prefs.getApiKey("google gemini").isNotBlank() ||
+        prefs.getApiKey("google-gemini").isNotBlank() ||
         prefs.getApiKeys("gemini").any { it.isNotBlank() } ||
         prefs.getApiKeys("google gemini").any { it.isNotBlank() } ||
+        prefs.getApiKeys("google-gemini").any { it.isNotBlank() } ||
+        prefs.getSetting("api_key_gemini", "").isNotBlank() ||
+        prefs.getSetting("gemini_api_key", "").isNotBlank() ||
         ApiKeyRotator.getNextAvailableKey(prefs, "gemini")?.first?.isNotBlank() == true ||
         ApiKeyRotator.getNextAvailableKey(prefs, "google gemini")?.first?.isNotBlank() == true
     }
@@ -398,8 +426,8 @@ fun VoiceModelSettingsScreen(
                                             val executor = ToolExecutor(context)
                                             val result = executor.synthesizeSpeechWithResult(
                                                 text = previewText,
-                                                preferredProvider = if (ttsPriority == "provider_first") ttsProvider else "Default",
-                                                preferredModel = if (ttsPriority == "provider_first") ttsModel else null,
+                                                preferredProvider = ttsProvider,
+                                                preferredModel = ttsModel,
                                                 verbatim = true
                                             )
 

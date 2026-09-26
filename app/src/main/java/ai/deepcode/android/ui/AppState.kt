@@ -65,12 +65,36 @@ class AppState : ViewModel() {
     private val _showVoiceModelSettings = MutableStateFlow(false)
     val showVoiceModelSettings = _showVoiceModelSettings.asStateFlow()
 
+    private val _showTerminal = MutableStateFlow(false)
+    val showTerminal = _showTerminal.asStateFlow()
+
+    private val _showWebPreview = MutableStateFlow(false)
+    val showWebPreview = _showWebPreview.asStateFlow()
+
+    private val _showLinuxSubsystem = MutableStateFlow(false)
+    val showLinuxSubsystem = _showLinuxSubsystem.asStateFlow()
+
+    fun setShowTerminal(show: Boolean) {
+        _showTerminal.value = show
+    }
+
+    fun setShowWebPreview(show: Boolean) {
+        _showWebPreview.value = show
+    }
+
+    fun setShowLinuxSubsystem(show: Boolean) {
+        _showLinuxSubsystem.value = show
+    }
+
     fun setShowThemesAndWallpapers(show: Boolean) {
         _showThemesAndWallpapers.value = show
     }
 
     fun selectTab(index: Int) {
         _selectedTab.value = index
+        _showTerminal.value = false
+        _showWebPreview.value = false
+        _showLinuxSubsystem.value = false
         _showThemesAndWallpapers.value = false
         _showVoiceModelSettings.value = false
         _showPlugins.value = false

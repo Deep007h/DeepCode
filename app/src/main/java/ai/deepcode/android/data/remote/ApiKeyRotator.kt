@@ -74,6 +74,7 @@ object ApiKeyRotator {
             "cerebras", "cerebrus" -> listOf("cerebras", "cerebrus")
             "gmi", "gmi-cloud" -> listOf("gmi", "gmi-cloud")
             "atria", "atria-ai" -> listOf("atria", "atria-ai")
+            "gemini", "google gemini", "google-gemini", "gemini-business", "gemini-web" -> listOf("gemini", "google gemini", "google-gemini", "gemini-business", "gemini-web")
             else -> listOf(clean)
         }
     }

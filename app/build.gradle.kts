@@ -25,6 +25,15 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        buildConfigField("boolean", "OFFLINE_RUNTIME_BUNDLES", "false")
+        buildConfigField("String", "RUNTIME_RELEASE_BASE_URL", "\"https://github.com/techjarves/Mobile-Harness/releases/download/runtime-2026.09.4\"")
+        buildConfigField("String", "APP_UPDATE_MANIFEST_URL", "\"https://github.com/techjarves/Mobile-Harness/releases/latest/download/mobile-harness-update.json\"")
+        buildConfigField("String", "APP_VARIANT", "\"online\"")
+    }
+
+    androidResources {
+        noCompress += "zst"
     }
 
     buildTypes {
@@ -50,6 +59,9 @@ android {
         buildConfig = true
     }
     packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "META-INF/DEPENDENCIES"
@@ -66,6 +78,8 @@ android {
 }
 
 dependencies {
+    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("com.github.luben:zstd-jni:1.5.6-9@aar")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

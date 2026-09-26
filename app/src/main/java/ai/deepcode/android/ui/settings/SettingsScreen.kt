@@ -61,6 +61,7 @@ fun SettingsScreen(
     onNavigateToPlugins: () -> Unit = {},
     onNavigateToThemesAndWallpapers: () -> Unit = {},
     onNavigateToVoiceModel: () -> Unit = {},
+    onNavigateToLinuxSubsystem: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -270,6 +271,14 @@ fun SettingsScreen(
                     title = "Voice / Speech Model",
                     subtitle = voiceSubtitle,
                     onClick = onNavigateToVoiceModel
+                )
+                HorizontalDivider(color = AppDivider, thickness = 1.dp)
+
+                SettingsNavRow(
+                    icon = Icons.Default.Dns,
+                    title = "Linux Subsystem & Runtimes",
+                    subtitle = "Ubuntu 20.04 · PRoot · Claude / Antigravity / DSH",
+                    onClick = onNavigateToLinuxSubsystem
                 )
                 HorizontalDivider(color = AppDivider, thickness = 1.dp)
 

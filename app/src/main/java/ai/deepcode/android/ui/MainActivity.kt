@@ -403,6 +403,9 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
     val showVoiceModelSettings by appState.showVoiceModelSettings.collectAsStateWithLifecycle()
     val showPlugins by appState.showPlugins.collectAsStateWithLifecycle()
     val showThemesAndWallpapers by appState.showThemesAndWallpapers.collectAsStateWithLifecycle()
+    val showTerminal by appState.showTerminal.collectAsStateWithLifecycle()
+    val showWebPreview by appState.showWebPreview.collectAsStateWithLifecycle()
+    val showLinuxSubsystem by appState.showLinuxSubsystem.collectAsStateWithLifecycle()
 
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -414,10 +417,14 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
         showPersonas || selectedPersona != null ||
         showManageTemplates || selectedTemplateId.isNotEmpty() ||
         showVpnSettings || showApiKeys || showCloudflare || showMemorySettings ||
-        showVoiceModelSettings || showPlugins || showThemesAndWallpapers
+        showVoiceModelSettings || showPlugins || showThemesAndWallpapers ||
+        showTerminal || showWebPreview || showLinuxSubsystem
 
     BackHandler(enabled = isOverlayOpen) {
         when {
+            showTerminal -> appState.setShowTerminal(false)
+            showWebPreview -> appState.setShowWebPreview(false)
+            showLinuxSubsystem -> appState.setShowLinuxSubsystem(false)
             showThemesAndWallpapers -> appState.setShowThemesAndWallpapers(false)
             showVoiceModelSettings -> appState.setShowVoiceModelSettings(false)
             showPlugins -> appState.setShowPlugins(false)
@@ -646,6 +653,33 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                                         isSelected = isFileExplorerActive,
                                         onClick = {
                                             appState.setShowFileExplorer(true)
+                                            scope.launch { drawerState.close() }
+                                        }
+                                    )
+                                    DrawerItem1(
+                                        title = "Terminal Console",
+                                        icon = Icons.Default.Terminal,
+                                        isSelected = showTerminal,
+                                        onClick = {
+                                            appState.setShowTerminal(true)
+                                            scope.launch { drawerState.close() }
+                                        }
+                                    )
+                                    DrawerItem1(
+                                        title = "Live Web Preview",
+                                        icon = Icons.Default.PlayArrow,
+                                        isSelected = showWebPreview,
+                                        onClick = {
+                                            appState.setShowWebPreview(true)
+                                            scope.launch { drawerState.close() }
+                                        }
+                                    )
+                                    DrawerItem1(
+                                        title = "Linux Subsystem",
+                                        icon = Icons.Default.Dns,
+                                        isSelected = showLinuxSubsystem,
+                                        onClick = {
+                                            appState.setShowLinuxSubsystem(true)
                                             scope.launch { drawerState.close() }
                                         }
                                     )
@@ -1079,7 +1113,8 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                                 onNavigateToMemory = { appState.setShowMemorySettings(true) },
                                 onNavigateToPlugins = { appState.setShowPlugins(true) },
                                 onNavigateToThemesAndWallpapers = { appState.setShowThemesAndWallpapers(true) },
-                                onNavigateToVoiceModel = { appState.setShowVoiceModelSettings(true) }
+                                onNavigateToVoiceModel = { appState.setShowVoiceModelSettings(true) },
+                                onNavigateToLinuxSubsystem = { appState.setShowLinuxSubsystem(true) }
                             )
                         }
                     }
@@ -1088,6 +1123,9 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                     val activeScreenKey by remember {
                         derivedStateOf {
                             when {
+                                showTerminal -> "terminal"
+                                showWebPreview -> "web_preview"
+                                showLinuxSubsystem -> "linux_subsystem"
                                 showThemesAndWallpapers -> "themes_wallpapers"
                                 showVoiceModelSettings -> "voice_model_settings"
                                 showTokenUsage -> "token_usage"
@@ -1136,6 +1174,21 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                         if (overlayKey != null) {
                         Box(modifier = Modifier.fillMaxSize().background(AppScreenBg).padding(bottom = cachedBottomBarHeight)) {
                             when (overlayKey) {
+                                "terminal" -> {
+                                    ai.deepcode.android.ui.terminal.TerminalScreen(
+                                        onBack = { appState.setShowTerminal(false) }
+                                    )
+                                }
+                                "web_preview" -> {
+                                    ai.deepcode.android.ui.preview.WebPreviewScreen(
+                                        onBack = { appState.setShowWebPreview(false) }
+                                    )
+                                }
+                                "linux_subsystem" -> {
+                                    ai.deepcode.android.ui.settings.LinuxSubsystemScreen(
+                                        onBack = { appState.setShowLinuxSubsystem(false) }
+                                    )
+                                }
                                 "themes_wallpapers" -> {
                                     ThemesAndWallpapersScreen(
                                         repository = repository,

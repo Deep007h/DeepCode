@@ -19,6 +19,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
     <uses-permission android:name="android.permission.USE_CREDENTIALS" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- TESTING BUILD: full logcat capture -->
     <uses-permission android:name="android.permission.READ_LOGS" />
 
@@ -100,9 +101,31 @@
             </intent-filter>
         </receiver>
 
+        <service
+            android:name="com.jarves.mh.runtime.RuntimeExecutionService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-started local development task" />
+        </service>
+
+        <service
+            android:name="com.jarves.mh.runtime.RuntimeSetupService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-started installation of the local coding environment" />
+        </service>
+
+        <receiver
+            android:name="com.jarves.mh.runtime.AndroidAppInstallReceiver"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.provider"
+            android:authorities="${applicationId}.provider;${applicationId}.files"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
