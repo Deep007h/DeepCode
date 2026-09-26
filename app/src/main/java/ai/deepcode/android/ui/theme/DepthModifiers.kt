@@ -122,7 +122,7 @@ fun Modifier.depthPill(
         .clip(shape)
         .background(Brush.verticalGradient(gradient))
         .border(
-            width = 1.dp,
+            width = 0.5.dp,
             brush = borderBrush,
             shape = shape
         )
@@ -166,7 +166,7 @@ fun Modifier.depthCard(
         .clip(shape)
         .background(Brush.verticalGradient(gradient))
         .border(
-            width = 1.dp,
+            width = 0.5.dp,
             brush = borderBrush,
             shape = shape
         )
@@ -203,7 +203,7 @@ fun Modifier.depthInputBar(
         .clip(shape)
         .background(Brush.verticalGradient(gradient))
         .border(
-            width = 1.dp,
+            width = 0.5.dp,
             brush = borderBrush,
             shape = shape
         )
@@ -317,7 +317,7 @@ fun DepthSegmentDivider(
 ) {
     Box(
         modifier = Modifier
-            .width(1.dp)
+            .width(0.5.dp)
             .height(height)
             .background(color)
     )

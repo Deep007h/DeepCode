@@ -68,6 +68,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -162,12 +164,21 @@ fun OutlinedAppButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
+    val haptic = LocalHapticFeedback.current
 
     val scale by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (isPressed && enabled) 0.94f else 1.0f,
+        targetValue = if (isPressed && enabled) 0.97f else 1.0f,
         animationSpec = MotionTokens.SnappySpring,
         label = "btnScale"
     )
+
+    LaunchedEffect(isPressed) {
+        if (isPressed && enabled) {
+            try {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            } catch (_: Exception) {}
+        }
+    }
 
     val shape = RoundedCornerShape(24.dp)
     val isPrimary = color == MaterialTheme.colorScheme.primary
@@ -178,8 +189,8 @@ fun OutlinedAppButton(
     } else {
         listOf(DepthTokens.PillGradientTopLight, DepthTokens.PillGradientBottomLight)
     }
-    val topBorder = if (isPrimary) color.copy(alpha = 0.6f) else if (isDark) Color.White.copy(alpha = 0.22f) else Color(0xFFD4D4D8)
-    val bottomBorder = if (isPrimary) color.copy(alpha = 0.2f) else if (isDark) Color.White.copy(alpha = 0.04f) else Color(0xFFE4E4E7)
+    val topBorder = if (isPrimary) color.copy(alpha = 0.55f) else if (isDark) Color.White.copy(alpha = 0.18f) else Color(0xFFD4D4D8)
+    val bottomBorder = if (isPrimary) color.copy(alpha = 0.15f) else if (isDark) Color.White.copy(alpha = 0.04f) else Color(0xFFE4E4E7)
 
     Row(
         modifier = modifier
@@ -188,7 +199,7 @@ fun OutlinedAppButton(
                 scaleY = scale
             }
             .shadow(
-                elevation = 2.5.dp,
+                elevation = 2.dp,
                 shape = shape,
                 clip = false,
                 spotColor = if (isDark) Color(0x66000000) else Color(0x1A000000),
@@ -196,7 +207,7 @@ fun OutlinedAppButton(
             )
             .clip(shape)
             .background(Brush.verticalGradient(gradient))
-            .border(1.dp, Brush.verticalGradient(listOf(topBorder, bottomBorder)), shape)
+            .border(0.5.dp, Brush.verticalGradient(listOf(topBorder, bottomBorder)), shape)
             .clickable(interactionSource = interactionSource, indication = null, enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -221,12 +232,21 @@ fun FilledAppButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
+    val haptic = LocalHapticFeedback.current
 
     val scale by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (isPressed && enabled) 0.94f else 1.0f,
+        targetValue = if (isPressed && enabled) 0.97f else 1.0f,
         animationSpec = MotionTokens.SnappySpring,
         label = "btnScale"
     )
+
+    LaunchedEffect(isPressed) {
+        if (isPressed && enabled) {
+            try {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            } catch (_: Exception) {}
+        }
+    }
 
     val shape = RoundedCornerShape(24.dp)
     val gradient = if (backgroundColor == MaterialTheme.colorScheme.primary) {
@@ -242,11 +262,11 @@ fun FilledAppButton(
                 scaleY = scale
             }
             .shadow(
-                elevation = 4.dp,
+                elevation = 3.dp,
                 shape = shape,
                 clip = false,
-                spotColor = Color(0x80000000),
-                ambientColor = Color(0x40000000)
+                spotColor = Color(0x60000000),
+                ambientColor = Color(0x30000000)
             )
             .clip(shape)
             .background(
@@ -254,8 +274,8 @@ fun FilledAppButton(
                 else Brush.verticalGradient(listOf(backgroundColor.copy(alpha = 0.4f), backgroundColor.copy(alpha = 0.3f)))
             )
             .border(
-                1.dp,
-                Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.35f), Color.White.copy(alpha = 0.06f))),
+                0.5.dp,
+                Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.30f), Color.White.copy(alpha = 0.05f))),
                 shape
             )
             .clickable(interactionSource = interactionSource, indication = null, enabled = enabled, onClick = onClick)
@@ -277,36 +297,49 @@ fun AppToggle(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val haptic = LocalHapticFeedback.current
+    val isDark = isDarkThemeActive
     val trackColor by animateColorAsState(
-        targetValue = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+        targetValue = if (checked) MaterialTheme.colorScheme.primary else (if (isDark) Color(0xFF2C2C32) else Color(0xFFE4E4E9)),
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 200),
         label = "track"
     )
     val thumbOffset by animateDpAsState(
         targetValue = if (checked) 20.dp else 0.dp,
         animationSpec = androidx.compose.animation.core.spring(
-            dampingRatio = 0.75f,
-            stiffness = 350f
+            dampingRatio = 0.8f,
+            stiffness = 380f
         ),
         label = "thumbOffset"
     )
+    val trackBorder = if (checked) Color.Transparent else (if (isDark) Color.White.copy(alpha = 0.12f) else Color.Black.copy(alpha = 0.08f))
+
     Box(
         modifier = modifier
             .width(44.dp)
             .height(24.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(trackColor)
-            .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {
+            .border(0.5.dp, trackBorder, RoundedCornerShape(12.dp))
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() }
+            ) {
+                try {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                } catch (_: Exception) {}
                 onCheckedChange(!checked)
             }
-            .padding(3.dp),
+            .padding(2.5.dp),
         contentAlignment = Alignment.CenterStart
     ) {
         Box(
             modifier = Modifier
                 .offset(x = thumbOffset)
-                .size(18.dp)
+                .size(19.dp)
+                .shadow(elevation = 2.dp, shape = CircleShape, spotColor = Color(0x33000000), ambientColor = Color(0x1A000000))
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.onPrimary)
+                .background(Color.White)
         )
     }
 }
@@ -316,11 +349,41 @@ fun StatusBadge(
     isConnected: Boolean,
     label: String? = null
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(if (isConnected) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant))
+    val statusColor = if (isConnected) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant
+    val infiniteTransition = rememberInfiniteTransition(label = "statusDotPulse")
+    val dotAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.65f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "statusDotAlpha"
+    )
+
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(statusColor.copy(alpha = if (isConnected) 0.12f else 0.08f))
+            .border(0.5.dp, statusColor.copy(alpha = if (isConnected) 0.28f else 0.16f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .graphicsLayer { if (isConnected) alpha = dotAlpha }
+                .clip(CircleShape)
+                .background(statusColor)
+        )
         if (label != null) {
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(label, color = if (isConnected) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            Spacer(modifier = Modifier.width(5.dp))
+            Text(
+                text = label,
+                color = statusColor,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }
@@ -437,6 +500,8 @@ fun BottomNavBar(
     activeTab: Int,
     onTabSelected: (Int) -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
+    val isDark = isDarkThemeActive
     val tabs = remember {
         listOf(
             BottomNavTab("Dashboard", Icons.Default.Home, 0),
@@ -446,79 +511,105 @@ fun BottomNavBar(
             BottomNavTab("Settings", Icons.Default.Settings, 4)
         )
     }
-    Surface(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), tonalElevation = 0.dp, shadowElevation = 0.dp, modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(top = 0.5.dp, bottom = 12.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            tabs.forEach { tab ->
-                val isActive = tab.index == activeTab
-                val tintColor = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                // Animated (was instant 1.0f<->1.15f jump via graphicsLayer,
-                // which read as a pop on every tab switch).
-                val scale = androidx.compose.animation.core.animateFloatAsState(
-                    targetValue = if (isActive) 1.15f else 1.0f,
-                    animationSpec = androidx.compose.animation.core.spring(
-                        dampingRatio = 0.75f,
-                        stiffness = 350f
-                    ),
-                    label = "navScale_${tab.index}"
-                )
-                val pillAlpha = androidx.compose.animation.core.animateFloatAsState(
-                    targetValue = if (isActive) 1f else 0f,
-                    animationSpec = androidx.compose.animation.core.tween(180),
-                    label = "navPill_${tab.index}"
-                )
 
-                Column(
-                    modifier = Modifier
-                        .clickable(
-                            interactionSource = remember(tab.index) { MutableInteractionSource() },
-                            indication = null
-                        ) { onTabSelected(tab.index) }
-                        .padding(vertical = 8.dp)
-                        .widthIn(min = 72.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        // Always occupy pill space (was if(isActive) Box) so
-                        // activating a tab doesn't shift icon position by 28dp.
-                        Box(
-                            modifier = Modifier
-                                .size(width = 46.dp, height = 28.dp)
-                                .graphicsLayer { alpha = pillAlpha.value }
-                                .depthPill(
-                                    shape = RoundedCornerShape(14.dp),
-                                    elevation = 2.dp,
-                                    customGradient = listOf(
-                                        AppPrimary.copy(alpha = 0.28f),
-                                        AppPrimary.copy(alpha = 0.10f)
-                                    ),
-                                    highlightAlpha = 0.35f,
-                                    isDark = isDarkThemeActive
-                                )
-                        )
+    val navBg = if (isDark) {
+        Brush.verticalGradient(listOf(Color(0xFF141418), Color(0xFF0D0D10)))
+    } else {
+        Brush.verticalGradient(listOf(Color(0xFFFCFCFD), Color(0xFFF3F3F6)))
+    }
+    val topBorderColor = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
 
-                        Icon(
-                            imageVector = tab.icon,
-                            contentDescription = tab.label,
-                            tint = tintColor,
-                            modifier = Modifier
-                                .size(20.dp)
-                                .graphicsLayer {
-                                    scaleX = scale.value
-                                    scaleY = scale.value
+    Surface(
+        color = Color.Transparent,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(topBorderColor))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(navBg)
+                    .padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                tabs.forEach { tab ->
+                    val isActive = tab.index == activeTab
+                    val animatedTint by androidx.compose.animation.animateColorAsState(
+                        targetValue = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                        animationSpec = androidx.compose.animation.core.tween(180),
+                        label = "navTint_${tab.index}"
+                    )
+                    val scale = androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = if (isActive) 1.08f else 1.0f,
+                        animationSpec = androidx.compose.animation.core.spring(
+                            dampingRatio = 0.75f,
+                            stiffness = 350f
+                        ),
+                        label = "navScale_${tab.index}"
+                    )
+                    val pillAlpha = androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = if (isActive) 1f else 0f,
+                        animationSpec = androidx.compose.animation.core.tween(180),
+                        label = "navPill_${tab.index}"
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .clickable(
+                                interactionSource = remember(tab.index) { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                if (!isActive) {
+                                    try {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    } catch (_: Exception) {}
                                 }
+                                onTabSelected(tab.index)
+                            }
+                            .padding(vertical = 8.dp)
+                            .widthIn(min = 72.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 46.dp, height = 28.dp)
+                                    .graphicsLayer { alpha = pillAlpha.value }
+                                    .depthPill(
+                                        shape = RoundedCornerShape(14.dp),
+                                        elevation = 1.dp,
+                                        customGradient = listOf(
+                                            AppPrimary.copy(alpha = 0.22f),
+                                            AppPrimary.copy(alpha = 0.08f)
+                                        ),
+                                        highlightAlpha = 0.25f,
+                                        isDark = isDark
+                                    )
+                            )
+
+                            Icon(
+                                imageVector = tab.icon,
+                                contentDescription = tab.label,
+                                tint = animatedTint,
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .graphicsLayer {
+                                        scaleX = scale.value
+                                        scaleY = scale.value
+                                    }
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = tab.label,
+                            fontSize = 10.sp,
+                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                            color = animatedTint
                         )
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = tab.label,
-                        fontSize = 10.sp,
-                        fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                        color = tintColor
-                    )
                 }
             }
         }

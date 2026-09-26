@@ -70,7 +70,8 @@ class DshRuntimeBridge(
         eventBus.emit(RuntimeEvent.SessionStarted(sessionId))
         pushForegroundProgress("Starting DeepSeek Harness…")
         val secret = secretFor(provider).orEmpty()
-        if (secret.isBlank()) {
+        val effectiveSecret = if (secret.isBlank() && provider.kind == ProviderKind.OPENCODE_ZEN) "zen-free" else secret
+        if (effectiveSecret.isBlank()) {
             eventBus.emit(RuntimeEvent.SessionFailed(sessionId, "No API key is saved for ${provider.kind.title}."))
             return@withContext sessionId
         }
@@ -84,6 +85,7 @@ class DshRuntimeBridge(
             return@withContext sessionId
         }
 
+        var formatGateway: LocalFormatGateway? = null
         runCatching {
             RuntimeTaskController.stopAction = {
                 userStopRequested = true
@@ -105,14 +107,27 @@ class DshRuntimeBridge(
             val workspace = checkpoints.ensureWorkspace(projectId)
             checkpoints.createCheckpoint(projectId, workspace)
             val before = checkpoints.snapshot(workspace)
-            val route = DshRouteMapper.forProfile(provider)
+
+            // When targeting OpenCode Zen or gateway endpoints that require verification headers,
+            // route through our local format gateway proxy so requests carry necessary headers.
+            if (provider.kind == ProviderKind.OPENCODE_ZEN) {
+                formatGateway = LocalFormatGateway(provider, effectiveSecret).start()
+            }
+            val baseRoute = DshRouteMapper.forProfile(provider)
+            val route = if (formatGateway != null) {
+                baseRoute.copy(
+                    custom = DshCustomRoute("openai-completions", formatGateway.url)
+                )
+            } else {
+                baseRoute
+            }
             writeDshSettings(installed.rootfs, route, provider)
             val environment = linkedMapOf(
                 "DSH_HOME" to DSH_HOME_GUEST_PATH,
                 // PocketDev already confines the whole Linux guest with PRoot. Let dsh
                 // use every tool inside that boundary without an unavailable approval UI.
                 "DSH_PERMISSION_MODE" to "danger-full-access",
-                route.keyEnv to secret,
+                route.keyEnv to effectiveSecret,
             )
             if (route.keyEnv != FALLBACK_KEY_ENV) environment.remove(FALLBACK_KEY_ENV)
 
@@ -178,6 +193,7 @@ class DshRuntimeBridge(
                 )
             }
         }
+        formatGateway?.close()
         activeProcess = null
         activeSessionId = null
         RuntimeTaskController.stopAction = null
@@ -192,8 +208,22 @@ class DshRuntimeBridge(
         guestWorkspacePath: String,
         prompt: String,
     ): DshSdkRunResult {
-        val nativeProcess = process as? NativeSpawnProcess
-            ?: error("Unsupported Android runtime process")
+        var tempOutputFile: File? = null
+        val outputFile = (process as? NativeSpawnProcess)?.outputFile
+            ?: File.createTempFile("dsh-out-", ".log", context.cacheDir).also { temp ->
+                tempOutputFile = temp
+                temp.deleteOnExit()
+                Thread({
+                    runCatching {
+                        process.inputStream.use { src ->
+                            java.io.FileOutputStream(temp).use { dst -> src.copyTo(dst) }
+                        }
+                    }
+                }, "dsh-fallback-output").apply {
+                    isDaemon = true
+                    start()
+                }
+            }
         val writer = process.outputStream.bufferedWriter()
         val parser = DshSdkProtocolParser(sessionId)
         var outputOffset = 0L
@@ -297,7 +327,7 @@ class DshRuntimeBridge(
             }
         }
 
-        while (process.isAlive || nativeProcess.outputFile.length() > outputOffset) {
+        while (process.isAlive || outputFile.length() > outputOffset) {
             if (
                 process.isAlive &&
                 shutdownSentAt > 0L &&
@@ -306,13 +336,13 @@ class DshRuntimeBridge(
                 closeInput()
                 process.destroy()
             }
-            val available = nativeProcess.outputFile.length() - outputOffset
+            val available = outputFile.length() - outputOffset
             if (available <= 0) {
                 delay(50)
                 continue
             }
             val bytes = ByteArray(minOf(available, 16L * 1024).toInt())
-            val count = RandomAccessFile(nativeProcess.outputFile, "r").use { file ->
+            val count = RandomAccessFile(outputFile, "r").use { file ->
                 file.seek(outputOffset)
                 file.read(bytes)
             }
@@ -331,6 +361,7 @@ class DshRuntimeBridge(
             handle(parser.parseLine(it))
         }
         closeInput()
+        tempOutputFile?.delete()
         return DshSdkRunResult(completed = completed, failure = failure)
     }
 
@@ -697,8 +728,8 @@ internal object DshRouteMapper {
             ProviderKind.OPENCODE_ZEN -> DshRoute(
                 name = "opencode-zen",
                 keyEnv = DshRuntimeBridge.FALLBACK_KEY_ENV,
-                defaultModel = model,
-                custom = DshCustomRoute("openai-responses", profile.resolvedBaseUrl),
+                defaultModel = model.ifBlank { "mimo-v2.5-free" },
+                custom = DshCustomRoute("openai-completions", profile.resolvedBaseUrl),
             )
             ProviderKind.NVIDIA_NIM -> DshRoute(
                 name = "nvidia-nim",

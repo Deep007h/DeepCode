@@ -108,7 +108,8 @@ class ClaudeRuntimeBridge(
         eventBus.emit(RuntimeEvent.SessionStarted(sessionId))
         pushForegroundProgress("Starting Claude Code…")
         val secret = secretFor(provider).orEmpty()
-        if (secret.isBlank()) {
+        val effectiveSecret = if (secret.isBlank() && provider.kind == ProviderKind.OPENCODE_ZEN) "zen-free" else secret
+        if (effectiveSecret.isBlank()) {
             val message = if (provider.kind == ProviderKind.CLAUDE) {
                 "No Claude subscription token is saved. Add one from Agent → AI provider."
             } else {
@@ -140,11 +141,11 @@ class ClaudeRuntimeBridge(
             val workspace = ensureWorkspace(projectId)
             createCheckpoint(projectId, workspace)
             val before = snapshot(workspace)
-            formatGateway = if (provider.kind.protocol in setOf(
+            formatGateway = if (provider.kind == ProviderKind.OPENCODE_ZEN || provider.kind.protocol in setOf(
                     com.jarves.mh.model.ProviderProtocol.OPENAI_CHAT,
                     com.jarves.mh.model.ProviderProtocol.OPENAI_RESPONSES,
-                )) LocalFormatGateway(provider, secret).start() else null
-            val launch = RuntimeLaunchConfigBuilder.build(provider, authToken = secret, localGatewayUrl = formatGateway?.url)
+                )) LocalFormatGateway(provider, effectiveSecret).start() else null
+            val launch = RuntimeLaunchConfigBuilder.build(provider, authToken = effectiveSecret, localGatewayUrl = formatGateway?.url)
             Log.d("ClaudeBridge", "Provider: ${provider.kind}, Model: ${provider.model}, BaseUrl: ${provider.baseUrl}")
             Log.d("ClaudeBridge", "Launch environment keys: ${launch.environment.keys}")
 

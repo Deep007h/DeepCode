@@ -60,9 +60,9 @@ val APP_WORKFLOW_PROVIDERS = listOf(
         name = "Zen AI (Free)",
         providerKind = ProviderKind.OPENCODE_ZEN,
         defaultBaseUrl = "https://opencode.ai/zen/v1",
-        defaultModel = "deepseek-v4-flash",
-        dshApi = "openai-responses",
-        storageKeys = listOf("zen", "opencode-zen", "opencode")
+        defaultModel = "mimo-v2.5-free",
+        dshApi = "openai-completions",
+        storageKeys = listOf("zen", "opencode-zen", "opencode", "zenmux")
     ),
     AppWorkflowProvider(
         id = "deepseek",

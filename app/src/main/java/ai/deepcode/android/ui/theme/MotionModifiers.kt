@@ -39,8 +39,8 @@ import androidx.compose.ui.platform.LocalHapticFeedback
  */
 fun Modifier.bouncyClickable(
     enabled: Boolean = true,
-    pressedScale: Float = 0.95f,
-    provideHaptic: Boolean = false,
+    pressedScale: Float = 0.97f,
+    provideHaptic: Boolean = true,
     onClick: () -> Unit
 ): Modifier = composed {
     val interactionSource = remember { MutableInteractionSource() }

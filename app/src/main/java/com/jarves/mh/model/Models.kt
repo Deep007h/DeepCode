@@ -26,9 +26,9 @@ enum class ProviderKind(
     OPENCODE_ZEN(
         "OpenCode Zen",
         "Models through the OpenCode Zen gateway",
-        ProviderProtocol.OPENAI_RESPONSES,
+        ProviderProtocol.OPENAI_CHAT,
         "https://opencode.ai/zen/v1",
-        "deepseek-v4-flash",
+        "mimo-v2.5-free",
         fixedBaseUrl = true,
         fixedProtocol = true,
     ),
@@ -100,7 +100,7 @@ val DSH_PROTOCOL_PROVIDERS: Set<ProviderKind> = setOf(
 )
 
 fun defaultDshApiForProvider(kind: ProviderKind): String = when (kind) {
-    ProviderKind.OPENCODE_ZEN -> "openai-responses"
+    ProviderKind.OPENCODE_ZEN -> "openai-completions"
     ProviderKind.NVIDIA_NIM -> "openai-completions"
     else -> "anthropic-messages"
 }

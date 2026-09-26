@@ -341,7 +341,7 @@ fun DashboardScreen(
                         valueColor = MaterialTheme.colorScheme.primary,
                         icon = Icons.Default.Link
                     )
-                    Box(modifier = Modifier.width(1.dp).height(32.dp).background(MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)))
+                    Box(modifier = Modifier.width(0.5.dp).height(28.dp).background(MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)))
                     StatItem(
                         modifier = Modifier.weight(1f),
                         label = "Integrations",
@@ -349,7 +349,7 @@ fun DashboardScreen(
                         valueColor = AppIntegrationPurple,
                         icon = Icons.Default.Extension
                     )
-                    Box(modifier = Modifier.width(1.dp).height(32.dp).background(MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)))
+                    Box(modifier = Modifier.width(0.5.dp).height(28.dp).background(MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)))
                     StatItem(
                         modifier = Modifier.weight(1f),
                         label = "Messages",
@@ -357,7 +357,7 @@ fun DashboardScreen(
                         valueColor = MaterialTheme.colorScheme.tertiary,
                         icon = Icons.AutoMirrored.Filled.Chat
                     )
-                    Box(modifier = Modifier.width(1.dp).height(32.dp).background(MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)))
+                    Box(modifier = Modifier.width(0.5.dp).height(28.dp).background(MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)))
                     StatItem(
                         modifier = Modifier.weight(1f),
                         label = "Sessions",

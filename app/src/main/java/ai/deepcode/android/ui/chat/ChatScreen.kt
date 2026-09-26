@@ -425,7 +425,17 @@ fun ChatScreen(
             if (lastVis.index < info.totalItemsCount - 1) return@derivedStateOf false
             val viewportBottom = info.viewportEndOffset - info.afterContentPadding
             val itemBottom = lastVis.offset + lastVis.size
-            itemBottom <= viewportBottom + 350
+            itemBottom <= viewportBottom + 72
+        }
+    }
+
+    var userScrolledUp by remember { mutableStateOf(false) }
+
+    LaunchedEffect(lazyListState.isScrollInProgress) {
+        if (lazyListState.isScrollInProgress && !isNearBottom) {
+            userScrolledUp = true
+        } else if (isNearBottom) {
+            userScrolledUp = false
         }
     }
 
@@ -450,6 +460,7 @@ fun ChatScreen(
     LaunchedEffect(messages.size, isStreaming, shouldScrollToBottomOnSend) {
         if (shouldScrollToBottomOnSend) {
             shouldScrollToBottomOnSend = false
+            userScrolledUp = false
             kotlinx.coroutines.yield()
             val total = lazyListState.layoutInfo.totalItemsCount
             if (total > 0) {
@@ -465,7 +476,7 @@ fun ChatScreen(
     }
 
     LaunchedEffect(isImeVisible) {
-        if (isImeVisible && isNearBottom) {
+        if (isImeVisible && isNearBottom && !userScrolledUp) {
             val total = lazyListState.layoutInfo.totalItemsCount
             if (total > 0 && !lazyListState.isScrollInProgress) {
                 try {
@@ -479,10 +490,11 @@ fun ChatScreen(
     LaunchedEffect(isStreaming) {
         ai.deepcode.android.util.RefreshRateManager.setStreamingActive(isStreaming)
         if (!isStreaming) return@LaunchedEffect
+        userScrolledUp = false
         var lastScrollTime = 0L
         viewModel.streamedText.collect {
             val now = System.currentTimeMillis()
-            if (now - lastScrollTime >= 80L && isNearBottom && !lazyListState.isScrollInProgress) {
+            if (now - lastScrollTime >= 80L && isNearBottom && !userScrolledUp && !lazyListState.isScrollInProgress) {
                 lastScrollTime = now
                 val layoutInfo = lazyListState.layoutInfo
                 val total = layoutInfo.totalItemsCount
@@ -496,8 +508,6 @@ fun ChatScreen(
                             if (excess > 0) {
                                 lazyListState.scrollBy(excess.toFloat())
                             }
-                        } else {
-                            lazyListState.scrollToItem(total - 1)
                         }
                     } catch (_: Exception) {}
                 }
@@ -1186,7 +1196,11 @@ fun ChatScreen(
             }
         }
 
-        ScrollToBottomButton(visible = showScrollToBottomButton, lazyListState = lazyListState)
+        ScrollToBottomButton(
+            visible = showScrollToBottomButton,
+            lazyListState = lazyListState,
+            onClick = { userScrolledUp = false }
+        )
         }
 
         if (agentsWorking) {
@@ -1194,7 +1208,7 @@ fun ChatScreen(
                 Row(modifier = Modifier.fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
                     .background(AppPrimary.copy(alpha = 0.1f))
-                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                    .border(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(modifier = Modifier.size(14.dp),
@@ -1508,11 +1522,15 @@ fun ChatScreen(
 }
 
 @Composable
-private fun BoxScope.ScrollToBottomButton(visible: Boolean, lazyListState: LazyListState) {
+private fun BoxScope.ScrollToBottomButton(
+    visible: Boolean,
+    lazyListState: LazyListState,
+    onClick: () -> Unit = {}
+) {
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn() + scaleIn(),
-        exit = fadeOut() + scaleOut(),
+        enter = fadeIn() + scaleIn(spring(stiffness = Spring.StiffnessMediumLow)),
+        exit = fadeOut() + scaleOut(spring(stiffness = Spring.StiffnessMediumLow)),
         modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)
     ) {
         val scope = rememberCoroutineScope()
@@ -1525,6 +1543,7 @@ private fun BoxScope.ScrollToBottomButton(visible: Boolean, lazyListState: LazyL
                     isDark = isDarkThemeActive
                 )
                 .bouncyClickable(provideHaptic = true) {
+                    onClick()
                     scope.launch {
                         val total = lazyListState.layoutInfo.totalItemsCount
                         if (total > 0) {
@@ -1697,11 +1716,18 @@ private fun TopBar(
                         modifier = Modifier.widthIn(max = 170.dp)
                     )
                     Spacer(Modifier.width(8.dp))
+                    val modelChevronRotation by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = if (expandedSelectorDropdown) 180f else 0f,
+                        animationSpec = MotionTokens.SnappySpring,
+                        label = "topBarChevronRotation"
+                    )
                     Icon(
-                        imageVector = Icons.Default.MoreVert,
+                        imageVector = Icons.Default.KeyboardArrowDown,
                         contentDescription = "Select model",
                         tint = if (isGpt) Color(0xFF10A37F) else AppWhite,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier
+                            .size(18.dp)
+                            .graphicsLayer { rotationZ = modelChevronRotation }
                     )
                 }
 
@@ -1833,19 +1859,19 @@ private fun UserBubble(
         AppPrimary.copy(alpha = 0.12f).compositeOver(Color(0xFFE9E9EE))
     }
 
-    val userBubbleShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 24.dp, bottomEnd = 6.dp)
+    val userBubbleShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 6.dp)
 
     Box(
         modifier = Modifier
             .widthIn(min = 48.dp, max = 330.dp)
             .depthCard(
                 shape = userBubbleShape,
-                elevation = 2.dp,
+                elevation = 1.5.dp,
                 isDark = isDarkThemeActive,
                 customGradient = listOf(topColor, bottomColor),
-                customBorderColor = if (isDarkThemeActive) Color.White.copy(alpha = 0.09f) else AppPrimary.copy(alpha = 0.25f)
+                customBorderColor = if (isDarkThemeActive) Color.White.copy(alpha = 0.08f) else AppPrimary.copy(alpha = 0.20f)
             )
-            .padding(horizontal = 18.dp, vertical = 13.dp)
+            .padding(horizontal = 16.dp, vertical = 11.dp)
             .pointerInput(Unit) {
                 detectTapGestures(onLongPress = { offset ->
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -2693,12 +2719,19 @@ private fun StreamingItem(
     mediaProcessingPrompt: String
 ) {
     val streamedText by viewModel.streamedText.collectAsStateWithLifecycle(initialValue = "")
-    StreamingBubble(
-        text = streamedText,
-        imageCache = imageCache,
-        mediaProcessingType = mediaProcessingType,
-        mediaProcessingPrompt = mediaProcessingPrompt
-    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.Start
+    ) {
+        StreamingBubble(
+            text = streamedText,
+            imageCache = imageCache,
+            mediaProcessingType = mediaProcessingType,
+            mediaProcessingPrompt = mediaProcessingPrompt
+        )
+    }
 }
 
 // ═══════════════════════════════════════════════
@@ -2763,14 +2796,15 @@ fun StreamingBubble(
                             textColor = textColor
                         )
                     )
+                    val trailingCursor = if (cleanText.endsWith("\n") || cleanText.endsWith(" ")) "▌" else " ▌"
                     withStyle(
                         SpanStyle(
                             color = codeColor,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.Normal,
                             fontSize = 15.sp
                         )
                     ) {
-                        append(" ▍")
+                        append(trailingCursor)
                     }
                 }
             }
@@ -3616,58 +3650,75 @@ fun ModelSelectionOverlay(
                                         )
                                     }
                                 }
+                                val chevronRotation by androidx.compose.animation.core.animateFloatAsState(
+                                    targetValue = if (isProviderExpanded) 180f else 0f,
+                                    animationSpec = MotionTokens.SnappySpring,
+                                    label = "providerChevronRotation"
+                                )
                                 IconButton(
                                     onClick = { expandedProviderName = if (isProviderExpanded) "" else provider.name },
                                     modifier = Modifier.size(28.dp)
                                 ) {
                                     Icon(
-                                        imageVector = if (isProviderExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                        imageVector = Icons.Default.KeyboardArrowDown,
                                         contentDescription = if (isProviderExpanded) "Collapse" else "Expand",
                                         tint = if (isProviderExpanded) providerColor else AppMuted,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .graphicsLayer { rotationZ = chevronRotation }
                                     )
                                 }
                             }
                         }
 
-                        if (isProviderExpanded) {
-                            Spacer(Modifier.height(8.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                finalModels.forEach { model ->
-                                    val isSelected = activeModel.id == model.id
-                                    val rowModifier = if (isSelected) {
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .depthPill(
-                                                shape = RoundedCornerShape(14.dp),
-                                                elevation = 1.5.dp,
-                                                isDark = isDarkThemeActive,
-                                                customGradient = listOf(Color(0xFF8B5CF6).copy(alpha = 0.25f), Color(0xFF8B5CF6).copy(alpha = 0.12f)),
-                                                customBorderColor = Color(0xFF8B5CF6).copy(alpha = 0.6f)
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = isProviderExpanded,
+                            enter = androidx.compose.animation.expandVertically(
+                                animationSpec = MotionTokens.LayoutSpring
+                            ) + androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(150)),
+                            exit = androidx.compose.animation.shrinkVertically(
+                                animationSpec = MotionTokens.LayoutSpring
+                            ) + androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(100))
+                        ) {
+                            Column {
+                                Spacer(Modifier.height(8.dp))
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    finalModels.forEach { model ->
+                                        val isSelected = activeModel.id == model.id
+                                        val rowModifier = if (isSelected) {
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .depthPill(
+                                                    shape = RoundedCornerShape(14.dp),
+                                                    elevation = 1.5.dp,
+                                                    isDark = isDarkThemeActive,
+                                                    customGradient = listOf(Color(0xFF8B5CF6).copy(alpha = 0.25f), Color(0xFF8B5CF6).copy(alpha = 0.12f)),
+                                                    customBorderColor = Color(0xFF8B5CF6).copy(alpha = 0.6f)
+                                                )
+                                        } else {
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(14.dp))
+                                        }
+                                        Row(
+                                            Modifier
+                                                .then(rowModifier)
+                                                .clickable { onModelSelected(model) }
+                                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                model.name,
+                                                color = AppWhite,
+                                                fontSize = 12.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                             )
-                                    } else {
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(14.dp))
-                                    }
-                                    Row(
-                                        Modifier
-                                            .then(rowModifier)
-                                            .clickable { onModelSelected(model) }
-                                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(
-                                            model.name,
-                                            color = AppWhite,
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                        )
-                                        if (isSelected) {
-                                            Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF8B5CF6), modifier = Modifier.size(16.dp))
-                                        } else if (model.isFree) {
-                                            Text("FREE", color = Color(0xFF10B981), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            if (isSelected) {
+                                                Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF8B5CF6), modifier = Modifier.size(16.dp))
+                                            } else if (model.isFree) {
+                                                Text("FREE", color = Color(0xFF10B981), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            }
                                         }
                                     }
                                 }
@@ -4460,15 +4511,24 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 return@launch
             }
 
-            val model = _activeModel.value
-            val provider = AIProviderFactory.providers.find { it.name.equals(model.provider, ignoreCase = true) }
-                ?: OPENAI_PROVIDERS.find { it.name.equals(model.provider, ignoreCase = true) }?.let { GenericOpenAIProvider(it) }
-            if (provider == null) {
-                _streamedText.value = "Provider ${model.provider} not available"
-                _isStreaming.value = false
-                appendAssistantMessage(_streamedText.value)
-                return@launch
-            }
+            executeDirectInAppEngine(msgText, sessionId, userMsg)
+        }
+    }
+
+    private suspend fun executeDirectInAppEngine(
+        msgText: String,
+        sessionId: String,
+        userMsg: Message
+    ) = kotlinx.coroutines.coroutineScope {
+        val model = _activeModel.value
+        val provider = AIProviderFactory.providers.find { it.name.equals(model.provider, ignoreCase = true) }
+            ?: OPENAI_PROVIDERS.find { it.name.equals(model.provider, ignoreCase = true) }?.let { GenericOpenAIProvider(it) }
+        if (provider == null) {
+            _streamedText.value = "Provider ${model.provider} not available"
+            _isStreaming.value = false
+            appendAssistantMessage(_streamedText.value)
+            return@coroutineScope
+        }
 
             val storageId = providerStorageId(model.provider)
             var currentKeySlot = 0
@@ -4551,7 +4611,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 _streamedText.value = promptMsg
                 appendAssistantMessage(promptMsg, sessionId)
                 _streamedText.value = ""
-                return@launch
+                return@coroutineScope
             }
             val baseUrl = providerDefaultBaseUrl(model.provider)
             val messagesForApi = buildMessageList(sessionId, msgText)
@@ -4791,7 +4851,6 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 }
             }
         }
-    }
 
     fun cancelActiveChat() {
         // Cancel the in-flight network loop first so onToken stops appending after Stop.
@@ -4827,10 +4886,12 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             _mediaProcessingPrompt.value = ""
             appendAssistantMessage(
                 "⚠️ **Linux Subsystem is not installed.**\n\n" +
-                "The selected workflow (`$workflowMode`) requires the rootless Ubuntu 20.04 LTS subsystem to execute CLI agents. " +
-                "Please open **Settings → Linux Subsystem & Runtimes** to bootstrap the runtime, or switch to **Direct In-App Mode** in Settings.",
+                "The selected workflow (`$workflowMode`) requires the rootless Linux subsystem. " +
+                "Falling back to **Direct In-App Engine** to answer your request. " +
+                "You can install the Linux Subsystem in **Settings → Linux Subsystem & Runtimes**.",
                 sessionId
             )
+            executeDirectInAppEngine(text, sessionId, userMsg)
             return
         }
 
@@ -4853,7 +4914,8 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 _streamingMessageId.value = ""
                 _mediaProcessingType.value = null
                 _mediaProcessingPrompt.value = ""
-                appendAssistantMessage("⚠️ Failed to install ${agentKind.title}: ${e.message}\n\nPlease check Settings → Linux Subsystem.", sessionId)
+                appendAssistantMessage("⚠️ **Failed to install ${agentKind.title}:** ${e.message}\n\nFalling back to **Direct In-App Engine** to answer your request.", sessionId)
+                executeDirectInAppEngine(text, sessionId, userMsg)
                 return
             }
         }
@@ -4862,9 +4924,22 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         val vault = com.jarves.mh.data.ApiKeyVault(context)
         val providerProfile = appPrefs.loadProvider(vault, agentKind)
 
-        val secret = vault.getSecret(providerProfile.kind.name)
-            ?: repository.securePrefs.getApiKey(providerProfile.kind.name.lowercase())
-            ?: repository.securePrefs.getApiKey(providerProfile.kind.title.lowercase())
+        val secret = if (providerProfile.kind == com.jarves.mh.model.ProviderKind.OPENCODE_ZEN) {
+            vault.getSecret("OPENCODE_ZEN")
+                ?: listOf("zen", "opencode-zen", "opencode", "zenmux").firstNotNullOfOrNull { k ->
+                    vault.getSecret(k) ?: repository.securePrefs.getApiKey(k).takeIf { it.isNotBlank() }
+                }
+                ?: "zen-free"
+        } else {
+            vault.getSecret(providerProfile.kind.name)
+                ?: appPrefs.preferences.getString("provider_dsh_app_id", null)?.let { appId ->
+                    vault.getSecret(appId)
+                        ?: repository.securePrefs.getApiKey(appId)
+                        ?: repository.securePrefs.getApiKeySlot(appId, 1).takeIf { it.isNotEmpty() }
+                }
+                ?: repository.securePrefs.getApiKey(providerProfile.kind.name.lowercase())
+                ?: repository.securePrefs.getApiKey(providerProfile.kind.title.lowercase())
+        }
 
         if (agentKind == com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS && secret.isNullOrBlank() && providerProfile.kind != com.jarves.mh.model.ProviderKind.OPENCODE_ZEN) {
             _isStreaming.value = false
@@ -4874,9 +4949,11 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             appendAssistantMessage(
                 "⚠️ **No API Key Configured for ${providerProfile.kind.title}**\n\n" +
                 "DeepSeek Harness requires an API key for **${providerProfile.kind.title}**. " +
-                "Please go to **Settings → Agent Workflow & Runtimes** to configure your provider and enter your API key.",
+                "Falling back to **Direct In-App Engine** to answer your request. " +
+                "Please configure your provider key in **Settings → Agent Workflow & Runtimes**.",
                 sessionId
             )
+            executeDirectInAppEngine(text, sessionId, userMsg)
             return
         }
 
@@ -4893,21 +4970,36 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         val bridge: com.jarves.mh.runtime.RuntimeBridge = when (agentKind) {
             com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS -> {
                 com.jarves.mh.runtime.DshRuntimeBridge(context) { prof ->
-                    vault.getSecret(prof.kind.name)
-                        ?: appPrefs.preferences.getString("provider_dsh_app_id", null)?.let { appId ->
-                            vault.getSecret(appId)
-                                ?: repository.securePrefs.getApiKey(appId)
-                                ?: repository.securePrefs.getApiKeySlot(appId, 1).takeIf { it.isNotEmpty() }
-                        }
-                        ?: repository.securePrefs.getApiKey(prof.kind.name.lowercase())
-                        ?: repository.securePrefs.getApiKey(prof.kind.title.lowercase())
-                        ?: (if (prof.kind == com.jarves.mh.model.ProviderKind.OPENCODE_ZEN) "zen-free" else null)
+                    if (prof.kind == com.jarves.mh.model.ProviderKind.OPENCODE_ZEN) {
+                        vault.getSecret(prof.kind.name)
+                            ?: listOf("zen", "opencode-zen", "opencode", "zenmux").firstNotNullOfOrNull { k ->
+                                vault.getSecret(k) ?: repository.securePrefs.getApiKey(k).takeIf { it.isNotBlank() }
+                            }
+                            ?: "zen-free"
+                    } else {
+                        vault.getSecret(prof.kind.name)
+                            ?: appPrefs.preferences.getString("provider_dsh_app_id", null)?.let { appId ->
+                                vault.getSecret(appId)
+                                    ?: repository.securePrefs.getApiKey(appId)
+                                    ?: repository.securePrefs.getApiKeySlot(appId, 1).takeIf { it.isNotEmpty() }
+                            }
+                            ?: repository.securePrefs.getApiKey(prof.kind.name.lowercase())
+                            ?: repository.securePrefs.getApiKey(prof.kind.title.lowercase())
+                    }
                 }
             }
             com.jarves.mh.model.AgentKind.CLAUDE_CODE -> {
                 com.jarves.mh.runtime.ClaudeRuntimeBridge(context) { prof ->
-                    vault.getSecret(prof.kind.name)
-                        ?: repository.securePrefs.getApiKey(prof.kind.name.lowercase())
+                    if (prof.kind == com.jarves.mh.model.ProviderKind.OPENCODE_ZEN) {
+                        vault.getSecret(prof.kind.name)
+                            ?: listOf("zen", "opencode-zen", "opencode", "zenmux").firstNotNullOfOrNull { k ->
+                                vault.getSecret(k) ?: repository.securePrefs.getApiKey(k).takeIf { it.isNotBlank() }
+                            }
+                            ?: "zen-free"
+                    } else {
+                        vault.getSecret(prof.kind.name)
+                            ?: repository.securePrefs.getApiKey(prof.kind.name.lowercase())
+                    }
                 }
             }
             com.jarves.mh.model.AgentKind.ANTIGRAVITY -> {
@@ -4954,11 +5046,19 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         _mediaProcessingPrompt.value = ""
                     }
                     is com.jarves.mh.model.RuntimeEvent.SessionFailed -> {
-                        appendAssistantMessage("⚠️ **${agentKind.title} Error:**\n${event.reason}", sessionId)
-                        _isStreaming.value = false
-                        _streamingMessageId.value = ""
-                        _mediaProcessingType.value = null
-                        _mediaProcessingPrompt.value = ""
+                        val hasOutput = _streamedText.value.isNotBlank()
+                        if (!hasOutput) {
+                            appendAssistantMessage("⚠️ **${agentKind.title} Error:**\n${event.reason}\n\n*Falling back to Direct In-App Engine...*", sessionId)
+                            viewModelScope.launch(Dispatchers.IO) {
+                                executeDirectInAppEngine(text, sessionId, userMsg)
+                            }
+                        } else {
+                            appendAssistantMessage("⚠️ **${agentKind.title} Error:**\n${event.reason}", sessionId)
+                            _isStreaming.value = false
+                            _streamingMessageId.value = ""
+                            _mediaProcessingType.value = null
+                            _mediaProcessingPrompt.value = ""
+                        }
                     }
                     else -> {}
                 }
@@ -4976,11 +5076,17 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             )
         } catch (e: Exception) {
             eventsJob.cancel()
-            _isStreaming.value = false
-            _streamingMessageId.value = ""
-            _mediaProcessingType.value = null
-            _mediaProcessingPrompt.value = ""
-            appendAssistantMessage("⚠️ **Execution Exception:** ${e.message}", sessionId)
+            val hasOutput = _streamedText.value.isNotBlank()
+            if (!hasOutput) {
+                appendAssistantMessage("⚠️ **${agentKind.title} Exception:** ${e.message}\n\n*Falling back to Direct In-App Engine...*", sessionId)
+                executeDirectInAppEngine(text, sessionId, userMsg)
+            } else {
+                _isStreaming.value = false
+                _streamingMessageId.value = ""
+                _mediaProcessingType.value = null
+                _mediaProcessingPrompt.value = ""
+                appendAssistantMessage("⚠️ **Execution Exception:** ${e.message}", sessionId)
+            }
         }
     }
 

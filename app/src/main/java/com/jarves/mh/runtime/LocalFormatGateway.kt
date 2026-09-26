@@ -1,5 +1,7 @@
 package com.jarves.mh.runtime
 
+import ai.deepcode.android.data.remote.ZenModels
+import com.jarves.mh.model.ProviderKind
 import com.jarves.mh.model.ProviderProfile
 import android.util.Log
 import java.io.BufferedInputStream
@@ -14,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Small loopback-only Anthropic-to-OpenAI compatibility bridge for Claude Code. */
+/** Loopback compatibility bridge for Claude Code and DeepSeek Harness with OpenCode gateway support. */
 internal class LocalFormatGateway(
     private val profile: ProviderProfile,
     private val apiKey: String,
@@ -60,6 +62,12 @@ internal class LocalFormatGateway(
             writeJson(output, 200, JSONObject().put("input_tokens", approximate).toString())
             return
         }
+
+        if (path.endsWith("/chat/completions")) {
+            handleOpenAiChatCompletions(bodyBytes, output)
+            return
+        }
+
         if (!path.endsWith("/messages")) {
             writeJson(output, 404, errorJson("not_found", "Unsupported gateway endpoint"))
             return
@@ -79,9 +87,108 @@ internal class LocalFormatGateway(
         }
     }
 
+    private fun handleOpenAiChatCompletions(bodyBytes: ByteArray, output: BufferedOutputStream) {
+        runCatching {
+            val json = JSONObject(bodyBytes.decodeToString())
+            val isZen = profile.kind == ProviderKind.OPENCODE_ZEN ||
+                profile.baseUrl.contains("opencode.ai/zen", ignoreCase = true)
+            if (isZen) {
+                val rawModel = json.optString("model").ifBlank { profile.model }
+                val effectiveModel = if (apiKey.isBlank() || apiKey == "zen-free") {
+                    ZenModels.DEFAULT_FREE
+                } else {
+                    ZenModels.sanitize(rawModel)
+                }
+                json.put("model", effectiveModel)
+
+                val tools = json.optJSONArray("tools")
+                if (tools == null || tools.length() == 0) {
+                    val fakeToolBash = JSONObject().apply {
+                        put("type", "function")
+                        put("function", JSONObject().put("name", "bash").put("description", "Unavailable").put("parameters", JSONObject().put("type", "object").put("properties", JSONObject())))
+                    }
+                    val fakeToolRead = JSONObject().apply {
+                        put("type", "function")
+                        put("function", JSONObject().put("name", "read").put("description", "Unavailable").put("parameters", JSONObject().put("type", "object").put("properties", JSONObject())))
+                    }
+                    json.put("tools", JSONArray().put(fakeToolBash).put(fakeToolRead))
+                    if (!json.has("tool_choice")) {
+                        json.put("tool_choice", "none")
+                    }
+                }
+            }
+
+            val base = profile.baseUrl.trimEnd('/')
+            val endpoint = if (base.endsWith("/chat/completions")) base else "$base/chat/completions"
+            val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 25_000
+                readTimeout = 180_000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                val authKey = apiKey.ifBlank { if (isZen) "zen-free" else "" }
+                if (authKey.isNotBlank()) {
+                    setRequestProperty("Authorization", "Bearer $authKey")
+                }
+                if (isZen) {
+                    val sId = ZenModels.generateSessionId()
+                    val rId = ZenModels.generateRequestId()
+                    setRequestProperty("User-Agent", ZenModels.USER_AGENT)
+                    setRequestProperty(ZenModels.CLIENT_HEADER_NAME, ZenModels.CLIENT_HEADER_VALUE)
+                    setRequestProperty(ZenModels.PROJECT_HEADER_NAME, ZenModels.PROJECT_HEADER_VALUE)
+                    setRequestProperty(ZenModels.HEADER_SESSION_ID, sId)
+                    setRequestProperty(ZenModels.HEADER_REQUEST_ID, rId)
+                    setRequestProperty(ZenModels.HEADER_SESSION_AFFINITY, sId)
+                } else {
+                    setRequestProperty("HTTP-Referer", "https://deepcode.ai")
+                    setRequestProperty("X-Title", "DeepCode")
+                }
+            }
+            connection.outputStream.use { it.write(json.toString().toByteArray()) }
+            val code = connection.responseCode
+            val isStream = json.optBoolean("stream", false)
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            if (code !in 200..299) {
+                val errBody = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                connection.disconnect()
+                writeJson(output, code, if (errBody.startsWith("{")) errBody else errorJson("api_error", errBody.ifBlank { "HTTP $code" }))
+                return
+            }
+            if (isStream) {
+                val streamHeaders = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n"
+                output.write(streamHeaders.toByteArray())
+                output.flush()
+                val buf = ByteArray(8192)
+                var r: Int
+                while (stream.read(buf).also { r = it } != -1) {
+                    output.write(buf, 0, r)
+                    output.flush()
+                }
+                connection.disconnect()
+            } else {
+                val fullBody = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                connection.disconnect()
+                writeJson(output, code, fullBody)
+            }
+        }.onFailure { error ->
+            Log.e("FormatGateway", "OpenAI chat proxy error", error)
+            writeJson(output, 502, errorJson("api_error", error.message ?: "Chat proxy failed"))
+        }
+    }
+
     private fun toOpenAi(source: JSONObject): JSONObject {
+        val rawModel = normalizeModel(profile.model)
+        val isZen = profile.kind == ProviderKind.OPENCODE_ZEN ||
+            profile.baseUrl.contains("opencode.ai/zen", ignoreCase = true)
+        val effectiveModel = if (isZen && (apiKey.isBlank() || apiKey == "zen-free")) {
+            ZenModels.DEFAULT_FREE
+        } else if (isZen) {
+            ZenModels.sanitize(rawModel)
+        } else {
+            rawModel
+        }
         val target = JSONObject()
-            .put("model", normalizeModel(profile.model))
+            .put("model", effectiveModel)
             .put("stream", false)
             .put("max_tokens", source.optInt("max_tokens", 4096))
         if (source.has("temperature")) target.put("temperature", source.get("temperature"))
@@ -98,6 +205,7 @@ internal class LocalFormatGateway(
             val message = sourceMessages.getJSONObject(index)
             val role = message.optString("role")
             val content = message.opt("content")
+
             if (content !is JSONArray) {
                 messages.put(JSONObject().put("role", role).put("content", content ?: ""))
                 continue
@@ -165,18 +273,34 @@ internal class LocalFormatGateway(
     }
 
     private fun callProvider(body: JSONObject): Pair<Int, String> {
+        val isZen = profile.kind == ProviderKind.OPENCODE_ZEN ||
+            profile.baseUrl.contains("opencode.ai/zen", ignoreCase = true)
         val base = profile.baseUrl.trimEnd('/')
         val endpoint = if (base.endsWith("/chat/completions")) base else "$base/chat/completions"
         val connection = URL(endpoint).openConnection() as HttpURLConnection
         return try {
             connection.requestMethod = "POST"
-            connection.connectTimeout = 20_000
+            connection.connectTimeout = 25_000
             connection.readTimeout = 180_000
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json")
-            connection.setRequestProperty("Authorization", "Bearer $apiKey")
-            connection.setRequestProperty("HTTP-Referer", "https://deepcode.ai")
-            connection.setRequestProperty("X-Title", "DeepCode")
+            val authKey = apiKey.ifBlank { if (isZen) "zen-free" else "" }
+            if (authKey.isNotBlank()) {
+                connection.setRequestProperty("Authorization", "Bearer $authKey")
+            }
+            if (isZen) {
+                val sId = ZenModels.generateSessionId()
+                val rId = ZenModels.generateRequestId()
+                connection.setRequestProperty("User-Agent", ZenModels.USER_AGENT)
+                connection.setRequestProperty(ZenModels.CLIENT_HEADER_NAME, ZenModels.CLIENT_HEADER_VALUE)
+                connection.setRequestProperty(ZenModels.PROJECT_HEADER_NAME, ZenModels.PROJECT_HEADER_VALUE)
+                connection.setRequestProperty(ZenModels.HEADER_SESSION_ID, sId)
+                connection.setRequestProperty(ZenModels.HEADER_REQUEST_ID, rId)
+                connection.setRequestProperty(ZenModels.HEADER_SESSION_AFFINITY, sId)
+            } else {
+                connection.setRequestProperty("HTTP-Referer", "https://deepcode.ai")
+                connection.setRequestProperty("X-Title", "DeepCode")
+            }
             connection.outputStream.use { it.write(body.toString().toByteArray()) }
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
