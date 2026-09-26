@@ -262,6 +262,17 @@ class ToolExecutorTest {
         assertTrue(ToolExecutor.isAudioCreationRequest(longPoemWithReply))
         assertTrue(ToolExecutor.isPureAudioCreationRequest(longPoemWithReply))
     }
+
+    @Test
+    fun testEdgeWsSynthesizeLive() {
+        val executor = ToolExecutor()
+        val ssml = executor.buildEdgeSsml("Hello, this is a test of DeepCode neural audio synthesis.", "en-US-AriaNeural", "en-US", "+0", "+0", "")
+        println("Generated SSML: $ssml")
+        val audioBytes = executor.edgeWsSynthesize(ssml)
+        println("Synthesized audio bytes: ${audioBytes?.size}")
+        assertNotNull("Audio bytes must not be null from Edge TTS WebSocket", audioBytes)
+        assertTrue("Audio bytes size must be > 1000 bytes", (audioBytes?.size ?: 0) > 1000)
+    }
 }
 
 

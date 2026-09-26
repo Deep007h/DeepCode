@@ -4198,33 +4198,42 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     }
                 }
 
-                // 2. If it's a meta reference ("this", "last message", "the poem", etc.)
+                // 2. Direct inline pattern e.g. "create audio: The woods are lovely" or "create audio of hello" or "speak hello"
+                if (targetText == null) {
+                    val directMatch = Regex(
+                        """^(?:create\s+(?:an?\s+)?(?:audio|voice|speech|tts|mp3)\s*(?:file\s*)?(?:of|for|from|saying)?\s*:?\s*|read\s+(?:this|that|it|the|aloud|out\s+loud)?\s*:?\s*|speak\s+(?:this|that|it|the|aloud|out\s+loud)?\s*:?\s*|make\s+(?:an?\s+)?(?:audio|voice|speech|tts|mp3)\s*(?:file\s*)?(?:of|for|from|saying)?\s*:?\s*|convert\s+(?:this|that|the|text)?\s*(?:in)?to\s+(?:audio|voice|speech|tts|mp3)\s*:?\s*)(.+)$""",
+                        RegexOption.IGNORE_CASE
+                    ).find(text.trim())
+                    val candidate = directMatch?.groupValues?.get(1)?.trim()
+                    if (!candidate.isNullOrBlank() && !isMetaReferenceText(candidate)) {
+                        targetText = candidate
+                    }
+                }
+
+                // 3. If it's a meta reference ("this", "last message", "the poem", etc.) or targetText is still null
                 if (targetText == null && isMeta) {
-                    val lastAssistant = history.lastOrNull { msg ->
-                        msg.role == "assistant" &&
+                    val lastContentMsg = history.lastOrNull { msg ->
+                        msg.id != userMsg.id &&
                         !msg.isToolCall &&
                         !msg.content.startsWith("Executing tool") &&
                         !msg.content.startsWith("Running tool") &&
                         !msg.content.startsWith("I've completed") &&
                         !msg.content.startsWith("Tool result:") &&
+                        !msg.content.startsWith("I will generate") &&
+                        !msg.content.startsWith("Converting to speech") &&
+                        !isMetaReferenceText(msg.content) &&
+                        !isAudioCreationRequest(msg.content) &&
                         msg.content.replace(RE_MEDIA_TAG, "").trim().length > 3
                     }
-                    val candidate = lastAssistant?.content
+                    val rawContent = lastContentMsg?.content
+                    val replyExtract = if (rawContent != null) Regex("""\[reply\s+[^\]]*\]([\s\S]*?)\[/reply\]""").find(rawContent) else null
+                    val candidate = (replyExtract?.groupValues?.get(1)?.trim() ?: rawContent)
                         ?.replace(RE_AUDIO_TAG, "")
                         ?.replace(RE_FILE_TAG, "")
                         ?.replace(RE_IMAGE_TAG, "")
                         ?.replace(RE_VIDEO_TAG, "")
                         ?.trim()
-                    if (!candidate.isNullOrBlank()) {
-                        targetText = candidate
-                    }
-                }
-
-                // 3. Direct inline pattern e.g. "create audio: The woods are lovely dark and deep"
-                if (targetText == null) {
-                    val directMatch = Regex("""^(?:create\s+(?:an?\s+)?audio\s*(?:file\s*)?(?:of|for|from)?\s*:\s*|read\s+(?:this|aloud)?\s*:\s*|speak\s*(?:this)?\s*:\s*)(.+)$""", RegexOption.IGNORE_CASE).find(text.trim())
-                    val candidate = directMatch?.groupValues?.get(1)?.trim()
-                    if (!candidate.isNullOrBlank() && !isMetaReferenceText(candidate)) {
+                    if (!candidate.isNullOrBlank() && candidate.length > 3) {
                         targetText = candidate
                     }
                 }

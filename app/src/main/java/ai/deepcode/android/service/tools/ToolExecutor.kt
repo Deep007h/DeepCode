@@ -1551,11 +1551,11 @@ class ToolExecutor(private val context: Context? = null) {
     }
 
     internal fun cleanTextForSpeech(raw: String): String {
-        // If raw contains [reply author="..." id="..."]...[/reply]:
-        val replyMatch = Regex("""^\[reply\s+author="[^"]*"\s+id="[^"]*"\]([\s\S]*?)\[/reply\]\s*""", RegexOption.IGNORE_CASE).find(raw)
+        // If raw contains [reply ...]...[/reply]:
+        val replyMatch = Regex("""\[reply\s+[^\]]*\]([\s\S]*?)\[/reply\]""", RegexOption.IGNORE_CASE).find(raw)
         val candidate = if (replyMatch != null) {
             val quoted = replyMatch.groupValues[1].trim()
-            val remaining = raw.substring(replyMatch.range.last + 1).trim()
+            val remaining = (raw.substring(0, replyMatch.range.first) + " " + raw.substring(replyMatch.range.last + 1)).trim()
             if (remaining.isBlank() || isMetaReferenceText(remaining) || isAudioCreationRequest(remaining)) {
                 quoted
             } else {
@@ -1919,7 +1919,7 @@ class ToolExecutor(private val context: Context? = null) {
                     audioPath = fallbackPath,
                     engineUsed = "Microsoft Edge Neural TTS (Fallback)",
                     isFallback = true,
-                    message = "No Gemini API key set in Settings → API Keys (or quota exceeded across all Gemini models). Synthesized using Edge Neural TTS."
+                    message = if (fallbackPath != null) "Synthesized using Microsoft Edge Neural TTS." else fallbackResult
                 )
             } else if (effectiveProvider.contains("OpenAI", ignoreCase = true) || effectiveModel.startsWith("tts-", ignoreCase = true)) {
                 AppLogger.i("TTS", "Priority Engine: Invoking OpenAI TTS ($effectiveModel)")
@@ -1941,7 +1941,7 @@ class ToolExecutor(private val context: Context? = null) {
                     audioPath = fallbackPath,
                     engineUsed = "Microsoft Edge Neural TTS (Fallback)",
                     isFallback = true,
-                    message = "No OpenAI API key set in Settings → API Keys. Synthesized using Edge Neural TTS."
+                    message = if (fallbackPath != null) "Synthesized using Microsoft Edge Neural TTS." else fallbackResult
                 )
             }
         }
@@ -2542,7 +2542,7 @@ class ToolExecutor(private val context: Context? = null) {
         }
     }
 
-    private fun buildEdgeSsml(text: String, voiceName: String, locale: String, rate: String, pitch: String, styleName: String): String {
+    internal fun buildEdgeSsml(text: String, voiceName: String, locale: String, rate: String, pitch: String, styleName: String): String {
         val safeText = text
             .replace("&", "&amp;")
             .replace("<", "&lt;")
@@ -2580,23 +2580,24 @@ class ToolExecutor(private val context: Context? = null) {
         return "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
     }
 
-    private fun edgeWsSynthesize(ssml: String): ByteArray? {
+    internal fun edgeWsSynthesize(ssml: String): ByteArray? {
         val latch = CountDownLatch(1)
         val audioBuf = ByteArrayOutputStream()
         val turnEnd = java.util.concurrent.atomic.AtomicBoolean(false)
         val socketRef = java.util.concurrent.atomic.AtomicReference<WebSocket?>(null)
         val client = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .build()
 
-        val connectionId = java.util.UUID.randomUUID().toString()
+        val connectionId = java.util.UUID.randomUUID().toString().replace("-", "")
         val clientToken = getEdgeTtsClientToken()
         val winEpoch = 11644473600L
         val now = System.currentTimeMillis() / 1000L + winEpoch
         val roundedSec = now - (now % 300)
-        val strToHash = "${roundedSec}$clientToken"
-        val sha256 = java.security.MessageDigest.getInstance("SHA-256").digest(strToHash.toByteArray())
+        val ticks100ns = roundedSec * 10_000_000L
+        val strToHash = "${ticks100ns}$clientToken"
+        val sha256 = java.security.MessageDigest.getInstance("SHA-256").digest(strToHash.toByteArray(Charsets.US_ASCII))
         val secMsGec = sha256.joinToString("") { "%02X".format(it) }
         val secMsGecVersion = "1-143.0.3650.75"
         val muid = java.security.SecureRandom().let { r ->
@@ -2639,7 +2640,7 @@ class ToolExecutor(private val context: Context? = null) {
                     "\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}\r\n"
                 webSocket.send(connMsg)
 
-                val requestId = java.util.UUID.randomUUID().toString()
+                val requestId = java.util.UUID.randomUUID().toString().replace("-", "")
                 val ts = utcDateFormat.format(java.util.Date())
                 val ssmlMsg = "X-RequestId:$requestId\r\n" +
                     "Content-Type:application/ssml+xml\r\n" +
@@ -2669,23 +2670,22 @@ class ToolExecutor(private val context: Context? = null) {
                 val raw = bytes.toByteArray()
                 if (raw.size < 2) return
                 val headerLen = ((raw[0].toInt() and 0xFF) shl 8) or (raw[1].toInt() and 0xFF)
-                if (headerLen > raw.size) return
-                val afterHeader = 2 + headerLen
-                val dataStart = if (afterHeader + 1 < raw.size &&
-                    raw[afterHeader] == 0x0D.toByte() && raw[afterHeader + 1] == 0x0A.toByte()
-                ) afterHeader + 2 else afterHeader
+                if (headerLen + 2 > raw.size) return
+                val dataStart = 2 + headerLen
                 if (dataStart < raw.size) {
                     audioBuf.write(raw, dataStart, raw.size - dataStart)
                 }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                AppLogger.e("EdgeTTS", "WebSocket failure: ${t.message}", t)
+                val errBody = try { response?.body?.string() } catch (_: Exception) { null }
+                println("EdgeTTS onFailure: ${t.message}, code=${response?.code}, body=$errBody")
+                try { AppLogger.e("EdgeTTS", "WebSocket failure: ${t.message} (code=${response?.code}, body=$errBody)", t) } catch (_: Exception) {}
                 latch.countDown()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                AppLogger.i("EdgeTTS", "WebSocket closed: code=$code reason=$reason")
+                try { AppLogger.i("EdgeTTS", "WebSocket closed: code=$code reason=$reason") } catch (_: Exception) {}
                 latch.countDown()
             }
         })
@@ -2696,7 +2696,8 @@ class ToolExecutor(private val context: Context? = null) {
         val data = audioBuf.toByteArray()
         // Without turn.end the stream was cut — treat tiny buffers as failure so fallbacks run.
         if (!turnEnd.get() && data.size < 8000) {
-            AppLogger.w("EdgeTTS", "No turn.end and only ${data.size} bytes — treating as failure")
+            println("EdgeTTS warning: No turn.end and only ${data.size} bytes")
+            try { AppLogger.w("EdgeTTS", "No turn.end and only ${data.size} bytes — treating as failure") } catch (_: Exception) {}
             return null
         }
         return if (data.isNotEmpty()) data else null

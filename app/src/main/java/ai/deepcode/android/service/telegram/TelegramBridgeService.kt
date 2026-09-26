@@ -1024,7 +1024,19 @@ class TelegramBridgeService : Service() {
                     }
                 }
 
-                // 3. Meta reference in same conversation (e.g. "create audio of this message", "create audio of this")
+                // 3. Direct inline text e.g. "create audio: hello world" or "create audio of hello" or "speak hello"
+                if (targetText == null) {
+                    val directMatch = Regex(
+                        """^(?:create\s+(?:an?\s+)?(?:audio|voice|speech|tts|mp3)\s*(?:file\s*)?(?:of|for|from|saying)?\s*:?\s*|read\s+(?:this|that|it|the|aloud|out\s+loud)?\s*:?\s*|speak\s+(?:this|that|it|the|aloud|out\s+loud)?\s*:?\s*|make\s+(?:an?\s+)?(?:audio|voice|speech|tts|mp3)\s*(?:file\s*)?(?:of|for|from|saying)?\s*:?\s*|convert\s+(?:this|that|the|text)?\s*(?:in)?to\s+(?:audio|voice|speech|tts|mp3)\s*:?\s*)(.+)$""",
+                        RegexOption.IGNORE_CASE
+                    ).find(cleanPrompt)
+                    val candidate = directMatch?.groupValues?.get(1)?.trim()
+                    if (!candidate.isNullOrBlank() && !ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(candidate)) {
+                        targetText = candidate
+                    }
+                }
+
+                // 4. Meta reference in same conversation (e.g. "create audio of this message", "create audio of this", "the poem")
                 if (targetText == null && ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(cleanPrompt)) {
                     val history = repository.getMessagesListForSession(sessionId)
                     val lastMsg = history.lastOrNull { msg ->
@@ -1044,15 +1056,6 @@ class TelegramBridgeService : Service() {
                         targetText = contentToUse
                             .replace(Regex("""\[(audio|file|image|video):[^\]]+\]"""), "")
                             .trim()
-                    }
-                }
-
-                // 4. Direct inline text e.g. "create audio: hello world"
-                if (targetText == null) {
-                    val directMatch = Regex("""^(?:create\s+(?:an?\s+)?audio\s*(?:file\s*)?(?:of|for|from)?\s*:\s*|read\s+(?:this|aloud)?\s*:\s*|speak\s*(?:this)?\s*:\s*)(.+)$""", RegexOption.IGNORE_CASE).find(cleanPrompt)
-                    val candidate = directMatch?.groupValues?.get(1)?.trim()
-                    if (!candidate.isNullOrBlank() && !ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(candidate)) {
-                        targetText = candidate
                     }
                 }
 
@@ -1118,16 +1121,20 @@ class TelegramBridgeService : Service() {
                                 if (targetText.isNullOrBlank()) {
                                     val history = repository.getMessagesListForSession(sessionId)
                                     val lastMsg = history.lastOrNull { msg ->
-                                        msg.role == "assistant" &&
                                         !msg.isToolCall &&
                                         !msg.content.startsWith("Executing tool") &&
                                         !msg.content.startsWith("Running tool") &&
                                         !msg.content.startsWith("I've completed") &&
                                         !msg.content.startsWith("Tool result:") &&
+                                        !msg.content.startsWith("I will generate") &&
                                         !ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(msg.content) &&
+                                        !ai.deepcode.android.service.tools.ToolExecutor.isAudioCreationRequest(msg.content) &&
                                         msg.content.replace(Regex("""\[(audio|file|image|video):[^\]]+\]"""), "").trim().length > 3
                                     }
-                                    targetText = lastMsg?.content?.replace(Regex("""\[(audio|file|image|video):[^\]]+\]"""), "")?.trim()
+                                    val replyExtract = if (lastMsg != null) Regex("""\[reply\s+[^\]]*\]([\s\S]*?)\[/reply\]""").find(lastMsg.content) else null
+                                    targetText = (replyExtract?.groupValues?.get(1)?.trim() ?: lastMsg?.content)
+                                        ?.replace(Regex("""\[(audio|file|image|video):[^\]]+\]"""), "")
+                                        ?.trim()
                                 }
                                 if (!targetText.isNullOrBlank()) {
                                     val audioArgs = """{"text":${gson.toJson(targetText)},"voice":"","rate":"","pitch":""}"""
