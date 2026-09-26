@@ -192,21 +192,28 @@ fun TerminalScreen(
                                     val buffer = CharArray(1024)
                                     var count: Int
                                     val fullSb = StringBuilder()
-                                    while (reader.read(buffer).also { count = it } != -1) {
-                                        val chunk = String(buffer, 0, count)
-                                        fullSb.append(chunk)
-                                        withContext(Dispatchers.Main) {
-                                            currentLiveOutput = fullSb.toString()
+                                    try {
+                                        while (reader.read(buffer).also { count = it } != -1) {
+                                            val chunk = String(buffer, 0, count)
+                                            fullSb.append(chunk)
+                                            withContext(Dispatchers.Main) {
+                                                currentLiveOutput = fullSb.toString()
+                                            }
                                         }
-                                    }
-                                    val code = proc.waitFor()
-                                    runCatching { activeWriter?.close() }
-                                    withContext(Dispatchers.Main) {
-                                        lines = lines + TerminalOutputLine(command = trimmed, output = fullSb.toString(), exitCode = code)
-                                        currentLiveOutput = ""
-                                        isRunning = false
-                                        activeProcess = null
-                                        activeWriter = null
+                                        val code = proc.waitFor()
+                                        runCatching { activeWriter?.close() }
+                                        runCatching { reader.close() }
+                                        withContext(Dispatchers.Main) {
+                                            lines = lines + TerminalOutputLine(command = trimmed, output = fullSb.toString(), exitCode = code)
+                                            currentLiveOutput = ""
+                                            isRunning = false
+                                            activeProcess = null
+                                            activeWriter = null
+                                        }
+                                    } finally {
+                                        runCatching { reader.close() }
+                                        runCatching { activeWriter?.close() }
+                                        runCatching { proc.destroy() }
                                     }
                                 } else {
                                     withContext(Dispatchers.Main) {
@@ -225,21 +232,28 @@ fun TerminalScreen(
                                 val buffer = CharArray(1024)
                                 var count: Int
                                 val fullSb = StringBuilder()
-                                while (reader.read(buffer).also { count = it } != -1) {
-                                    val chunk = String(buffer, 0, count)
-                                    fullSb.append(chunk)
-                                    withContext(Dispatchers.Main) {
-                                        currentLiveOutput = fullSb.toString()
+                                try {
+                                    while (reader.read(buffer).also { count = it } != -1) {
+                                        val chunk = String(buffer, 0, count)
+                                        fullSb.append(chunk)
+                                        withContext(Dispatchers.Main) {
+                                            currentLiveOutput = fullSb.toString()
+                                        }
                                     }
-                                }
-                                val code = proc.waitFor()
-                                runCatching { activeWriter?.close() }
-                                withContext(Dispatchers.Main) {
-                                    lines = lines + TerminalOutputLine(command = trimmed, output = fullSb.toString(), exitCode = code)
-                                    currentLiveOutput = ""
-                                    isRunning = false
-                                    activeProcess = null
-                                    activeWriter = null
+                                    val code = proc.waitFor()
+                                    runCatching { activeWriter?.close() }
+                                    runCatching { reader.close() }
+                                    withContext(Dispatchers.Main) {
+                                        lines = lines + TerminalOutputLine(command = trimmed, output = fullSb.toString(), exitCode = code)
+                                        currentLiveOutput = ""
+                                        isRunning = false
+                                        activeProcess = null
+                                        activeWriter = null
+                                    }
+                                } finally {
+                                    runCatching { reader.close() }
+                                    runCatching { activeWriter?.close() }
+                                    runCatching { proc.destroy() }
                                 }
                             }
                             TerminalMode.STANDARD_SH -> {
@@ -251,21 +265,28 @@ fun TerminalScreen(
                                 val buffer = CharArray(1024)
                                 var count: Int
                                 val fullSb = StringBuilder()
-                                while (reader.read(buffer).also { count = it } != -1) {
-                                    val chunk = String(buffer, 0, count)
-                                    fullSb.append(chunk)
-                                    withContext(Dispatchers.Main) {
-                                        currentLiveOutput = fullSb.toString()
+                                try {
+                                    while (reader.read(buffer).also { count = it } != -1) {
+                                        val chunk = String(buffer, 0, count)
+                                        fullSb.append(chunk)
+                                        withContext(Dispatchers.Main) {
+                                            currentLiveOutput = fullSb.toString()
+                                        }
                                     }
-                                }
-                                val code = proc.waitFor()
-                                runCatching { activeWriter?.close() }
-                                withContext(Dispatchers.Main) {
-                                    lines = lines + TerminalOutputLine(command = trimmed, output = fullSb.toString(), exitCode = code)
-                                    currentLiveOutput = ""
-                                    isRunning = false
-                                    activeProcess = null
-                                    activeWriter = null
+                                    val code = proc.waitFor()
+                                    runCatching { activeWriter?.close() }
+                                    runCatching { reader.close() }
+                                    withContext(Dispatchers.Main) {
+                                        lines = lines + TerminalOutputLine(command = trimmed, output = fullSb.toString(), exitCode = code)
+                                        currentLiveOutput = ""
+                                        isRunning = false
+                                        activeProcess = null
+                                        activeWriter = null
+                                    }
+                                } finally {
+                                    runCatching { reader.close() }
+                                    runCatching { activeWriter?.close() }
+                                    runCatching { proc.destroy() }
                                 }
                             }
                         }

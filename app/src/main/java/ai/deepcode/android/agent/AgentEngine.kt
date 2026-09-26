@@ -1119,12 +1119,16 @@ class AgentEngine(private val context: Context) {
     }
 
     private suspend fun executeIntegration(appId: String, action: String, params: Map<String, String>): String {
+        val appIdLower = appId.lowercase()
+        if (appIdLower == "youtube_music" || appIdLower == "youtube") {
+            return executeYouTubeMusicAction(action, params)
+        }
+
         val integration = repository.getIntegrationByAppId(appId)
         if (integration == null || integration.status != "connected") {
             return "Integration '$appId' is not connected. Connect it in the Connections Screen first."
         }
 
-        val appIdLower = appId.lowercase()
         return when (appIdLower) {
             "gmail" -> executeGmailAction(action, params)
             "google_calendar" -> executeCalendarAction(action, params)
@@ -1221,7 +1225,12 @@ class AgentEngine(private val context: Context) {
         return try {
             val url = "https://api.telegram.org/bot$botToken/sendMessage"
             val payload = JsonObject().apply {
-                addProperty("chat_id", chatId.toLongOrNull() ?: return "Invalid chat ID: $chatId")
+                val numericId = chatId.toLongOrNull()
+                if (numericId != null) {
+                    addProperty("chat_id", numericId)
+                } else {
+                    addProperty("chat_id", chatId)
+                }
                 addProperty("text", processed)
                 addProperty("parse_mode", "Markdown")
             }
@@ -1770,7 +1779,7 @@ class AgentEngine(private val context: Context) {
                             val personaEnabled = securePrefs.getSetting("persona_enabled", "false") == "true"
                             val customPersona = securePrefs.getSetting("custom_persona", "")
                             val basePrompt = if (toolsNeeded) {
-                                "CRITICAL: You have the tools to write and run code. Use them. Never show code to the user — always write it to a file and execute it.\n\nRules:\n1. When the user asks to play a song or music, use the integration tool with appId=youtube_music, action=play, params={song:..., artist:...}. This opens YouTube Music on their device.\n2. For repeated or scheduled tasks (daily briefing, hourly news, etc.), use create_automation — never do recurring tasks manually.\n3. For reading emails or checking calendars, use the integration tool with appropriate appId.\n4. When generating tables, ALWAYS format them using standard markdown pipe syntax. Never format tables using spaces/tabs.\n5. To create scripts or text files: call file_write first, then call shell to execute (if needed). For PDFs: use the create_pdf tool directly — never use file_write or shell commands to generate PDFs.\n\n## AUDIO CREATION & TTS RULE (MANDATORY)\nWhen the user asks to create audio, generate voice/speech, read aloud, or speak content:\n- If the user asks for audio about a topic or question (e.g. 'create audio of what is llm', 'create audio of a joke', 'speech about AI'): FIRST write out the full answer/text yourself from your knowledge, then call edge_tts with that full text.\n- If the user asks for audio of a previous response (e.g. 'create audio of last response', 'read that aloud', 'speak your reply'): extract the exact text of the previous assistant message from conversation history, and call edge_tts with that exact text.\n- If the user provides specific text (e.g. 'read this: Hello world'): call edge_tts with that text.\n- NEVER pass meta-references or titles like 'last response' or 'what is llm' as the text parameter. ALWAYS pass the FULL text script to be spoken.\n\n## PDF CREATION RULE (MANDATORY)\nWhen the user asks to create a PDF (study notes, PYQ answers, exam questions, reports, etc.):\n- Call create_pdf IMMEDIATELY as your first tool call.\n- Generate the content from your OWN TRAINING KNOWLEDGE. Do NOT call web_search first.\n- For PYQ (Previous Year Questions): you know these topics — write the questions and detailed answers directly.\n- Use layout='academic-paper' for PYQ/exam content, 'corporate-report' for reports, 'resume-cv' for CVs.\n- NEVER call web_search before create_pdf. It wastes tool budget and produces no better result.\n- Only use web_search before a PDF if the user EXPLICITLY asks to search the web first.\n- Call create_pdf exactly ONCE per request. After it succeeds, summarize the result — do NOT call create_pdf or any other tool again.\n\nPDF Creation: The create_pdf tool generates PDFs natively — no Python scripts needed.\n  Example: create_pdf with title=\"Python PYQ\" and content=\"## Question 1\\n...\"\n  The tool returns [file:/path/to/pdf] automatically. Never use file_write+shell for PDFs.\n\nIMPORTANT: If your built-in function/tool calling mechanism is available, use it. If not, output tool calls in this exact format:\n<invoke name=\"tool_name\">\n<parameter name=\"param1\">value1</parameter>\n<parameter name=\"param2\">value2</parameter>\n</invoke>\nWrap multiple invocations inside <tool_calls>...</tool_calls>. Do NOT use any other XML format."
+                                "CRITICAL: You have the tools to write and run code. Use them. Never show code to the user — always write it to a file and execute it.\n\nRules:\n1. When the user asks to play a song or music, use the play_music tool with song, artist, and platform (default: youtube_music). If the user asks for a 'new', 'latest', 'trending', or descriptive song (e.g. 'new Karan Aujla song'), FIRST call web_search to find the exact newest song title before calling play_music.\n2. For repeated or scheduled tasks (daily briefing, hourly news, etc.), use create_automation — never do recurring tasks manually.\n3. For reading emails or checking calendars, use the integration tool with appropriate appId.\n4. When generating tables, ALWAYS format them using standard markdown pipe syntax. Never format tables using spaces/tabs.\n5. To create scripts or text files: call file_write first, then call shell to execute (if needed). For PDFs: use the create_pdf tool directly — never use file_write or shell commands to generate PDFs.\n\n## MUSIC PLAYBACK & SONG SEARCH RULE (MANDATORY)\nWhen the user asks to play music or a song:\n- If the user specifies an exact known song title (e.g. 'play Shape of You by Ed Sheeran', 'play Tauba Tauba'): call `play_music` directly with song and artist.\n- If the user asks for a 'new', 'latest', 'recent', 'trending', or descriptive song (e.g. 'play new Karan Aujla song in youtube music', 'play latest Drake track'):\n  1. DO NOT pass literal phrases like 'new Karan Aujla song' as the song parameter!\n  2. FIRST call `web_search` (e.g. query='latest Karan Aujla song release 2024 2025 2026') to discover the newest released song.\n  3. Pick the exact newest song title from the search results.\n  4. THEN call `play_music` with that exact song title and artist.\n  5. Tell the user what song was found and that it is now playing on YouTube Music.\n\n## AUDIO CREATION & TTS RULE (MANDATORY)\nWhen the user asks to create audio, generate voice/speech, read aloud, or speak content:\n- If the user asks for audio about a topic or question (e.g. 'create audio of what is llm', 'create audio of a joke', 'speech about AI'): FIRST write out the full answer/text yourself from your knowledge, then call edge_tts with that full text.\n- If the user asks for audio of a previous response (e.g. 'create audio of last response', 'read that aloud', 'speak your reply'): extract the exact text of the previous assistant message from conversation history, and call edge_tts with that exact text.\n- If the user provides specific text (e.g. 'read this: Hello world'): call edge_tts with that text.\n- NEVER pass meta-references or titles like 'last response' or 'what is llm' as the text parameter. ALWAYS pass the FULL text script to be spoken.\n\n## PDF CREATION RULE (MANDATORY)\nWhen the user asks to create a PDF (study notes, PYQ answers, exam questions, reports, etc.):\n- Call create_pdf IMMEDIATELY as your first tool call.\n- Generate the content from your OWN TRAINING KNOWLEDGE. Do NOT call web_search first.\n- For PYQ (Previous Year Questions): you know these topics — write the questions and detailed answers directly.\n- Use layout='academic-paper' for PYQ/exam content, 'corporate-report' for reports, 'resume-cv' for CVs.\n- NEVER call web_search before create_pdf. It wastes tool budget and produces no better result.\n- Only use web_search before a PDF if the user EXPLICITLY asks to search the web first.\n- Call create_pdf exactly ONCE per request. After it succeeds, summarize the result — do NOT call create_pdf or any other tool again.\n\nPDF Creation: The create_pdf tool generates PDFs natively — no Python scripts needed.\n  Example: create_pdf with title=\"Python PYQ\" and content=\"## Question 1\\n...\"\n  The tool returns [file:/path/to/pdf] automatically. Never use file_write+shell for PDFs.\n\nIMPORTANT: If your built-in function/tool calling mechanism is available, use it. If not, output tool calls in this exact format:\n<invoke name=\"tool_name\">\n<parameter name=\"param1\">value1</parameter>\n<parameter name=\"param2\">value2</parameter>\n</invoke>\nWrap multiple invocations inside <tool_calls>...</tool_calls>. Do NOT use any other XML format."
                             } else {
                                 "You are DeepCode, an intelligent, fast, and helpful AI assistant. Respond directly, clearly, and concisely to the user without preamble. Format tables using standard markdown pipe syntax when comparing data."
                             }
@@ -1820,11 +1829,16 @@ class AgentEngine(private val context: Context) {
 
                             val lowerPrompt = userPrompt.lowercase()
                             if (lowerPrompt.contains("play") && (lowerPrompt.contains("song") || lowerPrompt.contains("music") || lowerPrompt.contains("youtube"))) {
+                                val isDescriptive = listOf("new", "latest", "recent", "trending", "popular", "top", "best", "hits", "some", "recommend").any { lowerPrompt.contains(it) }
                                 val musicHint = Message(
                                     id = UUID.randomUUID().toString(),
                                     sessionId = sessionId,
                                     role = "system",
-                                    content = "REMINDER: To play music, use the integration tool with appId=\"youtube_music\", action=\"play\", and params with song and artist. Do NOT search the web for the song — just open YouTube Music on the device.",
+                                    content = if (isDescriptive) {
+                                        "MANDATORY FOR THIS MUSIC REQUEST: The user is asking for a 'new', 'latest', or trending song (e.g. 'new Karan Aujla song'). You MUST FIRST call `web_search` (e.g. query='latest Karan Aujla song release') to find the exact title of their newest track. Once you know the real song title, call `play_music` with that song and artist. Do NOT pass literal words like 'new karan aujla song' to play_music!"
+                                    } else {
+                                        "To play music on the device, call `play_music` with the song and artist."
+                                    },
                                     timestamp = 0
                                 )
                                 finalHistory.add(musicHint)
@@ -1841,18 +1855,26 @@ class AgentEngine(private val context: Context) {
                                 finalHistory.add(briefHint)
                             }
 
-                            // Smart TTS: detect references to "last response" / "previous reply" etc.
+                            // Smart TTS: detect references to "this", "last response", "the poem" etc.
                             // and inject the actual last assistant message so the AI speaks real content.
-                            val ttsKeywords = listOf("audio", "read", "speak", "voice", "tts", "speech", "narrate", "say")
+                            val ttsKeywords = listOf("audio", "read", "speak", "voice", "tts", "speech", "narrate", "say", "vocal", "sound")
                             val lastRefKeywords = listOf(
                                 "last response", "previous response", "last message", "previous message",
                                 "last reply", "previous reply", "that response", "your response",
                                 "your last", "your previous", "read that", "read it", "speak that",
                                 "speak it", "say that", "narrate that", "audio of that",
-                                "audio of it", "convert that", "convert it"
+                                "audio of it", "convert that", "convert it",
+                                "this", "of this", "for this", "audio of this", "audio for this",
+                                "read this", "speak this", "say this", "narrate this", "convert this",
+                                "the poem", "the story", "the script", "the speech", "the text",
+                                "the article", "the quote", "the lyrics", "the verse",
+                                "what you said", "what you wrote", "you just wrote", "you just said",
+                                "create a audio file of this", "create an audio file of this",
+                                "make an audio of this", "make audio of this"
                             )
                             val hasTtsIntent = ttsKeywords.any { lowerPrompt.contains(it) }
-                            val hasLastRef = lastRefKeywords.any { lowerPrompt.contains(it) }
+                            val hasLastRef = lastRefKeywords.any { lowerPrompt.contains(it) } ||
+                                Regex("""\b(of\s+this|for\s+this|about\s+this|this\s+one|the\s+above|the\s+(poem|story|script|speech|text))\b""").containsMatchIn(lowerPrompt)
                             if (hasTtsIntent && hasLastRef) {
                                 // Find the last assistant message before the current user message
                                 val lastAssistantMsg = rawHistory
@@ -1877,15 +1899,24 @@ class AgentEngine(private val context: Context) {
                                         id = UUID.randomUUID().toString(),
                                         sessionId = sessionId,
                                         role = "system",
-                                        content = "The user wants you to generate audio of the previous assistant response. " +
+                                        content = "The user wants you to generate audio of the previous assistant response (e.g. poem/story/text). " +
                                             "Here is the EXACT content of that response that you must pass to edge_tts:\n\n" +
                                             "=== PREVIOUS RESPONSE START ===\n" +
                                             cleanContent +
                                             "\n=== PREVIOUS RESPONSE END ===\n\n" +
-                                            "Call edge_tts with the above text. Do NOT use the words 'last response' as the text — use the actual content shown above.",
+                                            "Call edge_tts with the above text. Do NOT use placeholder words like 'this' or 'last response' as the text — use the actual content shown above.",
                                         timestamp = 0
                                     )
                                     finalHistory.add(ttsHint)
+                                } else {
+                                    val contextMissingHint = Message(
+                                        id = UUID.randomUUID().toString(),
+                                        sessionId = sessionId,
+                                        role = "system",
+                                        content = "The user is asking to create an audio file of a previous response or file, but NO previous text, poem, story, or file exists in this conversation. Do NOT call edge_tts with invented or placeholder words. Politely tell the user that you don't have the text or file context they are referring to, and ask them to provide or paste the content they want converted to audio.",
+                                        timestamp = 0
+                                    )
+                                    finalHistory.add(contextMissingHint)
                                 }
                             }
 

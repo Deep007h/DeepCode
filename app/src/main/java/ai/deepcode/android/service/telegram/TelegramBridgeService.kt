@@ -908,19 +908,22 @@ class TelegramBridgeService : Service() {
                 }
             }
 
-            // Music playback bypass — no AI needed
+            // Music playback bypass — ONLY for simple, exact song playback (e.g. "play Shape of You by Ed Sheeran").
+            // If the request requires reasoning/search (e.g. "play new karan aujla song in youtube music"), allow the AI agent to reason, search for the latest release, and play it!
             val musicHandler = MusicDetectionHandler(this)
-            val musicMsg = musicHandler.play(text)
-            if (musicMsg.isNotEmpty()) {
-                recordBypassExchange(text, musicMsg)
-                if (processingMsgId != null) {
-                    if (!editMessage(token, chatId, processingMsgId, musicMsg)) {
+            if (!musicHandler.requiresReasoning(text)) {
+                val musicMsg = musicHandler.play(text)
+                if (musicMsg.isNotEmpty()) {
+                    recordBypassExchange(text, musicMsg)
+                    if (processingMsgId != null) {
+                        if (!editMessage(token, chatId, processingMsgId, musicMsg)) {
+                            sendMessage(token, chatId, musicMsg)
+                        }
+                    } else {
                         sendMessage(token, chatId, musicMsg)
                     }
-                } else {
-                    sendMessage(token, chatId, musicMsg)
+                    return
                 }
-                return
             }
 
             // Automation setup bypass — no AI needed

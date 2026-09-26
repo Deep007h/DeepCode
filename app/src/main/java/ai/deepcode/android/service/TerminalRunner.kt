@@ -87,6 +87,8 @@ class TerminalRunner {
         }
     }
 
+    private val writeLock = Any()
+
     fun write(command: String) {
         val w = writer ?: return
         if (process == null) return
@@ -95,8 +97,10 @@ class TerminalRunner {
         if (logCmd.isNotBlank()) AppLogger.logShellCmd(logCmd)
         scope.launch {
             try {
-                w.write(command)
-                w.flush()
+                synchronized(writeLock) {
+                    w.write(command)
+                    w.flush()
+                }
             } catch (e: Exception) {
                 _outputFlow.emit("\nError writing to terminal: ${e.message}\n")
             }

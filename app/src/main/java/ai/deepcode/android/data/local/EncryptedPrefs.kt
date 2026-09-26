@@ -85,7 +85,7 @@ class EncryptedPrefs private constructor(context: Context) {
     val customPersonaFlow: StateFlow<String> = _customPersonaFlow
 
     init {
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
             _themeFlow.value = getSetting("theme", "system")
             _accentFlow.value = getSetting("accent", "amber")
             _wallpaperFlow.value = getSetting("chat_wallpaper", "default")

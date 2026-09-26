@@ -4,9 +4,19 @@ import ai.deepcode.android.service.google.YouTubeMusicService
 import ai.deepcode.android.util.AppLogger
 import android.content.Context
 
-class MusicDetectionHandler(private val context: Context) {
+class MusicDetectionHandler(private val context: Context? = null) {
 
     data class MusicRequest(val song: String, val artist: String?)
+
+    fun requiresReasoning(text: String): Boolean {
+        val lower = text.lowercase().trim()
+        val reasoningKeywords = listOf(
+            "new", "latest", "recent", "trending", "popular", "best", "top", "hits",
+            "recommend", "surprise", "suggest", "random", "favorite", "favourite",
+            "something", "song by", "songs by", "track by", "tracks by", "what is", "which is"
+        )
+        return reasoningKeywords.any { Regex("""\b$it\b""").containsMatchIn(lower) }
+    }
 
     fun parse(text: String): MusicRequest? {
         val lower = text.lowercase().trim()
@@ -18,20 +28,19 @@ class MusicDetectionHandler(private val context: Context) {
 
         val raw = text.trim()
         var query = raw
-            .replace(Regex("play\\s+", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("\\s+(?:on|with)\\s+youtube\\s*music\\s*$", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("\\s+(?:on|with)\\s+youtube\\s*$", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("\\s+(?:on|for)\\s+me\\s*$", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""^play\s+""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s+(?:on|with|in|via|through|using)\s+(?:youtube\s*music|yt\s*music|youtube|yt)\s*$""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s+(?:on|for)\s+me\s*$""", RegexOption.IGNORE_CASE), "")
             .replace("[", " ").replace("]", " ")
             .replace("(", " ").replace(")", " ")
             .trim()
-            .replace(Regex("\\s+"), " ")
+            .replace(Regex("""\s+"""), " ")
             .trim()
 
         // Extract artist after "by" if present
         var song = query
         var artist: String? = null
-        val byMatch = Regex("\\s+by\\s+", RegexOption.IGNORE_CASE).find(query)
+        val byMatch = Regex("""\s+by\s+""", RegexOption.IGNORE_CASE).find(query)
         if (byMatch != null) {
             val idx = byMatch.range.first
             song = query.substring(0, idx).trim()
@@ -45,11 +54,11 @@ class MusicDetectionHandler(private val context: Context) {
 
     fun play(text: String): String {
         val request = parse(text) ?: return ""
-        val yt = YouTubeMusicService(context)
+        val ctx = context ?: return ""
+        val yt = YouTubeMusicService(ctx)
         val result = yt.play(request.song, request.artist)
         AppLogger.d("MusicHandler", "Result: $result")
-        val msg = "🎵 Opening **${request.song}**${if (request.artist != null) " by ${request.artist}" else ""} on YouTube Music..."
-        AppLogger.d("MusicHandler", msg)
-        return msg
+        return result
     }
 }
+

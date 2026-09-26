@@ -18,8 +18,8 @@ android {
         applicationId = "ai.deepcode.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.5.2"
+        versionCode = 13
+        versionName = "1.5.3"
 
         ndk {
             abiFilters += listOf("arm64-v8a")

@@ -5,6 +5,7 @@ import ai.deepcode.android.service.storage.TelegramDriveService
 import ai.deepcode.android.service.notion.NotionService
 import ai.deepcode.android.service.github.GitHubService
 import ai.deepcode.android.service.drive.DriveHandler
+import ai.deepcode.android.service.google.YouTubeMusicService
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonArray
@@ -1275,7 +1276,7 @@ class ToolExecutor(private val context: Context? = null) {
                     val voice = optString(args, "voice") ?: ""
                     val rate = optString(args, "rate") ?: ""
                     val pitch = optString(args, "pitch") ?: ""
-                    val verbatim = try { args.get("verbatim")?.asBoolean ?: true } catch (_: Exception) { true }
+                    val verbatim = try { args.get("verbatim")?.asBoolean ?: false } catch (_: Exception) { false }
                     executeEdgeTts(text, voice, rate, pitch, workingDir, verbatim)
                 }
                 "gemini_tts" -> {
@@ -1283,7 +1284,8 @@ class ToolExecutor(private val context: Context? = null) {
                     val ctx = context ?: return "Audio generation requires an Android context"
                     val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
                     val model = optString(args, "model") ?: prefs.getSetting("tts_model", "gemini-3.8-flash-tts")
-                    val result = synthesizeSpeechWithResult(text, preferredProvider = "Google Gemini", preferredModel = model, verbatim = true)
+                    val verbatim = try { args.get("verbatim")?.asBoolean ?: false } catch (_: Exception) { false }
+                    val result = synthesizeSpeechWithResult(text, preferredProvider = "Google Gemini", preferredModel = model, verbatim = verbatim)
                     if (result.audioPath != null) "[audio:${result.audioPath}]" else (result.message ?: "Audio generation failed")
                 }
                 "openai_tts" -> {
@@ -1291,8 +1293,16 @@ class ToolExecutor(private val context: Context? = null) {
                     val ctx = context ?: return "Audio generation requires an Android context"
                     val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
                     val model = optString(args, "model") ?: prefs.getSetting("tts_model", "tts-1")
-                    val result = synthesizeSpeechWithResult(text, preferredProvider = "OpenAI", preferredModel = model, verbatim = true)
+                    val verbatim = try { args.get("verbatim")?.asBoolean ?: false } catch (_: Exception) { false }
+                    val result = synthesizeSpeechWithResult(text, preferredProvider = "OpenAI", preferredModel = model, verbatim = verbatim)
                     if (result.audioPath != null) "[audio:${result.audioPath}]" else (result.message ?: "Audio generation failed")
+                }
+                "play_music", "play_song", "youtube_music" -> {
+                    val song = optString(args, "song") ?: optString(args, "query") ?: optString(args, "title") ?: return "Missing 'song' argument"
+                    val artist = optString(args, "artist")
+                    val platform = optString(args, "platform") ?: "youtube_music"
+                    val ctx = context ?: return "Context unavailable to launch music player"
+                    YouTubeMusicService(ctx).play(song, artist, platform)
                 }
                 "set_tts_priority" -> {
                     val priority = optString(args, "priority") ?: return "Missing priority argument (provider_first or default_first)"
@@ -1387,21 +1397,51 @@ class ToolExecutor(private val context: Context? = null) {
         }
     }
 
-    private fun isMetaReferenceText(input: String): Boolean {
+    internal fun isMetaReferenceText(input: String): Boolean {
         val clean = input.trim().lowercase()
-        if (clean.length > 150) return false
+        if (clean.length > 200) return false
+
+        // Exact pronouns or short deictic phrases
+        val exactShortPhrases = setOf(
+            "this", "that", "it", "of this", "of that", "of it", "for this", "for that",
+            "the above", "above", "the poem", "the story", "the script", "the speech",
+            "the text", "the lyrics", "the verse", "the article", "the quote",
+            "last response", "previous response", "last message", "previous message"
+        )
+        if (clean in exactShortPhrases) return true
+
+        val explicitMetaRegex = Regex(
+            """\b(of\s+this|of\s+that|of\s+it|for\s+this|for\s+that|about\s+this|about\s+that|this\s+one|that\s+one|the\s+above|the\s+previous|the\s+last|what\s+you\s+(wrote|said|created|generated)|you\s+just\s+(wrote|said|created|generated)|the\s+(poem|story|script|speech|article|text|essay|message|response|reply|answer|verse|lyrics|quote|summary))\b"""
+        )
+        if (explicitMetaRegex.containsMatchIn(clean)) return true
+
         val metaPatterns = listOf(
             "last response", "previous response", "last message", "previous message",
             "last reply", "previous reply", "that response", "your response", "my last response",
             "work last response", "create audio of last response", "audio of last response",
             "read last response", "read the last response", "speak last response", "audio of that",
-            "audio of it", "convert that", "convert it", "read that", "read it", "speak that", "speak it",
+            "audio of it", "audio of this", "audio for this", "audio for that",
+            "convert that", "convert it", "convert this", "read that", "read it", "read this",
+            "speak that", "speak it", "speak this", "narrate that", "narrate it", "narrate this",
             "last answer", "previous answer", "your last reply", "your previous message",
-            "what you said", "what you wrote", "make audio of last response", "convert last message"
+            "what you said", "what you wrote", "make audio of last response", "convert last message",
+            "make an audio of this", "make audio of this", "create a audio file of this",
+            "create an audio file of this", "create audio file of this", "create audio of this",
+            "make audio file of this", "make an audio of that", "generate audio for this",
+            "generate audio of this", "read this out", "read it out", "read that out",
+            "speak this out", "read aloud", "read it aloud", "read this aloud"
         )
         if (metaPatterns.any { clean.contains(it) }) return true
-        val hasMetaTarget = clean.contains("last") || clean.contains("previous") || clean.contains("that") || clean.contains("what you")
-        val hasMetaAction = clean.contains("response") || clean.contains("message") || clean.contains("reply") || clean.contains("answer") || clean.contains("audio") || clean.contains("speak") || clean.contains("read") || clean.contains("convert")
+
+        val hasMetaTarget = clean.contains("this") || clean.contains("that") || clean.contains("it") ||
+                clean.contains("last") || clean.contains("previous") || clean.contains("above") ||
+                clean.contains("what you") || clean.contains("poem") || clean.contains("story") ||
+                clean.contains("script") || clean.contains("speech") || clean.contains("text") ||
+                clean.contains("article") || clean.contains("quote") || clean.contains("summary")
+        val hasMetaAction = clean.contains("audio") || clean.contains("speak") || clean.contains("read") ||
+                clean.contains("voice") || clean.contains("tts") || clean.contains("narrate") ||
+                clean.contains("sound") || clean.contains("vocal") || clean.contains("speech") ||
+                clean.contains("convert") || clean.contains("say")
         return hasMetaTarget && hasMetaAction
     }
 
@@ -1434,13 +1474,25 @@ class ToolExecutor(private val context: Context? = null) {
         }
     }
 
-    private fun cleanTextForSpeech(raw: String): String {
-        return raw
-            .replace(Regex("```[a-zA-Z]*\\n[\\s\\S]*?```"), " [code snippet] ")
+    internal fun cleanTextForSpeech(raw: String): String {
+        // Handle code blocks: if it has an actual programming language tag, replace with [code snippet].
+        // If it's a plain block without language, or marked as text/poem/markdown/lyrics, preserve the inner text.
+        val codeLangRegex = Regex("(?i)```(python|kotlin|java|c|cpp|csharp|cs|go|rust|javascript|js|typescript|ts|sh|bash|sql|html|css|xml|json|yaml|yml)\\n([\\s\\S]*?)```")
+        val withCodeCleaned = codeLangRegex.replace(raw) { " [code snippet] " }
+
+        val plainBlockRegex = Regex("```[a-zA-Z0-9_-]*\\n?([\\s\\S]*?)```")
+        val textUnwrapped = plainBlockRegex.replace(withCodeCleaned) { match -> match.groupValues[1] }
+
+        return textUnwrapped
             .replace(Regex("\\[([^\\]]+)\\]\\([^\\)]+\\)"), "$1")
             .replace(Regex("\\bhttps?://\\S+"), "")
-            .replace(Regex("[#*_`~]+"), " ")
-            .replace(Regex("\\n+"), ". ")
+            .replace(Regex("\\[(audio|file|image|video):[^\\]]+\\]"), "")
+            .replace(Regex("(?m)^[ \t]*[-*+][ \t]+"), "")
+            .replace(Regex("(?m)^[ \t]*#{1,6}[ \t]+"), "")
+            .replace(Regex("[*_`~]+"), " ")
+            .replace(Regex("\\n{2,}"), ". ")
+            .replace(Regex("\\n"), " ")
+            .replace(Regex("\\s{2,}"), " ")
             .trim()
     }
 
@@ -1695,8 +1747,8 @@ class ToolExecutor(private val context: Context? = null) {
         val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
 
         var textToSpeak = text
-        if (!verbatim) {
-            val isMeta = isMetaReferenceText(text)
+        val isMeta = isMetaReferenceText(text)
+        if (!verbatim || isMeta) {
             if (isMeta) {
                 val resolved = resolveLastAssistantMessage(ctx)
                 if (!resolved.isNullOrBlank()) {
@@ -1706,7 +1758,7 @@ class ToolExecutor(private val context: Context? = null) {
                     return SpeechSynthesisResult(
                         audioPath = null,
                         engineUsed = "None",
-                        message = "Could not locate a previous assistant response in conversation."
+                        message = "Could not locate a previous assistant response in conversation. Please provide the text or file context you'd like me to convert to audio."
                     )
                 }
             }
@@ -5174,13 +5226,25 @@ class ToolExecutor(private val context: Context? = null) {
                 mapOf(
                     "type" to "object",
                     "properties" to mapOf(
-                        "text" to mapOf("type" to "string", "description" to "The text to convert to speech"),
+                        "text" to mapOf("type" to "string", "description" to "The actual content to convert to speech. If the user asks for audio of a previous poem, story, or message, provide that exact content here, never literal words like 'this' or 'last response'. If no prior context or file exists, do not call this tool; ask the user to provide the context first."),
                         "voice" to mapOf("type" to "string", "description" to "DO NOT USE. Omit this parameter. The user's saved voice settings will be used automatically."),
                         "rate" to mapOf("type" to "string", "description" to "DO NOT USE. Omit this parameter. The user's saved tone settings will be used automatically."),
                         "pitch" to mapOf("type" to "string", "description" to "DO NOT USE. Omit this parameter."),
                         "verbatim" to mapOf("type" to "boolean", "description" to "If true, speak text literally without resolving last-response or generating topic narration")
                     ),
                     "required" to listOf("text")
+                )
+            ),
+            Tool("play_music",
+                "Play a song, track, artist, or playlist on YouTube Music or YouTube. Call this whenever the user asks to play music, songs, or audio tracks. If the user asks for a 'new', 'latest', 'trending', or descriptive song (e.g. 'new Karan Aujla song', 'latest Drake track'), FIRST call web_search to find the exact newest song title before calling this tool.",
+                mapOf(
+                    "type" to "object",
+                    "properties" to mapOf(
+                        "song" to mapOf("type" to "string", "description" to "The exact song or track title to play (e.g. 'Winning Speech', 'Tauba Tauba', 'Shape of You')"),
+                        "artist" to mapOf("type" to "string", "description" to "Optional artist name (e.g. 'Karan Aujla', 'Ed Sheeran')"),
+                        "platform" to mapOf("type" to "string", "enum" to listOf("youtube_music", "youtube", "auto"), "description" to "Platform to open: 'youtube_music' (default), 'youtube', or 'auto'")
+                    ),
+                    "required" to listOf("song")
                 )
             ),
             Tool("summon_agents",

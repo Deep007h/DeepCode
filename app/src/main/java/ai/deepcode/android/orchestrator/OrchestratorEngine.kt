@@ -275,9 +275,13 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
                 .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                 .build()
                 .newCall(request).execute()
-            val respBody = response.body?.string()
-            response.close()
-            if (response.isSuccessful && respBody != null) {
+            val respBody: String?
+            val wasSuccessful: Boolean
+            response.use { resp ->
+                respBody = resp.body?.string()
+                wasSuccessful = resp.isSuccessful
+            }
+            if (wasSuccessful && respBody != null) {
                 val fullText = StringBuilder()
                 for (line in respBody.lines()) {
                     val trimmed = line.trim()
@@ -393,8 +397,7 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
                     response.close()
                     continue
                 }
-                val responseBody = response.body?.string()
-                response.close()
+                val responseBody = response.use { it.body?.string() }
                 val result = parseLlmResponse(responseBody)
                 if (result != null) return result
             } catch (e: Exception) {

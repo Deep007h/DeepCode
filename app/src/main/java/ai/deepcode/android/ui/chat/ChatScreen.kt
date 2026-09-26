@@ -4180,8 +4180,26 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
 
             if (isAudioCreationRequest(text)) {
                 val isMeta = isMetaReferenceText(text)
-                val targetText: String? = if (isMeta) {
-                    val history = repository.getMessagesListForSession(sessionId)
+                val history = repository.getMessagesListForSession(sessionId)
+                var targetText: String? = null
+
+                // 1. If user replied directly to a message, prioritize that message
+                if (replyToMessage != null) {
+                    val candidate = replyToMessage.content
+                        .replace(Regex("""^\[reply[\s\S]*?\[/reply\]\s*""", RegexOption.IGNORE_CASE), "")
+                        .replace(RE_MEDIA_TAG, "")
+                        .replace(RE_AUDIO_TAG, "")
+                        .replace(RE_FILE_TAG, "")
+                        .replace(RE_IMAGE_TAG, "")
+                        .replace(RE_VIDEO_TAG, "")
+                        .trim()
+                    if (candidate.isNotBlank() && candidate.length > 3) {
+                        targetText = candidate
+                    }
+                }
+
+                // 2. If it's a meta reference ("this", "last message", "the poem", etc.)
+                if (targetText == null && isMeta) {
                     val lastAssistant = history.lastOrNull { msg ->
                         msg.role == "assistant" &&
                         !msg.isToolCall &&
@@ -4191,20 +4209,58 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         !msg.content.startsWith("Tool result:") &&
                         msg.content.replace(RE_MEDIA_TAG, "").trim().length > 3
                     }
-                    lastAssistant?.content
+                    val candidate = lastAssistant?.content
                         ?.replace(RE_AUDIO_TAG, "")
                         ?.replace(RE_FILE_TAG, "")
                         ?.replace(RE_IMAGE_TAG, "")
                         ?.replace(RE_VIDEO_TAG, "")
                         ?.trim()
-                } else {
-                    val directMatch = Regex("""^(?:create\s+audio\s*(?:of|for|from)?\s*:\s*|read\s+(?:this|aloud)?\s*:\s*|speak\s*(?:this)?\s*:\s*)(.+)$""", RegexOption.IGNORE_CASE).find(text.trim())
-                    directMatch?.groupValues?.get(1)?.trim()
+                    if (!candidate.isNullOrBlank()) {
+                        targetText = candidate
+                    }
+                }
+
+                // 3. Direct inline pattern e.g. "create audio: The woods are lovely dark and deep"
+                if (targetText == null) {
+                    val directMatch = Regex("""^(?:create\s+(?:an?\s+)?audio\s*(?:file\s*)?(?:of|for|from)?\s*:\s*|read\s+(?:this|aloud)?\s*:\s*|speak\s*(?:this)?\s*:\s*)(.+)$""", RegexOption.IGNORE_CASE).find(text.trim())
+                    val candidate = directMatch?.groupValues?.get(1)?.trim()
+                    if (!candidate.isNullOrBlank() && !isMetaReferenceText(candidate)) {
+                        targetText = candidate
+                    }
+                }
+
+                // 4. Check if user attached a text file
+                if (targetText == null && currentAttachments.isNotEmpty()) {
+                    val textAtt = currentAttachments.firstOrNull { !isImageAtt(it) }
+                    if (textAtt != null) {
+                        targetText = if (textAtt.content.isNotBlank()) {
+                            textAtt.content
+                        } else if (textAtt.filePath != null) {
+                            try {
+                                java.io.File(textAtt.filePath).readText()
+                            } catch (_: Exception) { null }
+                        } else null
+                    }
+                }
+
+                // 5. Check if user referenced a specific workspace file
+                if (targetText == null) {
+                    val fileMatch = Regex("""\b(?:file|of|from|in)\s+([a-zA-Z0-9_\-./]+\.(?:txt|md|py|kt|java|js|json|html|csv))\b""", RegexOption.IGNORE_CASE).find(text)
+                    val filename = fileMatch?.groupValues?.get(1)
+                    if (!filename.isNullOrBlank()) {
+                        try {
+                            val projectPath = repository.getDefaultProjectPath()
+                            val f = java.io.File(projectPath, filename)
+                            if (f.exists() && f.isFile && f.length() < 200_000) {
+                                targetText = f.readText()
+                            }
+                        } catch (_: Exception) {}
+                    }
                 }
 
                 if (!targetText.isNullOrBlank()) {
                     _mediaProcessingType.value = "audio"
-                    _mediaProcessingPrompt.value = "Thinking..."
+                    _mediaProcessingPrompt.value = "Generating audio..."
                     _streamedText.value = ""
 
                     val ttsArgs = com.google.gson.JsonObject().apply {
@@ -4224,6 +4280,16 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     } else {
                         appendAssistantMessage("Failed to generate audio: $result", sessionId)
                     }
+                    _isStreaming.value = false
+                    _streamingMessageId.value = ""
+                    _mediaProcessingType.value = null
+                    _mediaProcessingPrompt.value = ""
+                    return@launch
+                } else if (isPureAudioCreationRequest(text)) {
+                    appendAssistantMessage(
+                        "I'd love to create an audio file for you! However, I couldn't find any previous poem, message, or file in our conversation. Please provide or specify the text or file you want me to convert to audio.",
+                        sessionId
+                    )
                     _isStreaming.value = false
                     _streamingMessageId.value = ""
                     _mediaProcessingType.value = null
@@ -5135,19 +5201,49 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
 
     private fun isMetaReferenceText(input: String): Boolean {
         val clean = input.trim().lowercase()
-        if (clean.length > 150) return false
+        if (clean.length > 200) return false
+
+        // Exact pronouns or short deictic phrases
+        val exactShortPhrases = setOf(
+            "this", "that", "it", "of this", "of that", "of it", "for this", "for that",
+            "the above", "above", "the poem", "the story", "the script", "the speech",
+            "the text", "the lyrics", "the verse", "the article", "the quote",
+            "last response", "previous response", "last message", "previous message"
+        )
+        if (clean in exactShortPhrases) return true
+
+        val explicitMetaRegex = Regex(
+            """\b(of\s+this|of\s+that|of\s+it|for\s+this|for\s+that|about\s+this|about\s+that|this\s+one|that\s+one|the\s+above|the\s+previous|the\s+last|what\s+you\s+(wrote|said|created|generated)|you\s+just\s+(wrote|said|created|generated)|the\s+(poem|story|script|speech|article|text|essay|message|response|reply|answer|verse|lyrics|quote|summary))\b"""
+        )
+        if (explicitMetaRegex.containsMatchIn(clean)) return true
+
         val metaPatterns = listOf(
             "last response", "previous response", "last message", "previous message",
             "last reply", "previous reply", "that response", "your response", "my last response",
             "work last response", "create audio of last response", "audio of last response",
             "read last response", "read the last response", "speak last response", "audio of that",
-            "audio of it", "convert that", "convert it", "read that", "read it", "speak that", "speak it",
+            "audio of it", "audio of this", "audio for this", "audio for that",
+            "convert that", "convert it", "convert this", "read that", "read it", "read this",
+            "speak that", "speak it", "speak this", "narrate that", "narrate it", "narrate this",
             "last answer", "previous answer", "your last reply", "your previous message",
-            "what you said", "what you wrote", "make audio of last response", "convert last message"
+            "what you said", "what you wrote", "make audio of last response", "convert last message",
+            "make an audio of this", "make audio of this", "create a audio file of this",
+            "create an audio file of this", "create audio file of this", "create audio of this",
+            "make audio file of this", "make an audio of that", "generate audio for this",
+            "generate audio of this", "read this out", "read it out", "read that out",
+            "speak this out", "read aloud", "read it aloud", "read this aloud"
         )
         if (metaPatterns.any { clean.contains(it) }) return true
-        val hasMetaTarget = clean.contains("last") || clean.contains("previous") || clean.contains("that") || clean.contains("what you")
-        val hasMetaAction = clean.contains("response") || clean.contains("message") || clean.contains("reply") || clean.contains("answer") || clean.contains("audio") || clean.contains("speak") || clean.contains("read") || clean.contains("convert")
+
+        val hasMetaTarget = clean.contains("this") || clean.contains("that") || clean.contains("it") ||
+                clean.contains("last") || clean.contains("previous") || clean.contains("above") ||
+                clean.contains("what you") || clean.contains("poem") || clean.contains("story") ||
+                clean.contains("script") || clean.contains("speech") || clean.contains("text") ||
+                clean.contains("article") || clean.contains("quote") || clean.contains("summary")
+        val hasMetaAction = clean.contains("audio") || clean.contains("speak") || clean.contains("read") ||
+                clean.contains("voice") || clean.contains("tts") || clean.contains("narrate") ||
+                clean.contains("sound") || clean.contains("vocal") || clean.contains("speech") ||
+                clean.contains("convert") || clean.contains("say")
         return hasMetaTarget && hasMetaAction
     }
 
@@ -5156,11 +5252,32 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         if (clean.length > 250) return false
         val isMeta = isMetaReferenceText(clean)
         val hasAudioWord = clean.contains("audio") || clean.contains("speak") ||
-                clean.contains("read") || clean.contains("voice") || clean.contains("tts")
+                clean.contains("read") || clean.contains("voice") || clean.contains("tts") ||
+                clean.contains("speech") || clean.contains("mp3") || clean.contains("narrat")
         if (isMeta && hasAudioWord) return true
 
-        val audioCommandRegex = Regex("""\b(create|generate|make|convert|produce|read|speak)\s+(an?\s+)?(audio|voice|speech|tts|sound)\b""")
-        return audioCommandRegex.containsMatchIn(clean)
+        val audioCommandRegex = Regex(
+            """\b(create|generate|make|convert|turn|produce|read|speak|synthesize|record|play)\s+(?:an?\s+)?(?:audio|voice|speech|tts|sound|mp3|narration|audiofile|audio\s+file)\b"""
+        )
+        if (audioCommandRegex.containsMatchIn(clean)) return true
+
+        val audioPattern = Regex("""\b(audio|voice|speech|tts|mp3)\s+(?:of|for|from|to)\b""")
+        return audioPattern.containsMatchIn(clean)
+    }
+
+    private fun isPureAudioCreationRequest(input: String): Boolean {
+        val clean = input.trim().lowercase()
+        if (clean.length > 200) return false
+
+        val generativeKeywords = listOf(
+            "write ", "compose ", "tell me ", "generate a story", "write a poem", "create a story",
+            "explain ", "summarize ", "translate ", "rewrite ", "draft ", "code ", "implement "
+        )
+        if (generativeKeywords.any { clean.startsWith(it) || clean.contains(" and $it") || clean.contains(" then $it") }) {
+            return false
+        }
+
+        return isAudioCreationRequest(clean)
     }
 
     private fun isImageCreationRequest(input: String): Boolean {
@@ -5220,10 +5337,19 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         "=== PREVIOUS RESPONSE START ===\n" +
                         cleanContent +
                         "\n=== PREVIOUS RESPONSE END ===\n\n" +
-                        "CRITICAL: Call `edge_tts` with the exact response text above. Do NOT pass literal words like 'last response'.",
+                        "CRITICAL: Call `edge_tts` with the exact response text above. Do NOT pass literal words like 'last response' or 'this'.",
                     timestamp = System.currentTimeMillis()
                 )
-            } else null
+            } else {
+                Message(
+                    id = UUID.randomUUID().toString(),
+                    sessionId = sessionId,
+                    role = "system",
+                    content = "The user is requesting audio/speech creation referring to previous context, but there is NO previous assistant response or content in this conversation.\n" +
+                        "CRITICAL: Do NOT attempt to invent, guess, or call `edge_tts` with words like 'this' or empty text. Politely ask the user to provide the text, poem, or file they would like you to convert to audio.",
+                    timestamp = System.currentTimeMillis()
+                )
+            }
         } else null
 
         val result = mutableListOf<Message>()

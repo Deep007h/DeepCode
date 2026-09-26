@@ -9,6 +9,7 @@ import ai.deepcode.android.util.AppLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -22,12 +23,14 @@ class BootReceiver : BroadcastReceiver() {
                 val action = intent.action ?: "UNKNOWN"
                 AppLogger.i("BootReceiver", "Boot action received: $action, rescheduling automations and agents")
                 val pendingResult = goAsync()
-                CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+                scope.launch {
                     try {
                         AutomationScheduler.rescheduleAll(context)
                         AgentScheduler.rescheduleAll(context)
                     } finally {
                         pendingResult.finish()
+                        scope.cancel()
                     }
                 }
             }
@@ -48,7 +51,8 @@ class BootReceiver : BroadcastReceiver() {
                     templateId = "custom",
                     configJson = """{"action_prompt":"Say hello world from test automation"}"""
                 )
-                CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                val scope2 = CoroutineScope(Dispatchers.IO + SupervisorJob())
+                scope2.launch {
                     try {
                         repo.insertAutomation(entity)
                         AppLogger.i("BootReceiver", "Test automation inserted: ${entity.id}")
@@ -56,6 +60,7 @@ class BootReceiver : BroadcastReceiver() {
                         AppLogger.i("BootReceiver", "Test automation scheduled")
                     } finally {
                         pendingResult.finish()
+                        scope2.cancel()
                     }
                 }
             }

@@ -7,7 +7,7 @@ import java.io.File
 class GitService {
     fun getGitStatus(projectPath: String): GitInfo {
         val repoDir = File(projectPath, ".git")
-        if (!repoDir.exists() || !repoDir.isDirectory) {
+        if (!repoDir.exists()) {
             return GitInfo(isRepo = false, branch = "", modifiedFiles = emptyList(), recentCommits = emptyList())
         }
 
