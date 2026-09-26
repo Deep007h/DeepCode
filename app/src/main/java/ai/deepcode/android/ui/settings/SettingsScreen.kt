@@ -60,6 +60,7 @@ fun SettingsScreen(
     onNavigateToMemory: () -> Unit = {},
     onNavigateToPlugins: () -> Unit = {},
     onNavigateToThemesAndWallpapers: () -> Unit = {},
+    onNavigateToVoiceModel: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -254,6 +255,24 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = isDarkThemeActive)
             ) {
+                // Voice / Speech Model Row
+                val ttsPriority = securePrefs.getSetting("tts_priority", "provider_first")
+                val ttsProvider = securePrefs.getSetting("tts_provider", "Google Gemini")
+                val ttsModel = securePrefs.getSetting("tts_model", "gemini-3.8-flash-tts")
+                val voiceSubtitle = if (ttsPriority == "provider_first") {
+                    "Priority: $ttsProvider ($ttsModel)"
+                } else {
+                    "Priority: Built-in Edge Neural TTS (Free)"
+                }
+
+                SettingsNavRow(
+                    icon = Icons.Default.VolumeUp,
+                    title = "Voice / Speech Model",
+                    subtitle = voiceSubtitle,
+                    onClick = onNavigateToVoiceModel
+                )
+                HorizontalDivider(color = AppDivider, thickness = 1.dp)
+
                 // Custom Persona Row
                 val activePersonaName = if (personaEnabled && activeCustomPersona.isNotEmpty()) {
                     val custom = try {

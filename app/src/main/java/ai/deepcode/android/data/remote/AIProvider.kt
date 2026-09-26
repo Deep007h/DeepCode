@@ -1203,6 +1203,8 @@ class GeminiProvider : AIProvider {
         AIModel("gemini-2.0-flash-lite", "Gemini 2.0 Flash Lite", "Google Gemini", true, "1M tokens", "Free"),
         AIModel("gemini-1.5-flash", "Gemini 1.5 Flash", "Google Gemini", true, "1M tokens", "Free"),
         AIModel("gemini-1.5-pro", "Gemini 1.5 Pro", "Google Gemini", false, "2M tokens", "Paid"),
+        AIModel("gemini-3.8-flash-tts", "Gemini 3.8 Flash TTS (Expressive Neural Audio)", "Google Gemini", true, "Audio Gen", "Free"),
+        AIModel("gemini-3.8-flash-lite-tts", "Gemini 3.8 Flash Lite TTS (Low Latency Audio)", "Google Gemini", true, "Audio Gen", "Free"),
         AIModel("imagen-3.0-generate-002", "Imagen 3 (Image Creation)", "Google Gemini", false, "Image Gen", "Free"),
         AIModel("imagen-3.0-fast-generate-001", "Imagen 3 Fast (Image Creation)", "Google Gemini", false, "Image Gen", "Free")
     )
@@ -1224,9 +1226,32 @@ class GeminiProvider : AIProvider {
                 val finalKey = apiKey.trim()
                 val targetModel = when {
                     model.startsWith("imagen-") -> model
+                    model.contains("-tts") -> model
                     model in listOf("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-pro") -> model
-                    model.startsWith("gemini-") && !model.contains("3.8") -> model
+                    model.startsWith("gemini-") -> model
                     else -> "gemini-2.5-flash"
+                }
+
+                // Handle Gemini TTS Audio Generation Models directly
+                if (targetModel.contains("-tts")) {
+                    val prompt = messages.lastOrNull { it.role == "user" }?.content ?: "Hello! I am Gemini Speech."
+                    val executor = ai.deepcode.android.service.tools.ToolExecutor()
+                    val ctx = ai.deepcode.android.DeepCodeApp.getAppContext()
+                    val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
+                    val audioResult = executor.executeGeminiTts(
+                        text = prompt,
+                        model = targetModel,
+                        prefs = prefs,
+                        ctx = ctx
+                    )
+                    if (!audioResult.isNullOrBlank()) {
+                        val tokenMarker = "Generated audio response:\n\n$audioResult"
+                        onToken(tokenMarker)
+                        onComplete(tokenMarker)
+                    } else {
+                        onError(Exception("Failed to generate audio via $targetModel. Check API quota or connection."))
+                    }
+                    return@withContext
                 }
 
                 // Handle Imagen 3 Image Generation Models directly
@@ -1840,7 +1865,9 @@ class OpenAIProvider : AIProvider {
         AIModel("gpt-4-turbo", "GPT-4 Turbo", "OpenAI", false, "128k tokens", "Paid"),
         AIModel("gpt-3.5-turbo", "GPT-3.5 Turbo", "OpenAI", false, "16k tokens", "Paid"),
         AIModel("dall-e-3", "DALL-E 3 (Image Generation)", "OpenAI", false, "1024x1024 Image", "Paid"),
-        AIModel("dall-e-2", "DALL-E 2 (Image Generation)", "OpenAI", false, "1024x1024 Image", "Paid")
+        AIModel("dall-e-2", "DALL-E 2 (Image Generation)", "OpenAI", false, "1024x1024 Image", "Paid"),
+        AIModel("tts-1", "OpenAI TTS-1 (Neural Voice)", "OpenAI", false, "Audio Gen", "Paid"),
+        AIModel("tts-1-hd", "OpenAI TTS-1 HD (High Definition Voice)", "OpenAI", false, "Audio Gen", "Paid")
     )
 
     override suspend fun streamCompletion(
@@ -1855,6 +1882,22 @@ class OpenAIProvider : AIProvider {
         onError: (Throwable) -> Unit,
         onUsage: ((TurnTokenUsage) -> Unit)?
     ) {
+        if (model.startsWith("tts-")) {
+            val userPrompt = messages.lastOrNull { it.role == "user" }?.content ?: ""
+            val executor = ai.deepcode.android.service.tools.ToolExecutor()
+            val ctx = ai.deepcode.android.DeepCodeApp.getAppContext()
+            val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
+            val audioResult = executor.executeOpenAiTts(userPrompt, model, prefs, ctx)
+            if (!audioResult.isNullOrBlank()) {
+                val tokenMarker = "Generated audio response:\n\n$audioResult"
+                onToken(tokenMarker)
+                onComplete(tokenMarker)
+            } else {
+                onError(Exception("Failed to generate audio via $model"))
+            }
+            return
+        }
+
         if (model.startsWith("dall-e")) {
             val userPrompt = messages.lastOrNull { it.role == "user" }?.content ?: ""
             val executor = ai.deepcode.android.service.tools.ToolExecutor()

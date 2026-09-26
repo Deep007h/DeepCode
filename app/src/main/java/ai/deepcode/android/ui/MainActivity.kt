@@ -58,6 +58,7 @@ import ai.deepcode.android.ui.settings.ApiKeysScreen
 import ai.deepcode.android.ui.settings.CloudflareSettingsScreen
 import ai.deepcode.android.ui.settings.MemorySettingsScreen
 import ai.deepcode.android.ui.settings.ThemesAndWallpapersScreen
+import ai.deepcode.android.ui.settings.VoiceModelSettingsScreen
 import ai.deepcode.android.ui.connections.ConnectionsScreen
 import ai.deepcode.android.ui.connections.ConnectionsViewModel
 import ai.deepcode.android.ui.automations.AutomationsScreen
@@ -399,6 +400,7 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
     val showApiKeys by appState.showApiKeys.collectAsStateWithLifecycle()
     val showCloudflare by appState.showCloudflare.collectAsStateWithLifecycle()
     val showMemorySettings by appState.showMemorySettings.collectAsStateWithLifecycle()
+    val showVoiceModelSettings by appState.showVoiceModelSettings.collectAsStateWithLifecycle()
     val showPlugins by appState.showPlugins.collectAsStateWithLifecycle()
     val showThemesAndWallpapers by appState.showThemesAndWallpapers.collectAsStateWithLifecycle()
 
@@ -412,11 +414,12 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
         showPersonas || selectedPersona != null ||
         showManageTemplates || selectedTemplateId.isNotEmpty() ||
         showVpnSettings || showApiKeys || showCloudflare || showMemorySettings ||
-        showPlugins || showThemesAndWallpapers
+        showVoiceModelSettings || showPlugins || showThemesAndWallpapers
 
     BackHandler(enabled = isOverlayOpen) {
         when {
             showThemesAndWallpapers -> appState.setShowThemesAndWallpapers(false)
+            showVoiceModelSettings -> appState.setShowVoiceModelSettings(false)
             showPlugins -> appState.setShowPlugins(false)
             showMemorySettings -> appState.setShowMemorySettings(false)
             selectedPersona != null -> appState.setSelectedPersona(null)
@@ -1075,7 +1078,8 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                                 onNavigateToCloudflare = { appState.setShowCloudflare(true) },
                                 onNavigateToMemory = { appState.setShowMemorySettings(true) },
                                 onNavigateToPlugins = { appState.setShowPlugins(true) },
-                                onNavigateToThemesAndWallpapers = { appState.setShowThemesAndWallpapers(true) }
+                                onNavigateToThemesAndWallpapers = { appState.setShowThemesAndWallpapers(true) },
+                                onNavigateToVoiceModel = { appState.setShowVoiceModelSettings(true) }
                             )
                         }
                     }
@@ -1085,6 +1089,7 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                         derivedStateOf {
                             when {
                                 showThemesAndWallpapers -> "themes_wallpapers"
+                                showVoiceModelSettings -> "voice_model_settings"
                                 showTokenUsage -> "token_usage"
                                 showPlugins -> "plugins"
                                 showVpnSettings -> "vpn"
@@ -1135,6 +1140,11 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                                     ThemesAndWallpapersScreen(
                                         repository = repository,
                                         onBack = { appState.setShowThemesAndWallpapers(false) }
+                                    )
+                                }
+                                "voice_model_settings" -> {
+                                    VoiceModelSettingsScreen(
+                                        onBack = { appState.setShowVoiceModelSettings(false) }
                                     )
                                 }
                             "token_usage" -> {

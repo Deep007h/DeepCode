@@ -7,6 +7,7 @@ import ai.deepcode.android.service.github.GitHubService
 import ai.deepcode.android.service.drive.DriveHandler
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import com.google.gson.JsonArray
 import ai.deepcode.android.domain.model.Tool
 import ai.deepcode.android.service.TerminalRunner
 import ai.deepcode.android.data.remote.WebBridgeAPI
@@ -1261,6 +1262,30 @@ class ToolExecutor(private val context: Context? = null) {
                     val verbatim = try { args.get("verbatim")?.asBoolean ?: true } catch (_: Exception) { true }
                     executeEdgeTts(text, voice, rate, pitch, workingDir, verbatim)
                 }
+                "gemini_tts" -> {
+                    val text = optString(args, "text") ?: return "Missing text argument"
+                    val ctx = context ?: return "Audio generation requires an Android context"
+                    val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
+                    val model = optString(args, "model") ?: prefs.getSetting("tts_model", "gemini-3.8-flash-tts")
+                    val result = executeGeminiTts(text, model, prefs, ctx)
+                    result ?: executeEdgeTts(text, "", "", "", workingDir, true)
+                }
+                "openai_tts" -> {
+                    val text = optString(args, "text") ?: return "Missing text argument"
+                    val ctx = context ?: return "Audio generation requires an Android context"
+                    val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
+                    val model = optString(args, "model") ?: prefs.getSetting("tts_model", "tts-1")
+                    val result = executeOpenAiTts(text, model, prefs, ctx)
+                    result ?: executeEdgeTts(text, "", "", "", workingDir, true)
+                }
+                "set_tts_priority" -> {
+                    val priority = optString(args, "priority") ?: return "Missing priority argument (provider_first or default_first)"
+                    context?.let {
+                        val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(it)
+                        prefs.saveSetting("tts_priority", priority)
+                    }
+                    "TTS priority set to: $priority"
+                }
                 "set_tts_voice" -> {
                     val voice = optString(args, "voice") ?: return "Missing voice argument"
                     context?.let {
@@ -1567,6 +1592,29 @@ class ToolExecutor(private val context: Context? = null) {
 
             val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx)
 
+            // Priority Engine: Check if user configured a provider model to take priority over default engine
+            val ttsPriority = prefs.getSetting("tts_priority", "provider_first")
+            val ttsProvider = prefs.getSetting("tts_provider", "Google Gemini")
+            val ttsModel = prefs.getSetting("tts_model", "gemini-3.8-flash-tts")
+
+            if (ttsPriority == "provider_first") {
+                if (ttsProvider.contains("Gemini", ignoreCase = true) || ttsModel.contains("gemini", ignoreCase = true)) {
+                    AppLogger.i("TTS", "Priority Engine: Provider first active -> invoking Google Gemini TTS ($ttsModel)")
+                    val geminiResult = executeGeminiTts(textToSpeak, ttsModel, prefs, ctx)
+                    if (!geminiResult.isNullOrBlank()) {
+                        return geminiResult
+                    }
+                    AppLogger.w("TTS", "Priority Engine: Gemini TTS failed or quota exceeded, falling back to default Edge-TTS")
+                } else if (ttsProvider.contains("OpenAI", ignoreCase = true) || ttsModel.startsWith("tts-", ignoreCase = true)) {
+                    AppLogger.i("TTS", "Priority Engine: Provider first active -> invoking OpenAI TTS ($ttsModel)")
+                    val openAiResult = executeOpenAiTts(textToSpeak, ttsModel, prefs, ctx)
+                    if (!openAiResult.isNullOrBlank()) {
+                        return openAiResult
+                    }
+                    AppLogger.w("TTS", "Priority Engine: OpenAI TTS failed, falling back to default Edge-TTS")
+                }
+            }
+
             // ALWAYS use saved settings — completely ignore the AI's voice/rate/pitch params
             val savedLocale = prefs.getSetting("tts_voice", "en-US")
             val savedExactVoice = prefs.getSetting("tts_edge_voice", "")
@@ -1722,6 +1770,210 @@ class ToolExecutor(private val context: Context? = null) {
             "Audio generation failed: no internet connection"
         } catch (e: Exception) {
             "Audio generation error: ${e.message}"
+        }
+    }
+
+    /**
+     * Synthesizes expressive neural speech via Google Gemini 3.8 Flash TTS / 3.8 Flash Lite TTS.
+     * Leverages EmotionSenseProcessor to analyze input emotion, mood, and dramatic sense,
+     * providing natural human cadence and prosody.
+     */
+    fun executeGeminiTts(
+        text: String,
+        model: String,
+        prefs: ai.deepcode.android.data.local.EncryptedPrefs,
+        ctx: Context
+    ): String? {
+        return try {
+            val emotionMode = prefs.getSetting("tts_gemini_emotion_mode", "auto")
+            val processed = EmotionSenseProcessor.process(text, emotionMode)
+            val cleanText = cleanTextForSpeech(processed.cleanText).ifBlank { cleanTextForSpeech(text) }
+            if (cleanText.isBlank()) return null
+            val truncatedText = if (cleanText.length > 5000) cleanText.take(5000) else cleanText
+            val detectedStyle = processed.detectedStyle
+            val voiceName = prefs.getSetting("tts_gemini_voice", "Puck")
+            val effectiveModel = if (model.isNotBlank() && model.contains("gemini")) model else "gemini-3.8-flash-tts"
+
+            val cacheDir = File(ctx.cacheDir, "audio").apply { mkdirs() }
+            val cacheKey = ttsCacheKey(truncatedText, "gemini", "$effectiveModel-$voiceName", emotionMode, detectedStyle, "")
+            val cachedFile = File(cacheDir, "tts_$cacheKey.wav")
+            if (cachedFile.exists() && cachedFile.length() >= 2000) {
+                AppLogger.i("GeminiTTS", "Cache hit: ${cachedFile.name}")
+                return "[audio:${cachedFile.absolutePath}]"
+            }
+
+            val configuredKeys = prefs.getApiKeys("gemini") + listOf(
+                prefs.getApiKey("gemini"),
+                prefs.getApiKey("google gemini"),
+                System.getenv("GEMINI_API_KEY") ?: ""
+            )
+            val candidateKeys = configuredKeys
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .distinct()
+
+            val client = OkHttpClient.Builder()
+                .connectTimeout(25, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
+                .build()
+
+            for (apiKey in candidateKeys) {
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/$effectiveModel:generateContent?key=$apiKey"
+                val payload = JsonObject().apply {
+                    val contents = JsonArray().apply {
+                        val turn = JsonObject().apply {
+                            val parts = JsonArray().apply {
+                                val part = JsonObject().apply {
+                                    addProperty("text", truncatedText)
+                                    val speechMeta = JsonObject().apply {
+                                        addProperty("style", detectedStyle)
+                                    }
+                                    add("speechMetadata", speechMeta)
+                                }
+                                add(part)
+                            }
+                            add("parts", parts)
+                        }
+                        add(turn)
+                    }
+                    add("contents", contents)
+
+                    val genConfig = JsonObject().apply {
+                        val speechConfig = JsonObject().apply {
+                            val voiceConfig = JsonObject().apply {
+                                val prebuiltVoiceConfig = JsonObject().apply {
+                                    addProperty("voiceName", voiceName)
+                                }
+                                add("prebuiltVoiceConfig", prebuiltVoiceConfig)
+                            }
+                            add("voiceConfig", voiceConfig)
+                        }
+                        add("speechConfig", speechConfig)
+                    }
+                    add("generationConfig", genConfig)
+                }
+
+                val request = Request.Builder()
+                    .url(url)
+                    .post(gson.toJson(payload).toRequestBody("application/json".toMediaType()))
+                    .header("Content-Type", "application/json")
+                    .build()
+
+                try {
+                    val response = client.newCall(request).execute()
+                    response.use { resp ->
+                        if (resp.isSuccessful) {
+                            val bodyStr = resp.body?.string() ?: ""
+                            val json = gson.fromJson(bodyStr, JsonObject::class.java)
+                            val cand = json.getAsJsonArray("candidates")?.get(0)?.asJsonObject
+                            val parts = cand?.getAsJsonObject("content")?.getAsJsonArray("parts")
+                            val inlineData = parts?.get(0)?.asJsonObject?.getAsJsonObject("inlineData")
+                            val b64 = inlineData?.get("data")?.asString
+                            if (!b64.isNullOrEmpty()) {
+                                val audioBytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                                if (isValidAudioData(audioBytes, "wav")) {
+                                    cachedFile.writeBytes(audioBytes)
+                                    trimAudioCache(cacheDir)
+                                    AppLogger.i("GeminiTTS", "Gemini TTS succeeded ($effectiveModel, voice=$voiceName, style='$detectedStyle') — ${audioBytes.size} bytes")
+                                    return "[audio:${cachedFile.absolutePath}]"
+                                }
+                            }
+                        } else if (resp.code == 429) {
+                            AppLogger.w("GeminiTTS", "Gemini quota exhausted (HTTP 429), rotating key...")
+                        } else {
+                            val err = resp.body?.string()?.take(200)
+                            AppLogger.w("GeminiTTS", "Gemini TTS HTTP ${resp.code}: $err")
+                        }
+                    }
+                } catch (e: Exception) {
+                    AppLogger.w("GeminiTTS", "Request error with key: ${e.message}")
+                }
+            }
+            null
+        } catch (e: Exception) {
+            AppLogger.e("GeminiTTS", "executeGeminiTts failed", e)
+            null
+        }
+    }
+
+    /**
+     * Synthesizes neural speech via OpenAI TTS API (tts-1, tts-1-hd).
+     */
+    fun executeOpenAiTts(
+        text: String,
+        model: String,
+        prefs: ai.deepcode.android.data.local.EncryptedPrefs,
+        ctx: Context
+    ): String? {
+        return try {
+            val cleanText = cleanTextForSpeech(text)
+            if (cleanText.isBlank()) return null
+            val truncatedText = if (cleanText.length > 4096) cleanText.take(4096) else cleanText
+            val voiceName = prefs.getSetting("tts_openai_voice", "alloy")
+            val effectiveModel = if (model.isNotBlank() && model.startsWith("tts-")) model else "tts-1"
+
+            val cacheDir = File(ctx.cacheDir, "audio").apply { mkdirs() }
+            val cacheKey = ttsCacheKey(truncatedText, "openai", "$effectiveModel-$voiceName", "", "", "")
+            val cachedFile = File(cacheDir, "tts_$cacheKey.mp3")
+            if (cachedFile.exists() && cachedFile.length() >= 2000) {
+                AppLogger.i("OpenAITTS", "Cache hit: ${cachedFile.name}")
+                return "[audio:${cachedFile.absolutePath}]"
+            }
+
+            val openAiKeys = (prefs.getApiKeys("openai") + listOf(prefs.getApiKey("openai"), prefs.getSetting("openai_api_key", "")))
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .distinct()
+
+            if (openAiKeys.isEmpty()) {
+                AppLogger.w("OpenAITTS", "No OpenAI API key found")
+                return null
+            }
+
+            val client = OkHttpClient.Builder()
+                .connectTimeout(25, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
+                .build()
+
+            for (apiKey in openAiKeys) {
+                val url = "https://api.openai.com/v1/audio/speech"
+                val payload = JsonObject().apply {
+                    addProperty("model", effectiveModel)
+                    addProperty("input", truncatedText)
+                    addProperty("voice", voiceName)
+                    addProperty("response_format", "mp3")
+                }
+
+                val request = Request.Builder()
+                    .url(url)
+                    .post(gson.toJson(payload).toRequestBody("application/json".toMediaType()))
+                    .header("Authorization", "Bearer $apiKey")
+                    .header("Content-Type", "application/json")
+                    .build()
+
+                try {
+                    val response = client.newCall(request).execute()
+                    response.use { resp ->
+                        if (resp.isSuccessful) {
+                            val audioBytes = resp.body?.bytes()
+                            if (audioBytes != null && isValidAudioData(audioBytes, "mp3")) {
+                                cachedFile.writeBytes(audioBytes)
+                                trimAudioCache(cacheDir)
+                                AppLogger.i("OpenAITTS", "OpenAI TTS succeeded ($effectiveModel, voice=$voiceName) — ${audioBytes.size} bytes")
+                                return "[audio:${cachedFile.absolutePath}]"
+                            }
+                        } else {
+                            AppLogger.w("OpenAITTS", "OpenAI TTS HTTP ${resp.code}: ${resp.body?.string()?.take(200)}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    AppLogger.w("OpenAITTS", "Request error with OpenAI key: ${e.message}")
+                }
+            }
+            null
+        } catch (e: Exception) {
+            AppLogger.e("OpenAITTS", "executeOpenAiTts failed", e)
+            null
         }
     }
 

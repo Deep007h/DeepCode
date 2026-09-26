@@ -62,6 +62,9 @@ class AppState : ViewModel() {
     private val _showMemorySettings = MutableStateFlow(false)
     val showMemorySettings = _showMemorySettings.asStateFlow()
 
+    private val _showVoiceModelSettings = MutableStateFlow(false)
+    val showVoiceModelSettings = _showVoiceModelSettings.asStateFlow()
+
     fun setShowThemesAndWallpapers(show: Boolean) {
         _showThemesAndWallpapers.value = show
     }
@@ -69,6 +72,7 @@ class AppState : ViewModel() {
     fun selectTab(index: Int) {
         _selectedTab.value = index
         _showThemesAndWallpapers.value = false
+        _showVoiceModelSettings.value = false
         _showPlugins.value = false
         _showVpnSettings.value = false
         _showApiKeys.value = false
@@ -144,6 +148,10 @@ class AppState : ViewModel() {
 
     fun setShowMemorySettings(show: Boolean) {
         _showMemorySettings.value = show
+    }
+
+    fun setShowVoiceModelSettings(show: Boolean) {
+        _showVoiceModelSettings.value = show
     }
 
     fun setShowPlugins(show: Boolean) {
