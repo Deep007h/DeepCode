@@ -1061,7 +1061,7 @@ class TelegramBridgeService : Service() {
 
                 if (targetText != null) {
                     val workingDir = repository.securePrefs.getSetting("default_project", "/storage/emulated/0")
-                    val audioArgs = """{"text":${gson.toJson(targetText)},"voice":"","rate":"","pitch":""}"""
+                    val audioArgs = """{"text":${gson.toJson(targetText)},"voice":"","rate":"","pitch":"","verbatim":true}"""
                     val toolResult = ai.deepcode.android.service.tools.ToolExecutor(applicationContext)
                         .executeTool("edge_tts", audioArgs, workingDir, false)
                     if (toolResult.isNotEmpty()) {
@@ -1137,14 +1137,14 @@ class TelegramBridgeService : Service() {
                                         ?.trim()
                                 }
                                 if (!targetText.isNullOrBlank()) {
-                                    val audioArgs = """{"text":${gson.toJson(targetText)},"voice":"","rate":"","pitch":""}"""
+                                    val audioArgs = """{"text":${gson.toJson(targetText)},"voice":"","rate":"","pitch":"","verbatim":true}"""
                                     ai.deepcode.android.service.tools.ToolExecutor(applicationContext)
                                         .executeTool("edge_tts", audioArgs, workingDir, false)
                                 } else {
                                     "❓ What would you like me to create audio of? Please reply to the message, poem, or text you want converted, or provide the text directly."
                                 }
                             } else {
-                                val audioArgs = """{"text":${gson.toJson(promptText)},"voice":"","rate":"","pitch":""}"""
+                                val audioArgs = """{"text":${gson.toJson(promptText)},"voice":"","rate":"","pitch":"","verbatim":true}"""
                                 ai.deepcode.android.service.tools.ToolExecutor(applicationContext)
                                     .executeTool("edge_tts", audioArgs, workingDir, false)
                             }
@@ -2520,7 +2520,7 @@ class TelegramBridgeService : Service() {
                         val gson = com.google.gson.Gson()
                         val sampleText = "Hello, this is $shortName, your AI voice assistant."
                         val executor = ai.deepcode.android.service.tools.ToolExecutor(applicationContext)
-                        val result = executor.executeTool("edge_tts", """{"text":${gson.toJson(sampleText)}}""", "", false)
+                        val result = executor.executeTool("edge_tts", """{"text":${gson.toJson(sampleText)},"verbatim":true}""", "", false)
                         val audioMatch = Regex("""\[audio:([^\]]+)\]""").find(result)
                         if (audioMatch != null) {
                             val audioFile = java.io.File(audioMatch.groupValues[1])

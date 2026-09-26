@@ -119,10 +119,18 @@ class ToolExecutorTest {
         val nonMetaInputs = listOf(
             "The quick brown fox jumps over the lazy dog.",
             "Once upon a time in a faraway kingdom, there lived a wise king.",
-            "Two roads diverged in a yellow wood,\nAnd sorry I could not travel both"
+            "Two roads diverged in a yellow wood,\nAnd sorry I could not travel both",
+            // Voice Model Settings presets — must NEVER be flagged as meta-references
+            "[excited] Hello! I am Gemini 3.8 Flash Speech with dynamic emotion sensing. How does my cadence sound?",
+            "Hello! This is a test of your configured text to speech voice in DeepCode.",
+            // Substring false-positive regression: "with" contains "it", "thread" contains "read", etc.
+            "The weather is beautiful with sunshine today, I must say it looks great",
+            "I am excited about this new text to speech technology",
+            "Reading a great thread about voice synthesis breakthroughs",
+            "Writing an essay about digital sound processing"
         )
         for (input in nonMetaInputs) {
-            assertFalse("Expected '$input' NOT to be identified as a meta-reference", executor.isMetaReferenceText(input))
+            assertFalse("Expected '$input' NOT to be identified as a meta-reference", ToolExecutor.isMetaReferenceText(input))
         }
 
         // Test audio creation request detection

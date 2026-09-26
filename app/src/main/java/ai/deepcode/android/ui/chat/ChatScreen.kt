@@ -4277,7 +4277,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             // 2. Persist to Room SQLite in background
             repository.insertMessage(userMsg)
 
-            if (isAudioCreationRequest(text)) {
+            if (isPureAudioCreationRequest(text)) {
                 val isMeta = isMetaReferenceText(text)
                 val history = repository.getMessagesListForSession(sessionId)
                 var targetText: String? = null
@@ -4373,6 +4373,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
 
                     val ttsArgs = com.google.gson.JsonObject().apply {
                         addProperty("text", targetText)
+                        addProperty("verbatim", true)
                     }.toString()
 
                     val result = try {
@@ -5638,7 +5639,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             role = "user", content = newUserText, timestamp = System.currentTimeMillis()
         )
 
-        val ttsHintMsg: Message? = if (isMetaReferenceText(newUserText)) {
+        val ttsHintMsg: Message? = if (isPureAudioCreationRequest(newUserText) && isMetaReferenceText(newUserText)) {
             val lastAssistant = history.lastOrNull { msg ->
                 msg.role == "assistant" &&
                 !msg.isToolCall &&

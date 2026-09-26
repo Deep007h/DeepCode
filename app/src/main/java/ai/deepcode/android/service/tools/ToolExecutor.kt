@@ -246,9 +246,13 @@ class ToolExecutor(private val context: Context? = null) {
             if (clean in exactShortPhrases) return true
 
             val explicitMetaRegex = Regex(
-                """\b(of\s+(this|that|it)|for\s+(this|that|it)|about\s+(this|that|it)|to\s+(this|that|it)|(this|that)\s+one|the\s+above|the\s+previous|the\s+last|what\s+you\s+(wrote|said|created|generated|composed)|you\s+just\s+(wrote|said|created|generated|composed)|(this|that|the|your|my|last|previous)\s+(poem|story|script|speech|article|text|essay|message|response|reply|answer|verse|lyrics|quote|summary|content|post|lines?|words?|draft|note))\b"""
+                """\b((this|that)\s+one|the\s+above|the\s+previous|the\s+last|what\s+you\s+(wrote|said|created|generated|composed)|you\s+just\s+(wrote|said|created|generated|composed)|(this|that|the|your|my|last|previous)\s+(poem|story|script|speech|article|text|essay|message|response|reply|answer|verse|lyrics|quote|summary|content|post|lines?|words?|draft|note))\b"""
             )
             if (explicitMetaRegex.containsMatchIn(clean)) return true
+
+            // Preposition + pronoun: only match at end of text (prevents "about this new technology" false positives)
+            val prepPronounRegex = Regex("""\b(of|for|about|to)\s+(this|that|it)\s*[.!?,;:]?\s*$""")
+            if (prepPronounRegex.containsMatchIn(clean)) return true
 
             val metaPatterns = listOf(
                 "last response", "previous response", "last message", "previous message",
@@ -274,17 +278,23 @@ class ToolExecutor(private val context: Context? = null) {
             )
             if (metaPatterns.any { clean.contains(it) }) return true
 
-            val hasMetaTarget = clean.contains("this") || clean.contains("that") || clean.contains("it") ||
-                    clean.contains("last") || clean.contains("previous") || clean.contains("above") ||
-                    clean.contains("what you") || clean.contains("poem") || clean.contains("story") ||
-                    clean.contains("script") || clean.contains("speech") || clean.contains("text") ||
-                    clean.contains("article") || clean.contains("quote") || clean.contains("summary") ||
-                    clean.contains("message") || clean.contains("reply") || clean.contains("response")
-            val hasMetaAction = clean.contains("audio") || clean.contains("speak") || clean.contains("read") ||
-                    clean.contains("voice") || clean.contains("tts") || clean.contains("narrate") ||
-                    clean.contains("sound") || clean.contains("vocal") || clean.contains("speech") ||
-                    clean.contains("convert") || clean.contains("say")
-            return hasMetaTarget && hasMetaAction
+            // Guard: never flag text with emotion/stage direction tags as meta-references
+            val hasEmotionTags = clean.contains("[") && Regex("""\[(?:excited|sad|happy|angry|calm|whisper|whispering|shouting|laughing|singing|neutral|serious|cheerful|friendly)\]""", RegexOption.IGNORE_CASE).containsMatchIn(clean)
+            if (hasEmotionTags) return false
+
+            // Guard: never flag long multi-sentence content as meta-references
+            val isLongContent = clean.length > 80 && clean.count { it == '.' || it == '!' || it == '?' } >= 2
+            if (isLongContent) return false
+
+            // Word-boundary fallback: only for SHORT command-like text (< 60 chars)
+            // Uses strict action verbs only (no 'voice'/'sound' which appear in normal sentences)
+            if (clean.length < 60) {
+                val wordBoundaryMeta = Regex("""\b(this|that|it|these|those|above|previous|last)\b""")
+                val wordBoundaryAction = Regex("""\b(audio|speak|read|tts|narrate|convert|say)\b""")
+                if (wordBoundaryMeta.containsMatchIn(clean) && wordBoundaryAction.containsMatchIn(clean)) return true
+            }
+
+            return false
         }
 
         fun isAudioCreationRequest(input: String): Boolean {
@@ -1874,7 +1884,7 @@ class ToolExecutor(private val context: Context? = null) {
 
         var textToSpeak = text
         val isMeta = isMetaReferenceText(text)
-        if (!verbatim || isMeta) {
+        if (!verbatim) {
             // Check if text has an embedded [reply ...]...[/reply] block
             val replyMatch = Regex("""\[reply\s+[^\]]*\]([\s\S]*?)\[/reply\]""").find(text)
             val quoted = replyMatch?.groupValues?.get(1)?.trim()
@@ -1896,8 +1906,8 @@ class ToolExecutor(private val context: Context? = null) {
         }
         textToSpeak = cleanTextForSpeech(textToSpeak)
 
-        // Strict guardrail: never synthesize a literal meta-reference instruction
-        if (isMetaReferenceText(textToSpeak)) {
+        // Strict guardrail: never synthesize a literal meta-reference instruction (skip if verbatim)
+        if (!verbatim && isMetaReferenceText(textToSpeak)) {
             val resolved = resolveLastAssistantMessage(ctx)
             if (!resolved.isNullOrBlank() && !isMetaReferenceText(resolved)) {
                 textToSpeak = cleanTextForSpeech(resolved)
