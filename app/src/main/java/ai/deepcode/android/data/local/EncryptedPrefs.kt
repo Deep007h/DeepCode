@@ -84,7 +84,7 @@ class EncryptedPrefs private constructor(context: Context) {
     private val _customPersonaFlow = MutableStateFlow("")
     val customPersonaFlow: StateFlow<String> = _customPersonaFlow
 
-    private val _workflowModeFlow = MutableStateFlow(WORKFLOW_DIRECT)
+    private val _workflowModeFlow = MutableStateFlow(getSetting("workflow_mode", WORKFLOW_DIRECT))
     val workflowModeFlow: StateFlow<String> = _workflowModeFlow
 
     init {
