@@ -539,7 +539,7 @@ class RuntimeInstaller(private val context: Context) {
             from = fraction,
             to = 0.995f,
             onProgress = onProgress,
-            forceEmbedded = true,
+            forceEmbedded = false,
         )
         verifyGuest(proot, "$AGY_GUEST_PATH --version", "Antigravity CLI verification failed")
         agyMarker.writeText(AGY_VERSION)
@@ -931,7 +931,10 @@ class RuntimeInstaller(private val context: Context) {
     ): File {
         downloads.mkdirs()
         val destination = File(downloads, bundle.fileName)
-        val useEmbedded = preferEmbedded || BuildConfig.OFFLINE_RUNTIME_BUNDLES
+        val hasEmbedded = try {
+            context.assets.list("runtime")?.contains(bundle.fileName) == true
+        } catch (_: Exception) { false }
+        val useEmbedded = (preferEmbedded || BuildConfig.OFFLINE_RUNTIME_BUNDLES) && hasEmbedded
         if (useEmbedded) {
             onProgress(RuntimeInstallProgress("Loading ${bundle.label} bundle", from, 0, bundle.compressedBytes))
             val temporary = File(downloads, "${bundle.fileName}.part")
