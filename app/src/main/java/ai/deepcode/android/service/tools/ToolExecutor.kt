@@ -377,8 +377,43 @@ class ToolExecutor(private val context: Context? = null) {
         return null
     }
 
-    private fun optString(a: JsonObject, k: String): String? =
-        try { a.get(k)?.takeIf { !it.isJsonNull }?.asString?.trim()?.takeIf { it.isNotEmpty() } } catch (_: Exception) { null }
+    private fun optString(a: JsonObject, vararg keys: String): String? = try {
+        var found: String? = null
+        for (k in keys) {
+            val el = a.get(k)?.takeIf { !it.isJsonNull }
+            if (el != null) {
+                val str = when {
+                    el.isJsonPrimitive -> el.asString.trim()
+                    el.isJsonObject || el.isJsonArray -> el.toString().trim()
+                    else -> null
+                }
+                if (!str.isNullOrEmpty()) {
+                    found = str
+                    break
+                }
+            }
+        }
+        if (found == null) {
+            for (entry in a.entrySet()) {
+                val key = entry.key
+                if (keys.any { it.equals(key, ignoreCase = true) }) {
+                    val el = entry.value.takeIf { !it.isJsonNull }
+                    if (el != null) {
+                        val str = when {
+                            el.isJsonPrimitive -> el.asString.trim()
+                            el.isJsonObject || el.isJsonArray -> el.toString().trim()
+                            else -> null
+                        }
+                        if (!str.isNullOrEmpty()) {
+                            found = str
+                            break
+                        }
+                    }
+                }
+            }
+        }
+        found
+    } catch (_: Exception) { null }
 
     private fun optInt(a: JsonObject, k: String, default: Int): Int {
         try {
@@ -437,47 +472,48 @@ class ToolExecutor(private val context: Context? = null) {
                 plugin.execute(name, args, ctx)
             }
                 "read_file", "file_read", "view_file" -> {
-                    val path = optString(args, "path") ?: optString(args, "file") ?: optString(args, "target") ?: return "Missing path argument"
+                    val path = optString(args, "path", "file", "target", "file_path", "filePath", "target_file", "targetFile", "absolute_path", "absolutePath", "AbsolutePath", "TargetFile") ?: return "Missing path argument"
                     readFile(path, workingDir, effectiveRoot)
                 }
                 "write_file", "file_write", "write_to_file" -> {
-                    val path = optString(args, "path") ?: optString(args, "file") ?: optString(args, "target") ?: return "Missing path argument"
-                    val content = optString(args, "content") ?: optString(args, "text") ?: return "Missing content argument"
+                    val path = optString(args, "path", "file", "target", "file_path", "filePath", "target_file", "targetFile", "absolute_path", "absolutePath", "AbsolutePath", "TargetFile") ?: return "Missing path argument"
+                    val content = optString(args, "content", "text", "code", "code_content", "codeContent", "CodeContent", "data") ?: return "Missing content argument"
                     val storage = optString(args, "storage") ?: ""
                     writeFile(path, content, workingDir, effectiveRoot, storage)
                 }
                 "edit_file", "replace_file_content", "edit", "str_replace", "replace" -> {
-                    val path = optString(args, "path") ?: optString(args, "file_path") ?: optString(args, "file") ?: return "Missing path argument"
-                    val oldStr = optString(args, "old_str") ?: optString(args, "target") ?: optString(args, "search") ?: return "Missing old_str argument"
-                    val newStr = optString(args, "new_str") ?: optString(args, "replacement") ?: optString(args, "replace") ?: ""
-                    val replaceAll = args.get("replace_all")?.takeIf { !it.isJsonNull }?.asBoolean ?: false
+                    val path = optString(args, "path", "file_path", "filePath", "file", "target", "target_file", "targetFile", "absolute_path", "absolutePath", "AbsolutePath", "TargetFile") ?: return "Missing path argument"
+                    val oldStr = optString(args, "old_str", "oldStr", "target", "search", "target_content", "targetContent", "TargetContent", "find") ?: return "Missing old_str argument"
+                    val newStr = optString(args, "new_str", "newStr", "replacement", "replace", "replacement_content", "replacementContent", "ReplacementContent") ?: ""
+                    val replaceAll = args.get("replace_all")?.takeIf { !it.isJsonNull }?.asBoolean ?: args.get("replaceAll")?.takeIf { !it.isJsonNull }?.asBoolean ?: false
                     editFile(path, oldStr, newStr, replaceAll, workingDir, effectiveRoot)
                 }
                 "list_directory", "list_dir", "list", "glob", "ls" -> {
-                    val path = optString(args, "path") ?: optString(args, "dir") ?: optString(args, "directory") ?: "."
+                    val path = optString(args, "path", "dir", "directory", "dir_path", "dirPath", "directory_path", "directoryPath", "DirectoryPath") ?: "."
                     listDirectory(path, workingDir, effectiveRoot)
                 }
+                "find_by_name", "find_files", "search_files", "find", "locate" -> {
+                    val pattern = optString(args, "pattern", "query", "name", "Pattern") ?: return "Missing pattern argument"
+                    val path = optString(args, "path", "SearchDirectory", "search_directory", "directory", "dir") ?: "."
+                    findByName(pattern, path, workingDir, effectiveRoot)
+                }
                 "run_command", "shell", "bash", "sh", "exec", "execute", "cmd", "terminal_command", "terminal_exec", "adb_command", "adb", "git_operations", "node_exec", "npm_exec", "curl" -> {
-                    val command = optString(args, "command")
-                        ?: optString(args, "cmd")
-                        ?: optString(args, "script")
-                        ?: optString(args, "input")
-                        ?: optString(args, "code")
+                    val command = optString(args, "command", "cmd", "script", "input", "code", "command_line", "commandLine", "CommandLine", "cmd_line")
                         ?: return "Missing command argument"
                     TerminalRunner.runCommand(command, workingDir, effectiveRoot)
                 }
                 "install_apk", "apk_install", "install_android_app" -> {
-                    val apkPath = optString(args, "path") ?: optString(args, "apk") ?: optString(args, "file") ?: return "Missing apk path argument"
+                    val apkPath = optString(args, "path", "apk", "file", "apk_path") ?: return "Missing apk path argument"
                     installApk(apkPath, workingDir)
                 }
                 "open_web_preview", "web_preview" -> {
-                    val url = optString(args, "url") ?: "http://localhost:3000"
+                    val url = optString(args, "url", "Url", "link", "URL") ?: "http://localhost:3000"
                     "Web preview opened at $url. Switch to Tools > Live Web Preview to interact with it."
                 }
                 "android_system_control", "system_control", "root_system_control" -> {
                     val action = optString(args, "action") ?: "device_info"
                     val target = optString(args, "target") ?: ""
-                    val subAction = optString(args, "sub_action") ?: ""
+                    val subAction = optString(args, "sub_action", "subAction") ?: ""
                     when (action.lowercase().trim()) {
                         "battery_info", "battery" -> ai.deepcode.android.util.RootSystem.getBatteryInfo()
                         "memory_info", "memory", "ram" -> ai.deepcode.android.util.RootSystem.getMemoryInfo()
@@ -489,27 +525,27 @@ class ToolExecutor(private val context: Context? = null) {
                     }
                 }
                 "grep_search", "grep" -> {
-                    val query = optString(args, "query") ?: optString(args, "pattern") ?: return "Missing query argument"
-                    val path = optString(args, "path") ?: "."
+                    val query = optString(args, "query", "pattern", "Query", "Pattern", "search", "term") ?: return "Missing query argument"
+                    val path = optString(args, "path", "SearchPath", "search_path", "dir", "directory") ?: "."
                     grepSearch(query, path, workingDir, effectiveRoot)
                 }
                 "create_file", "touch", "mkdir" -> {
-                    val path = optString(args, "path") ?: optString(args, "file") ?: return "Missing path argument"
-                    val isDir = (name == "mkdir") || (args.get("isDirectory")?.takeIf { !it.isJsonNull }?.asBoolean ?: false)
+                    val path = optString(args, "path", "file", "target", "target_file", "TargetFile") ?: return "Missing path argument"
+                    val isDir = (name == "mkdir") || (args.get("isDirectory")?.takeIf { !it.isJsonNull }?.asBoolean ?: args.get("is_dir")?.takeIf { !it.isJsonNull }?.asBoolean ?: false)
                     createFileOrDirectory(path, isDir, workingDir, effectiveRoot)
                 }
                 "delete_file", "remove_file", "rm" -> {
-                    val path = optString(args, "path") ?: optString(args, "file") ?: return "Missing path argument"
+                    val path = optString(args, "path", "file", "target", "target_file", "TargetFile") ?: return "Missing path argument"
                     deleteFileOrDirectory(path, workingDir, effectiveRoot)
                 }
                 "apply_patch" -> {
-                    val path = args.get("path")?.asString ?: return "Missing path argument"
-                    val content = args.get("content")?.asString ?: args.get("patch")?.asString ?: return "Missing content/patch argument"
-                    val storage = args.get("storage")?.asString ?: ""
+                    val path = optString(args, "path", "file", "target", "target_file", "TargetFile") ?: return "Missing path argument"
+                    val content = optString(args, "content", "patch", "diff") ?: return "Missing content/patch argument"
+                    val storage = optString(args, "storage") ?: ""
                     writeFile(path, content, workingDir, effectiveRoot, storage)
                 }
-                "web_fetch" -> {
-                    val url = args.get("url")?.asString ?: return "Missing url argument"
+                "web_fetch", "fetch_url", "read_url_content" -> {
+                    val url = optString(args, "url", "Url", "link", "URL") ?: return "Missing url argument"
                     webFetch(url)
                 }
                 "tinyfish_agent" -> {
@@ -3728,7 +3764,7 @@ class ToolExecutor(private val context: Context? = null) {
     }
 
     private fun resolvePath(path: String, workingDir: String): File {
-        val trimmed = path.trim()
+        val trimmed = path.trim().removePrefix("file://")
         val expandedPath = when {
             trimmed.startsWith("~/") -> {
                 val home = System.getenv("HOME") ?: "/data/data/${context?.packageName ?: "ai.deepcode.android"}/files"
@@ -3933,16 +3969,23 @@ class ToolExecutor(private val context: Context? = null) {
             }
         }
 
-        if (!content.contains(oldStr)) {
+        val exactMatch = content.contains(oldStr)
+        val (workContent, workOld, workNew) = if (!exactMatch && content.replace("\r\n", "\n").contains(oldStr.replace("\r\n", "\n"))) {
+            Triple(content.replace("\r\n", "\n"), oldStr.replace("\r\n", "\n"), newStr.replace("\r\n", "\n"))
+        } else {
+            Triple(content, oldStr, newStr)
+        }
+
+        if (!workContent.contains(workOld)) {
             return "Error: old_str not found in file: ${file.absolutePath}"
         }
-        if (!replaceAll && content.indexOf(oldStr) != content.lastIndexOf(oldStr)) {
+        if (!replaceAll && workContent.indexOf(workOld) != workContent.lastIndexOf(workOld)) {
             return "Error: Multiple occurrences of old_str found in ${file.name}. Provide a larger surrounding code block or set replace_all=true."
         }
         val newContent = if (replaceAll) {
-            content.replace(oldStr, newStr)
+            workContent.replace(workOld, workNew)
         } else {
-            content.replaceFirst(oldStr, newStr)
+            workContent.replaceFirst(workOld, workNew)
         }
         return writeFile(path, newContent, workingDir, useRoot)
     }
@@ -4018,6 +4061,31 @@ class ToolExecutor(private val context: Context? = null) {
             if (results.isEmpty()) "No matches found" else results.joinToString("\n")
         } catch (e: Exception) {
             "Grep failed: ${e.message}"
+        }
+    }
+
+    private fun findByName(pattern: String, path: String, workingDir: String, useRoot: Boolean): String {
+        if (pattern.isBlank()) return "Missing pattern argument"
+        val target = resolvePath(path, workingDir)
+        if (useRoot) {
+            val escapedPattern = escapeShellArg(pattern)
+            val escapedPath = escapeShellArg(target.absolutePath)
+            val res = TerminalRunner.runCommand("find $escapedPath -iname $escapedPattern 2>/dev/null | head -n 100", workingDir, true)
+            if (res.isNotBlank() && !res.startsWith("Error running command:")) return res
+        }
+        return try {
+            val results = mutableListOf<String>()
+            val skipDirs = setOf(".git", ".gradle", "build", "node_modules", ".idea", ".kotlin")
+            val globRegex = pattern.replace(".", "\\.").replace("*", ".*").replace("?", ".").toRegex(RegexOption.IGNORE_CASE)
+            target.walkTopDown().maxDepth(12).onEnter { dir -> dir.name !in skipDirs && !dir.name.startsWith(".") || dir == target }.forEach { file ->
+                if (results.size >= 100) return@forEach
+                if (globRegex.matches(file.name) || file.name.contains(pattern, ignoreCase = true)) {
+                    results.add(file.absolutePath)
+                }
+            }
+            if (results.isEmpty()) "No files found matching pattern '$pattern'" else results.joinToString("\n")
+        } catch (e: Exception) {
+            "Find failed: ${e.message}"
         }
     }
 
@@ -4836,6 +4904,14 @@ class ToolExecutor(private val context: Context? = null) {
                     "path" to mapOf("type" to "string", "description" to "Directory path to search in (relative or absolute, default is current directory)")
                 ),
                 "required" to listOf("query")
+            )),
+            Tool("find_by_name", "Find files and directories by name pattern or glob matching", mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "pattern" to mapOf("type" to "string", "description" to "Glob pattern or filename to search for (e.g. '*.kt', 'MainActivity.kt', 'README*')"),
+                    "path" to mapOf("type" to "string", "description" to "Directory path to search in (default is current directory)")
+                ),
+                "required" to listOf("pattern")
             )),
             Tool("create_file", "Create a new file or directory", mapOf(
                 "type" to "object",

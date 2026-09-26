@@ -2422,6 +2422,9 @@ private fun normalizeMessagesForApi(messages: List<Message>): JsonArray {
                         null
                     }
                     if (tcArray != null && tcArray.size() > 0) {
+                        if (!msg.content.isNullOrBlank() && (!targetObj.has("content") || targetObj.get("content").isJsonNull)) {
+                            targetObj.addProperty("content", msg.content.trim())
+                        }
                         val toolCallsArray = targetObj.getAsJsonArray("tool_calls") ?: JsonArray().apply {
                             targetObj.add("tool_calls", this)
                         }
@@ -2448,7 +2451,7 @@ private fun normalizeMessagesForApi(messages: List<Message>): JsonArray {
                             toolCallsArray.add(toolCallItem)
                         }
                     } else if (!targetObj.has("content")) {
-                        targetObj.addProperty("content", msg.toolCallsJson)
+                        targetObj.addProperty("content", msg.content.takeIf { !it.isNullOrBlank() } ?: msg.toolCallsJson)
                     }
                 } else {
                     // This is a text assistant message
@@ -2486,8 +2489,8 @@ private fun normalizeMessagesForApi(messages: List<Message>): JsonArray {
         val role = if (rEl != null && rEl.isJsonPrimitive) rEl.asString else rEl?.toString() ?: ""
 
         if (role == "assistant") {
-            if (currentObj.has("tool_calls") && !currentObj.has("content")) {
-                currentObj.add("content", com.google.gson.JsonNull.INSTANCE)
+            if (currentObj.has("tool_calls") && (!currentObj.has("content") || currentObj.get("content").isJsonNull)) {
+                currentObj.addProperty("content", "")
             }
         }
 

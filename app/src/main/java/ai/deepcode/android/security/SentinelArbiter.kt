@@ -54,9 +54,14 @@ object SentinelArbiter {
         val safeMode = prefs?.getBooleanSetting("setting_safe_mode", false) ?: false
         val confirmRoot = prefs?.getBooleanSetting("setting_confirm_root_cmds", false) ?: false
 
-        // 1. Check Root & Shell execution
         if (toolName in listOf("run_command", "shell", "adb_command", "terminal_command", "adb")) {
-            val cmd = args.get("command")?.asString ?: args.get("cmd")?.asString ?: ""
+            val cmd = listOf("command", "cmd", "script", "input", "code", "CommandLine", "command_line", "cmd_line")
+                .firstNotNullOfOrNull { key ->
+                    try {
+                        val el = args.get(key)?.takeIf { !it.isJsonNull }
+                        if (el?.isJsonPrimitive == true) el.asString else el?.toString()
+                    } catch (_: Exception) { null }
+                }?.trim().orEmpty()
 
             // Check for catastrophic patterns
             for (pattern in DANGEROUS_COMMAND_PATTERNS) {

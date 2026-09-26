@@ -450,6 +450,7 @@ class ClaudeRuntimeBridge(
             "assistant" -> {
                 val message = json.optJSONObject("message") ?: return
                 val content = message.optJSONArray("content") ?: return
+                var hasToolUse = false
                 for (index in 0 until content.length()) {
                     val block = content.optJSONObject(index) ?: continue
                     when (block.optString("type")) {
@@ -472,14 +473,17 @@ class ClaudeRuntimeBridge(
                                 )
                             }
                         }
-                        "tool_use" -> emitToolStarted(sessionId, block)
+                        "tool_use" -> {
+                            hasToolUse = true
+                            emitToolStarted(sessionId, block)
+                        }
                     }
                 }
                 streamedText.clear()
                 // Some Anthropic-compatible providers omit Claude Code's final
-                // `result` envelope. An assistant end_turn is still authoritative;
-                // tool_use means the agent must remain active for another turn.
-                if (message.optString("stop_reason") == "end_turn") {
+                // `result` envelope. An assistant end_turn is authoritative ONLY when
+                // no tool is currently being called; tool_use means the agent must remain active for another turn.
+                if (!hasToolUse && message.optString("stop_reason") == "end_turn") {
                     emitCompletedOnce(sessionId)
                     terminateActiveProcessGracefully()
                 }

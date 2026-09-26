@@ -104,6 +104,15 @@ private val RE_TOOL_CALLS = Regex("""<tool_calls?>.*?</tool_calls?>""", setOf(Re
 private val RE_INVOKE = Regex("""<invoke\s+name=[^>]*>.*?</invoke>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
 private val RE_QUOTED_TEXT = Regex(""""([^"\n]{3,120})"""")
 
+fun stripToolCallTags(raw: String): String {
+    if (raw.isBlank()) return ""
+    return raw.replace(RE_TOOL_CALLS, "")
+        .replace(RE_INVOKE, "")
+        .replace(Regex("""<function=[^>]+>.*?</function>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+        .replace(Regex("""```(?:tool_call|tool)\s*\n.*?\n```""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+        .trim()
+}
+
 fun stripThinkingProcess(raw: String, isStreaming: Boolean = false): String {
     if (raw.isBlank()) return ""
 
@@ -1613,6 +1622,23 @@ private fun TopBar(
     val isRootGranted by ai.deepcode.android.util.RootSystem.isRootGranted.collectAsStateWithLifecycle()
     val rootFlavor by ai.deepcode.android.util.RootSystem.rootFlavor.collectAsStateWithLifecycle()
     val rootMode by repository.securePrefs.rootModeFlow.collectAsStateWithLifecycle()
+    val workflowMode by repository.securePrefs.workflowModeFlow.collectAsStateWithLifecycle()
+    val isRootActive = isRootGranted && rootMode
+    val isIndirectChat = workflowMode != ai.deepcode.android.data.local.WORKFLOW_DIRECT
+
+    val (agentIcon, agentShortName, agentFullName) = when (workflowMode) {
+        ai.deepcode.android.data.local.WORKFLOW_DEEPSEEK_HARNESS -> Triple("⚡", "DSH", "DeepSeek Harness")
+        ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE -> Triple("✳️", "Claude", "Claude Code")
+        ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY -> Triple("🚀", "AGY", "Antigravity")
+        else -> Triple("🤖", "Agent", "Autonomous Agent")
+    }
+
+    val flavorLabel = when (rootFlavor) {
+        ai.deepcode.android.util.RootFlavor.KERNEL_SU -> "KSU"
+        ai.deepcode.android.util.RootFlavor.MAGISK -> "MAGISK"
+        ai.deepcode.android.util.RootFlavor.APATCH -> "APATCH"
+        else -> "ROOT"
+    }
 
     Row(
         modifier = Modifier
@@ -1632,17 +1658,23 @@ private fun TopBar(
             MenuTwoBarsIcon(color = AppWhite)
         }
 
-        // Right Group: [👑 ROOT] badge + [Model Selection Capsule Pill]
+        // Right Group: [👑 ROOT / Agent] badge + [Model Selection Capsule Pill]
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (isRootGranted && rootMode) {
-                val flavorLabel = when (rootFlavor) {
-                    ai.deepcode.android.util.RootFlavor.KERNEL_SU -> "KSU"
-                    ai.deepcode.android.util.RootFlavor.MAGISK -> "MAGISK"
-                    ai.deepcode.android.util.RootFlavor.APATCH -> "APATCH"
-                    else -> "ROOT"
+            if (isRootActive || isIndirectChat) {
+                val pillIcon = if (isRootActive) "👑" else agentIcon
+                val pillText = when {
+                    isIndirectChat && isRootActive -> "$agentShortName · $flavorLabel"
+                    isIndirectChat -> agentShortName
+                    else -> flavorLabel
+                }
+                val pillTextColor = if (isRootActive) AppSuccess else AppPrimary
+                val toastMessage = when {
+                    isIndirectChat && isRootActive -> "👑 Superuser Active: $flavorLabel (uid=0) • Autonomous Agent: $agentFullName in Ubuntu PRoot"
+                    isIndirectChat -> "🤖 Autonomous Agent: $agentFullName (Ubuntu 20.04 PRoot Subsystem)"
+                    else -> "👑 Superuser Active: $flavorLabel (uid=0)"
                 }
                 Box(
                     modifier = Modifier
@@ -1652,7 +1684,7 @@ private fun TopBar(
                             isDark = isDarkThemeActive
                         )
                         .bouncyClickable(provideHaptic = true) {
-                            Toast.makeText(context, "👑 Superuser Active: $flavorLabel (uid=0)", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
                         }
                         .padding(horizontal = 9.dp, vertical = 7.dp),
                     contentAlignment = Alignment.Center
@@ -1662,14 +1694,14 @@ private fun TopBar(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
-                            text = "👑",
+                            text = pillIcon,
                             fontSize = 11.sp
                         )
                         Text(
-                            text = flavorLabel,
+                            text = pillText,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = AppSuccess
+                            color = pillTextColor
                         )
                     }
                 }
@@ -2774,8 +2806,11 @@ fun StreamingBubble(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // transitions.dev P28: Ambient breathing thinking status pill
+                val status = if (mediaProcessingPrompt.isNotBlank()) mediaProcessingPrompt
+                    else if (isAudioGenerating) "Generating audio..."
+                    else "Thinking..."
                 AnimatedThinkingPill(
-                    statusText = "Thinking...",
+                    statusText = status,
                     accentColor = AppPrimary
                 )
             }
@@ -2818,6 +2853,14 @@ fun StreamingBubble(
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp, vertical = 2.dp)
             )
+
+            if (mediaProcessingPrompt.isNotBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                AnimatedThinkingPill(
+                    statusText = mediaProcessingPrompt,
+                    accentColor = AppPrimary
+                )
+            }
         }
     }
 }
@@ -3239,26 +3282,31 @@ fun ToolExecutionGroupBubble(group: ChatItem.ToolExecutionGroup, modifier: Modif
             try {
                 val jsonStr = callMsg.toolCallsJson ?: ""
                 val element = com.google.gson.JsonParser.parseString(jsonStr)
-                val jsonObject = when {
-                    element.isJsonArray && element.asJsonArray.size() > 0 && element.asJsonArray.get(0).isJsonObject -> element.asJsonArray.get(0).asJsonObject
-                    element.isJsonObject -> element.asJsonObject
-                    else -> null
-                }
-                val id = jsonObject?.get("id")?.asString ?: ""
-                val name = jsonObject?.get("name")?.asString ?: "tool"
-                val args = jsonObject?.get("arguments")?.toString() ?: jsonObject?.get("args")?.toString()
-                val responseMsg = toolMessages.find { msg ->
-                    if (msg.role != "tool") return@find false
-                    val resJsonStr = msg.toolCallsJson ?: ""
-                    if (resJsonStr == id) true
-                    else try {
-                        val parsed = com.google.gson.JsonParser.parseString(resJsonStr)
-                        if (parsed.isJsonObject) parsed.asJsonObject.get("id")?.asString == id else resJsonStr.contains(id)
-                    } catch (_: Exception) {
-                        resJsonStr.contains(id)
+                val objectsToProcess = when {
+                    element.isJsonArray -> {
+                        val arr = element.asJsonArray
+                        (0 until arr.size()).mapNotNull { idx -> arr.get(idx)?.takeIf { it.isJsonObject }?.asJsonObject }
                     }
+                    element.isJsonObject -> listOf(element.asJsonObject)
+                    else -> emptyList()
                 }
-                list.add(DisplayItem(id, name, args, responseMsg?.content ?: "Executing..."))
+                for (jsonObject in objectsToProcess) {
+                    val id = jsonObject.get("id")?.asString ?: ""
+                    val name = jsonObject.get("name")?.asString ?: "tool"
+                    val args = jsonObject.get("arguments")?.toString() ?: jsonObject.get("args")?.toString()
+                    val responseMsg = toolMessages.find { msg ->
+                        if (msg.role != "tool") return@find false
+                        val resJsonStr = msg.toolCallsJson ?: ""
+                        if (id.isNotEmpty() && resJsonStr == id) true
+                        else try {
+                            val parsed = com.google.gson.JsonParser.parseString(resJsonStr)
+                            if (parsed.isJsonObject) parsed.asJsonObject.get("id")?.asString == id else (id.isNotEmpty() && resJsonStr.contains(id))
+                        } catch (_: Exception) {
+                            id.isNotEmpty() && resJsonStr.contains(id)
+                        }
+                    }
+                    list.add(DisplayItem(id.ifEmpty { UUID.randomUUID().toString() }, name, args, responseMsg?.content ?: "Executing..."))
+                }
             } catch (_: Exception) {
                 val idRegex = """ "id"\s*:\s*"([^"]+)" """.toRegex()
                 val nameRegex = """ "name"\s*:\s*"([^"]+)" """.toRegex()
@@ -3269,7 +3317,7 @@ fun ToolExecutionGroupBubble(group: ChatItem.ToolExecutionGroup, modifier: Modif
                     val resJsonStr = msg.toolCallsJson ?: ""
                     if (resJsonStr == id) true else resJsonStr.contains(id)
                 }
-                list.add(DisplayItem(id, name, null, responseMsg?.content ?: "Executing..."))
+                list.add(DisplayItem(id.ifEmpty { UUID.randomUUID().toString() }, name, null, responseMsg?.content ?: "Executing..."))
             }
         }
         if (list.isEmpty()) {
@@ -3278,7 +3326,7 @@ fun ToolExecutionGroupBubble(group: ChatItem.ToolExecutionGroup, modifier: Modif
                 else if (msg.isToolCall) list.add(DisplayItem(msg.id, "Tool Call", null, msg.content))
             }
         }
-        list.filterNot { it.name == "edge_tts" || it.name == "tool" || it.result.contains("[audio:") }
+        list.filterNot { it.name == "edge_tts" || it.result.contains("[audio:") }
     }
     if (toolCalls.isEmpty()) return
     Column(modifier = modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -3789,7 +3837,7 @@ private fun groupChatMessages(
         if (currentToolGroup.isNotEmpty()) {
             val valid = currentToolGroup.filterNot { msg ->
                 val json = msg.toolCallsJson ?: ""
-                json.contains("edge_tts") || json.contains("\"tool\"") || msg.content.contains("[audio:")
+                json.contains("edge_tts") || msg.content.contains("[audio:")
             }
             if (valid.isNotEmpty()) {
                 result.add(ChatItem.ToolExecutionGroup(valid.first().id, valid.toList()))
@@ -5020,6 +5068,9 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         val projectSlug = "workspace-" + sessionId.take(8)
         val projectKind = com.jarves.mh.model.ProjectKind.PROJECT
 
+        val pendingWorkflowTools = java.util.concurrent.ConcurrentLinkedQueue<Triple<String, String, String>>() // (callId, toolName, detail)
+        var hadWorkflowTools = false
+
         val eventsJob = viewModelScope.launch(Dispatchers.IO) {
             bridge.events.collect { event ->
                 when (event) {
@@ -5031,15 +5082,60 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     is com.jarves.mh.model.RuntimeEvent.ToolStarted -> {
                         _mediaProcessingType.value = "tool"
                         _mediaProcessingPrompt.value = "${agentKind.title}: ${event.toolName} (${event.detail})"
+                        val preamble = _streamedText.value.trim()
+                        if (preamble.isNotEmpty()) {
+                            appendAssistantMessage(preamble, sessionId)
+                            _streamedText.value = ""
+                        }
+                        val callId = "call_${UUID.randomUUID().toString().replace("-", "").take(12)}"
+                        pendingWorkflowTools.add(Triple(callId, event.toolName, event.detail))
                     }
                     is com.jarves.mh.model.RuntimeEvent.ToolCompleted -> {
                         _mediaProcessingType.value = null
                         _mediaProcessingPrompt.value = ""
+                        val record = pendingWorkflowTools.find { it.second == event.toolName } ?: pendingWorkflowTools.poll()
+                        if (record != null) {
+                            pendingWorkflowTools.remove(record)
+                        }
+                        val callId = record?.first ?: "call_${UUID.randomUUID().toString().replace("-", "").take(12)}"
+                        val toolArgs = record?.third ?: event.toolName
+
+                        val tcObj = JsonObject().apply {
+                            addProperty("id", callId)
+                            addProperty("name", event.toolName)
+                            addProperty("arguments", toolArgs)
+                        }
+                        val tcArr = JsonArray().apply { add(tcObj) }
+                        val assistantToolMsg = Message(
+                            id = UUID.randomUUID().toString(),
+                            sessionId = sessionId,
+                            role = "assistant",
+                            content = "",
+                            timestamp = System.currentTimeMillis(),
+                            isToolCall = true,
+                            toolCallsJson = tcArr.toString()
+                        )
+                        repository.insertMessage(assistantToolMsg)
+
+                        val toolResMsg = Message(
+                            id = UUID.randomUUID().toString(),
+                            sessionId = sessionId,
+                            role = "tool",
+                            content = event.summary,
+                            timestamp = System.currentTimeMillis() + 1,
+                            isToolCall = true,
+                            toolCallsJson = """{"id":"$callId","name":"${event.toolName}"}"""
+                        )
+                        repository.insertMessage(toolResMsg)
+                        hadWorkflowTools = true
                     }
                     is com.jarves.mh.model.RuntimeEvent.SessionCompleted -> {
                         val fullOutput = _streamedText.value.trim()
-                        val finalMsg = if (fullOutput.isNotBlank()) fullOutput else "${agentKind.title} finished."
-                        appendAssistantMessage(finalMsg, sessionId)
+                        if (fullOutput.isNotBlank()) {
+                            appendAssistantMessage(fullOutput, sessionId)
+                        } else if (!hadWorkflowTools) {
+                            appendAssistantMessage("${agentKind.title} finished.", sessionId)
+                        }
                         _isStreaming.value = false
                         _streamingMessageId.value = ""
                         _mediaProcessingType.value = null
@@ -5047,13 +5143,15 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     }
                     is com.jarves.mh.model.RuntimeEvent.SessionFailed -> {
                         val hasOutput = _streamedText.value.isNotBlank()
-                        if (!hasOutput) {
+                        if (!hasOutput && !hadWorkflowTools) {
                             appendAssistantMessage("⚠️ **${agentKind.title} Error:**\n${event.reason}\n\n*Falling back to Direct In-App Engine...*", sessionId)
                             viewModelScope.launch(Dispatchers.IO) {
                                 executeDirectInAppEngine(text, sessionId, userMsg)
                             }
                         } else {
-                            appendAssistantMessage("⚠️ **${agentKind.title} Error:**\n${event.reason}", sessionId)
+                            val partial = _streamedText.value.trim()
+                            val errorMsg = if (partial.isNotBlank()) "$partial\n\n⚠️ **${agentKind.title} Error:**\n${event.reason}" else "⚠️ **${agentKind.title} Error:**\n${event.reason}"
+                            appendAssistantMessage(errorMsg, sessionId)
                             _isStreaming.value = false
                             _streamingMessageId.value = ""
                             _mediaProcessingType.value = null
@@ -5077,7 +5175,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         } catch (e: Exception) {
             eventsJob.cancel()
             val hasOutput = _streamedText.value.isNotBlank()
-            if (!hasOutput) {
+            if (!hasOutput && !hadWorkflowTools) {
                 appendAssistantMessage("⚠️ **${agentKind.title} Exception:** ${e.message}\n\n*Falling back to Direct In-App Engine...*", sessionId)
                 executeDirectInAppEngine(text, sessionId, userMsg)
             } else {
@@ -5949,7 +6047,7 @@ $githubSection
             id = UUID.randomUUID().toString(),
             sessionId = sessionId,
             role = "assistant",
-            content = preambleText,
+            content = stripToolCallTags(preambleText),
             timestamp = System.currentTimeMillis(),
             isToolCall = true,
             toolCallsJson = toolCallsArray.toString()
