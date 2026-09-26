@@ -224,8 +224,10 @@ fun VoiceModelSettingsScreen(
         onDispose {
             try {
                 activeMediaPlayer?.stop()
+                activeMediaPlayer?.reset()
                 activeMediaPlayer?.release()
             } catch (_: Exception) {}
+            activeMediaPlayer = null
         }
     }
 
@@ -415,6 +417,7 @@ fun VoiceModelSettingsScreen(
                                 if (isPlayingAudio) {
                                     try {
                                         activeMediaPlayer?.stop()
+                                        activeMediaPlayer?.reset()
                                         activeMediaPlayer?.release()
                                     } catch (_: Exception) {}
                                     activeMediaPlayer = null
@@ -448,7 +451,9 @@ fun VoiceModelSettingsScreen(
                                                                         .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
                                                                         .build()
                                                                 )
-                                                                setDataSource(file.absolutePath)
+                                                                java.io.FileInputStream(file).use { fis ->
+                                                                    setDataSource(fis.fd)
+                                                                }
                                                                 setOnPreparedListener { mp ->
                                                                     mp.start()
                                                                     isPlayingAudio = true
@@ -460,6 +465,11 @@ fun VoiceModelSettingsScreen(
                                                                 setOnErrorListener { _, what, extra ->
                                                                     isPlayingAudio = false
                                                                     isTestingAudio = false
+                                                                    try {
+                                                                        activeMediaPlayer?.reset()
+                                                                        activeMediaPlayer?.release()
+                                                                    } catch (_: Exception) {}
+                                                                    activeMediaPlayer = null
                                                                     Toast.makeText(context, "Playback error ($what, $extra)", Toast.LENGTH_SHORT).show()
                                                                     true
                                                                 }

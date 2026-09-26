@@ -1553,17 +1553,114 @@ class ToolExecutor(private val context: Context? = null) {
         } catch (_: Exception) { java.util.UUID.randomUUID().toString().take(8) }
     }
 
+    private fun isRiffWav(data: ByteArray): Boolean {
+        return data.size >= 44 &&
+            data[0] == 'R'.code.toByte() &&
+            data[1] == 'I'.code.toByte() &&
+            data[2] == 'F'.code.toByte() &&
+            data[3] == 'F'.code.toByte() &&
+            data[8] == 'W'.code.toByte() &&
+            data[9] == 'A'.code.toByte() &&
+            data[10] == 'V'.code.toByte() &&
+            data[11] == 'E'.code.toByte()
+    }
+
     private fun isValidAudioData(data: ByteArray, ext: String): Boolean {
-        if (data.size < 2000) return false
+        if (data.size < 500) return false
         return try {
             if (ext == "wav") {
-                data.size > 44 && data[0] == 'R'.code.toByte() && data[1] == 'I'.code.toByte()
+                isRiffWav(data) || data.size >= 1000
             } else {
                 // MP3: ID3 header or frame sync 0xFF 0xE0
                 (data[0] == 0x49.toByte() && data[1] == 0x44.toByte()) ||
-                    (data[0] == 0xFF.toByte() && (data[1].toInt() and 0xE0) == 0xE0)
+                    (data[0] == 0xFF.toByte() && (data[1].toInt() and 0xE0) == 0xE0) ||
+                    data.size >= 2000
             }
-        } catch (_: Exception) { data.size >= 2000 }
+        } catch (_: Exception) { data.size >= 1000 }
+    }
+
+    /**
+     * Wraps raw linear PCM (typically 16-bit little-endian mono from Gemini) into
+     * a standard 44-byte RIFF WAVE container for native Android MediaPlayer playback.
+     */
+    private fun pcmToWav(
+        pcmData: ByteArray,
+        sampleRate: Int = 24000,
+        channels: Int = 1,
+        bitsPerSample: Int = 16
+    ): ByteArray {
+        if (isRiffWav(pcmData)) return pcmData
+
+        val totalAudioLen = pcmData.size
+        val totalDataLen = totalAudioLen + 36
+        val byteRate = sampleRate * channels * bitsPerSample / 8
+        val blockAlign = channels * bitsPerSample / 8
+
+        val header = ByteArray(44)
+        // RIFF chunk descriptor
+        header[0] = 'R'.code.toByte()
+        header[1] = 'I'.code.toByte()
+        header[2] = 'F'.code.toByte()
+        header[3] = 'F'.code.toByte()
+        header[4] = (totalDataLen and 0xff).toByte()
+        header[5] = ((totalDataLen shr 8) and 0xff).toByte()
+        header[6] = ((totalDataLen shr 16) and 0xff).toByte()
+        header[7] = ((totalDataLen shr 24) and 0xff).toByte()
+        header[8] = 'W'.code.toByte()
+        header[9] = 'A'.code.toByte()
+        header[10] = 'V'.code.toByte()
+        header[11] = 'E'.code.toByte()
+
+        // "fmt " sub-chunk
+        header[12] = 'f'.code.toByte()
+        header[13] = 'm'.code.toByte()
+        header[14] = 't'.code.toByte()
+        header[15] = ' '.code.toByte()
+        header[16] = 16 // SubChunk1Size for PCM
+        header[17] = 0
+        header[18] = 0
+        header[19] = 0
+        header[20] = 1 // AudioFormat: 1 = Linear PCM
+        header[21] = 0
+        header[22] = channels.toByte()
+        header[23] = 0
+        header[24] = (sampleRate and 0xff).toByte()
+        header[25] = ((sampleRate shr 8) and 0xff).toByte()
+        header[26] = ((sampleRate shr 16) and 0xff).toByte()
+        header[27] = ((sampleRate shr 24) and 0xff).toByte()
+        header[28] = (byteRate and 0xff).toByte()
+        header[29] = ((byteRate shr 8) and 0xff).toByte()
+        header[30] = ((byteRate shr 16) and 0xff).toByte()
+        header[31] = ((byteRate shr 24) and 0xff).toByte()
+        header[32] = blockAlign.toByte()
+        header[33] = 0
+        header[34] = bitsPerSample.toByte()
+        header[35] = 0
+
+        // "data" sub-chunk
+        header[36] = 'd'.code.toByte()
+        header[37] = 'a'.code.toByte()
+        header[38] = 't'.code.toByte()
+        header[39] = 'a'.code.toByte()
+        header[40] = (totalAudioLen and 0xff).toByte()
+        header[41] = ((totalAudioLen shr 8) and 0xff).toByte()
+        header[42] = ((totalAudioLen shr 16) and 0xff).toByte()
+        header[43] = ((totalAudioLen shr 24) and 0xff).toByte()
+
+        val wav = ByteArray(44 + totalAudioLen)
+        System.arraycopy(header, 0, wav, 0, 44)
+        System.arraycopy(pcmData, 0, wav, 44, totalAudioLen)
+        return wav
+    }
+
+    private fun ensureWavFormat(audioBytes: ByteArray, mimeType: String?): ByteArray {
+        if (isRiffWav(audioBytes)) return audioBytes
+        val rate = if (!mimeType.isNullOrBlank() && mimeType.contains("rate=")) {
+            mimeType.substringAfter("rate=").substringBefore(";").trim().toIntOrNull() ?: 24000
+        } else {
+            24000
+        }
+        return pcmToWav(audioBytes, sampleRate = rate)
     }
 
     private fun trimAudioCache(dir: File, maxBytes: Long = 200L * 1024 * 1024, maxFiles: Int = 200) {
@@ -1894,9 +1991,17 @@ class ToolExecutor(private val context: Context? = null) {
             val cacheKey = ttsCacheKey(truncatedText, "gemini", "$effectiveModel-$voiceName", emotionMode, detectedStyle, "")
             val cachedFile = File(cacheDir, "tts_$cacheKey.wav")
             if (cachedFile.exists() && cachedFile.length() >= 2000) {
-                AppLogger.i("GeminiTTS", "Cache hit: ${cachedFile.name}")
-                lastGeminiModelUsed = effectiveModel
-                return "[audio:${cachedFile.absolutePath}]"
+                val bytes = try { cachedFile.readBytes() } catch (_: Exception) { ByteArray(0) }
+                if (bytes.isNotEmpty()) {
+                    if (!isRiffWav(bytes)) {
+                        val fixedWav = pcmToWav(bytes, sampleRate = 24000)
+                        cachedFile.writeBytes(fixedWav)
+                        AppLogger.i("GeminiTTS", "Repaired cached file with RIFF WAV header: ${cachedFile.name}")
+                    }
+                    AppLogger.i("GeminiTTS", "Cache hit: ${cachedFile.name}")
+                    lastGeminiModelUsed = effectiveModel
+                    return "[audio:${cachedFile.absolutePath}]"
+                }
             }
 
             val rawKeyCandidates = listOf(
@@ -1992,11 +2097,14 @@ class ToolExecutor(private val context: Context? = null) {
                                 val cand = json.getAsJsonArray("candidates")?.get(0)?.asJsonObject
                                 val parts = cand?.getAsJsonObject("content")?.getAsJsonArray("parts")
                                 var b64: String? = null
+                                var reportedMime: String? = null
                                 if (parts != null) {
                                     for (i in 0 until parts.size()) {
                                         val p = parts.get(i).asJsonObject
                                         if (p.has("inlineData")) {
-                                            b64 = p.getAsJsonObject("inlineData")?.get("data")?.asString
+                                            val inline = p.getAsJsonObject("inlineData")
+                                            b64 = inline?.get("data")?.asString
+                                            reportedMime = inline?.get("mimeType")?.asString
                                             if (!b64.isNullOrEmpty()) break
                                         }
                                     }
@@ -2004,10 +2112,11 @@ class ToolExecutor(private val context: Context? = null) {
                                 if (!b64.isNullOrEmpty()) {
                                     val audioBytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
                                     if (audioBytes != null && audioBytes.isNotEmpty()) {
-                                        cachedFile.writeBytes(audioBytes)
+                                        val wavBytes = ensureWavFormat(audioBytes, reportedMime)
+                                        cachedFile.writeBytes(wavBytes)
                                         trimAudioCache(cacheDir)
                                         lastGeminiModelUsed = candModel
-                                        AppLogger.i("GeminiTTS", "Gemini TTS succeeded ($candModel, voice=$voiceName, style='$detectedStyle') — ${audioBytes.size} bytes")
+                                        AppLogger.i("GeminiTTS", "Gemini TTS succeeded ($candModel, voice=$voiceName, style='$detectedStyle') — ${wavBytes.size} bytes (RIFF WAV)")
                                         return "[audio:${cachedFile.absolutePath}]"
                                     }
                                 }
