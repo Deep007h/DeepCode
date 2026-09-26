@@ -1855,28 +1855,31 @@ class AgentEngine(private val context: Context) {
                                 finalHistory.add(briefHint)
                             }
 
-                            // Smart TTS: detect references to "this", "last response", "the poem" etc.
-                            // and inject the actual last assistant message so the AI speaks real content.
-                            val ttsKeywords = listOf("audio", "read", "speak", "voice", "tts", "speech", "narrate", "say", "vocal", "sound")
-                            val lastRefKeywords = listOf(
-                                "last response", "previous response", "last message", "previous message",
-                                "last reply", "previous reply", "that response", "your response",
-                                "your last", "your previous", "read that", "read it", "speak that",
-                                "speak it", "say that", "narrate that", "audio of that",
-                                "audio of it", "convert that", "convert it",
-                                "this", "of this", "for this", "audio of this", "audio for this",
-                                "read this", "speak this", "say this", "narrate this", "convert this",
-                                "the poem", "the story", "the script", "the speech", "the text",
-                                "the article", "the quote", "the lyrics", "the verse",
-                                "what you said", "what you wrote", "you just wrote", "you just said",
-                                "create a audio file of this", "create an audio file of this",
-                                "make an audio of this", "make audio of this"
-                            )
-                            val hasTtsIntent = ttsKeywords.any { lowerPrompt.contains(it) }
-                            val hasLastRef = lastRefKeywords.any { lowerPrompt.contains(it) } ||
-                                Regex("""\b(of\s+this|for\s+this|about\s+this|this\s+one|the\s+above|the\s+(poem|story|script|speech|text))\b""").containsMatchIn(lowerPrompt)
-                            if (hasTtsIntent && hasLastRef) {
-                                // Find the last assistant message before the current user message
+                            // Smart TTS: detect references to "this", "last response", "the poem", replies, etc.
+                            // and inject the actual content so the AI speaks real content.
+                            val isAudioReq = ai.deepcode.android.service.tools.ToolExecutor.isAudioCreationRequest(userPrompt)
+                            val isMetaRef = ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(userPrompt)
+                            val replyMatch = Regex("""\[reply\s+author="([^"]*)"\s+id="([^"]*)"\]([\s\S]*?)\[/reply\]""").find(userPrompt)
+                            val repliedContent = replyMatch?.groupValues?.get(3)?.trim()
+
+                            if (isAudioReq && !repliedContent.isNullOrBlank()) {
+                                val cleanReplied = repliedContent
+                                    .replace(Regex("\\[(audio|file|image|video):[^\\]]+\\]"), "")
+                                    .trim()
+                                val ttsHint = Message(
+                                    id = UUID.randomUUID().toString(),
+                                    sessionId = sessionId,
+                                    role = "system",
+                                    content = "The user wants you to generate audio of the message they replied to.\n" +
+                                        "Here is the EXACT content of that message that you must pass to edge_tts:\n\n" +
+                                        "=== REPLIED MESSAGE CONTENT START ===\n" +
+                                        cleanReplied +
+                                        "\n=== REPLIED MESSAGE CONTENT END ===\n\n" +
+                                        "Call edge_tts with the exact text above. Do NOT use placeholder words like 'this message', 'this', or 'last response' as the text parameter.",
+                                    timestamp = 0
+                                )
+                                finalHistory.add(ttsHint)
+                            } else if (isAudioReq && isMetaRef) {
                                 val lastAssistantMsg = rawHistory
                                     .filter { msg ->
                                         msg.role == "assistant" &&
@@ -1884,11 +1887,11 @@ class AgentEngine(private val context: Context) {
                                         !msg.content.startsWith("Executing tool") &&
                                         !msg.content.startsWith("Running tool") &&
                                         !msg.content.startsWith("I've completed") &&
-                                        msg.content.replace(Regex("\\[(audio|file|image|video):[^\\]]+\\]"), "").trim().length > 5
+                                        !ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(msg.content) &&
+                                        msg.content.replace(Regex("\\[(audio|file|image|video):[^\\]]+\\]"), "").trim().length > 3
                                     }
                                     .lastOrNull()
                                 if (lastAssistantMsg != null) {
-                                    // Strip any audio/file markers from the content
                                     val cleanContent = lastAssistantMsg.content
                                         .replace(Regex("\\[audio:[^\\]]+\\]"), "")
                                         .replace(Regex("\\[file:[^\\]]+\\]"), "")
@@ -1904,7 +1907,7 @@ class AgentEngine(private val context: Context) {
                                             "=== PREVIOUS RESPONSE START ===\n" +
                                             cleanContent +
                                             "\n=== PREVIOUS RESPONSE END ===\n\n" +
-                                            "Call edge_tts with the above text. Do NOT use placeholder words like 'this' or 'last response' as the text — use the actual content shown above.",
+                                            "Call edge_tts with the above text. Do NOT use placeholder words like 'this message', 'this', or 'last response' as the text — use the actual content shown above.",
                                         timestamp = 0
                                     )
                                     finalHistory.add(ttsHint)

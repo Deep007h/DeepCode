@@ -535,10 +535,26 @@ class TelegramBridgeService : Service() {
                             val hasMedia = photoFileId != null || docFileId != null || voiceFileId != null
 
                             if (rawText.isNotEmpty() || hasMedia) {
+                                val replyTo = try { message.getAsJsonObject("reply_to_message") } catch (_: Exception) { null }
+                                var replyText: String? = null
+                                var replyAuthor = "User"
+                                var replyMsgId = ""
+                                if (replyTo != null) {
+                                    val rText = try {
+                                        replyTo.get("text")?.asString ?: replyTo.get("caption")?.asString
+                                    } catch (_: Exception) { null }
+                                    val from = try { replyTo.getAsJsonObject("from") } catch (_: Exception) { null }
+                                    val isBot = from?.get("is_bot")?.asBoolean == true
+                                    replyAuthor = if (isBot) "DeepCode" else (from?.get("first_name")?.asString ?: "User")
+                                    replyMsgId = try { replyTo.get("message_id")?.asInt?.toString() ?: "" } catch (_: Exception) { "" }
+                                    if (!rText.isNullOrBlank()) {
+                                        replyText = rText.trim()
+                                    }
+                                }
+
                                 // Group spam protection: Ignore non-command group messages unless replying to the bot
                                 if (!isPrivateChat && !rawText.startsWith("/")) {
                                     val isReplyToBot = try {
-                                        val replyTo = message.getAsJsonObject("reply_to_message")
                                         val from = replyTo?.getAsJsonObject("from")
                                         from?.get("is_bot")?.asBoolean == true
                                     } catch (_: Exception) { false }
@@ -583,8 +599,12 @@ class TelegramBridgeService : Service() {
                                         }
                                     }
 
+                                    if (!replyText.isNullOrBlank()) {
+                                        effectiveText = """[reply author="$replyAuthor" id="$replyMsgId"]$replyText[/reply]""" + "\n\n" + effectiveText
+                                    }
+
                                     if (effectiveText.isNotEmpty()) {
-                                        handleMessage(token, chatId, effectiveText, isPrivateChat)
+                                        handleMessage(token, chatId, effectiveText, isPrivateChat, replyText = replyText)
                                     }
                                 }
                             }
@@ -791,7 +811,7 @@ class TelegramBridgeService : Service() {
         }
     }
 
-    private suspend fun handleMessage(token: String, chatId: Long, text: String, isPrivateChat: Boolean = true) {
+    private suspend fun handleMessage(token: String, chatId: Long, text: String, isPrivateChat: Boolean = true, replyText: String? = null) {
         // Only save this chat as default from private interactions with the user, never from group/spam chats
         if (isPrivateChat) {
             repository.securePrefs.saveSetting("telegram_default_chat_id", chatId.toString())
@@ -811,13 +831,13 @@ class TelegramBridgeService : Service() {
         }
 
         try {
-            _handleMessageLocked(token, chatId, text)
+            _handleMessageLocked(token, chatId, text, replyText = replyText)
         } finally {
             mutex.unlock()
         }
     }
 
-    private suspend fun _handleMessageLocked(token: String, chatId: Long, text: String) {
+    private suspend fun _handleMessageLocked(token: String, chatId: Long, text: String, replyText: String? = null) {
         val savedModelId = getSavedModelForChat(chatId)
         val savedProviderName = getSavedProviderForChat(chatId)
         val appConfiguredProvider = repository.securePrefs.getSetting("agent_provider", "")
@@ -973,52 +993,164 @@ class TelegramBridgeService : Service() {
 
             var finalResponse = ""
 
-            // Try DirectTool routing first (image search, audio, etc.) — no AI needed
-            val orchestrator = OrchestratorEngine(applicationContext)
-            val decision = orchestrator.classifyIntent(text)
-            if (decision is OrchestratorDecision.DirectTool) {
-                val toolJob = decision.toolJob
-                val workingDir = repository.securePrefs.getSetting("default_project", "/storage/emulated/0")
-                val toolResult = when (toolJob.taskType) {
-                    TaskType.IMAGE_SEARCH -> {
-                        val searchArgs = """{"query":${gson.toJson(toolJob.userPrompt)}}"""
-                        ai.deepcode.android.service.tools.ToolExecutor(applicationContext)
-                            .executeTool("search_image", searchArgs, workingDir, false)
+            val cleanPrompt = if (text.startsWith("[reply", ignoreCase = true)) {
+                text.replace(Regex("""^\[reply[\s\S]*?\[/reply\]\s*""", RegexOption.IGNORE_CASE), "").trim()
+            } else {
+                text.trim()
+            }
+
+            // Direct shortcut for pure audio generation requests (e.g. user replies to a message and says "create audio of this message")
+            if (ai.deepcode.android.service.tools.ToolExecutor.isPureAudioCreationRequest(cleanPrompt)) {
+                var targetText: String? = null
+
+                // 1. Reply message takes highest priority
+                if (!replyText.isNullOrBlank()) {
+                    val candidate = replyText
+                        .replace(Regex("""\[(audio|file|image|video):[^\]]+\]"""), "")
+                        .trim()
+                    if (candidate.length > 2) {
+                        targetText = candidate
                     }
-                    TaskType.IMAGE_GENERATION -> {
-                        val userText = toolJob.userPrompt
-                        val model = when {
-                            userText.contains("chatgpt", ignoreCase = true) -> "chatgpt"
-                            userText.contains("dalle", ignoreCase = true) || userText.contains("dall-e", ignoreCase = true) -> "dalle"
-                            userText.contains("imagen", ignoreCase = true) || userText.contains("gemini", ignoreCase = true) -> "imagen"
-                            userText.contains("flux", ignoreCase = true) -> "flux"
-                            userText.contains("turbo", ignoreCase = true) -> "turbo"
-                            userText.contains("sdxl", ignoreCase = true) -> "sdxl"
-                            userText.contains("antigravity", ignoreCase = true) -> "antigravity"
-                            else -> ""
-                        }
-                        val genPayload = JsonObject().apply {
-                            addProperty("prompt", userText)
-                            if (model.isNotEmpty()) addProperty("model", model)
-                        }
-                        ai.deepcode.android.service.tools.ToolExecutor(applicationContext)
-                            .executeTool("generate_image", gson.toJson(genPayload), workingDir, false)
-                    }
-                    TaskType.AUDIO_GENERATION -> {
-                        val audioArgs = """{"text":${gson.toJson(toolJob.userPrompt)},"voice":"","rate":"","pitch":""}"""
-                        ai.deepcode.android.service.tools.ToolExecutor(applicationContext)
-                            .executeTool("edge_tts", audioArgs, workingDir, false)
-                    }
-                    TaskType.VIDEO_GENERATION -> {
-                        val videoArgs = """{"prompt":${gson.toJson(toolJob.userPrompt)}}"""
-                        ai.deepcode.android.service.tools.ToolExecutor(applicationContext)
-                            .executeTool("generate_video", videoArgs, workingDir, false)
-                    }
-                    else -> null
                 }
-                if (toolResult != null) {
-                    finalResponse = toolResult
-                    recordBypassExchange(text, toolResult)
+
+                // 2. Embedded [reply ...]...[/reply] in text
+                if (targetText == null) {
+                    val replyMatch = Regex("""\[reply\s+[^\]]*\]([\s\S]*?)\[/reply\]""").find(text)
+                    val candidate = replyMatch?.groupValues?.get(1)
+                        ?.replace(Regex("""\[(audio|file|image|video):[^\]]+\]"""), "")
+                        ?.trim()
+                    if (!candidate.isNullOrBlank() && candidate.length > 2) {
+                        targetText = candidate
+                    }
+                }
+
+                // 3. Meta reference in same conversation (e.g. "create audio of this message", "create audio of this")
+                if (targetText == null && ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(cleanPrompt)) {
+                    val history = repository.getMessagesListForSession(sessionId)
+                    val lastMsg = history.lastOrNull { msg ->
+                        msg.role == "assistant" &&
+                        !msg.isToolCall &&
+                        !msg.content.startsWith("Executing tool") &&
+                        !msg.content.startsWith("Running tool") &&
+                        !msg.content.startsWith("I've completed") &&
+                        !msg.content.startsWith("Tool result:") &&
+                        !msg.content.startsWith("I will generate") &&
+                        !ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(msg.content) &&
+                        msg.content.replace(Regex("""\[(audio|file|image|video):[^\]]+\]"""), "").trim().length > 3
+                    }
+                    if (lastMsg != null) {
+                        targetText = lastMsg.content
+                            .replace(Regex("""\[(audio|file|image|video):[^\]]+\]"""), "")
+                            .trim()
+                    }
+                }
+
+                // 4. Direct inline text e.g. "create audio: hello world"
+                if (targetText == null) {
+                    val directMatch = Regex("""^(?:create\s+(?:an?\s+)?audio\s*(?:file\s*)?(?:of|for|from)?\s*:\s*|read\s+(?:this|aloud)?\s*:\s*|speak\s*(?:this)?\s*:\s*)(.+)$""", RegexOption.IGNORE_CASE).find(cleanPrompt)
+                    val candidate = directMatch?.groupValues?.get(1)?.trim()
+                    if (!candidate.isNullOrBlank() && !ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(candidate)) {
+                        targetText = candidate
+                    }
+                }
+
+                if (targetText != null) {
+                    val workingDir = repository.securePrefs.getSetting("default_project", "/storage/emulated/0")
+                    val audioArgs = """{"text":${gson.toJson(targetText)},"voice":"","rate":"","pitch":""}"""
+                    val toolResult = ai.deepcode.android.service.tools.ToolExecutor(applicationContext)
+                        .executeTool("edge_tts", audioArgs, workingDir, false)
+                    if (toolResult.isNotEmpty()) {
+                        finalResponse = toolResult
+                        recordBypassExchange(text, toolResult)
+                    }
+                } else if (ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(cleanPrompt)) {
+                    val promptForContext = "❓ What would you like me to create audio of? Please reply to the message, poem, or text you want converted, or provide the text directly."
+                    recordBypassExchange(text, promptForContext)
+                    if (processingMsgId != null) {
+                        if (!editMessage(token, chatId, processingMsgId, promptForContext)) {
+                            sendMessage(token, chatId, promptForContext)
+                        }
+                    } else {
+                        sendMessage(token, chatId, promptForContext)
+                    }
+                    return
+                }
+            }
+
+            // Try DirectTool routing first (image search, audio, etc.) — no AI needed
+            if (finalResponse.isEmpty()) {
+                val orchestrator = OrchestratorEngine(applicationContext)
+                val decision = orchestrator.classifyIntent(cleanPrompt)
+                if (decision is OrchestratorDecision.DirectTool) {
+                    val toolJob = decision.toolJob
+                    val workingDir = repository.securePrefs.getSetting("default_project", "/storage/emulated/0")
+                    val toolResult = when (toolJob.taskType) {
+                        TaskType.IMAGE_SEARCH -> {
+                            val searchArgs = """{"query":${gson.toJson(toolJob.userPrompt)}}"""
+                            ai.deepcode.android.service.tools.ToolExecutor(applicationContext)
+                                .executeTool("search_image", searchArgs, workingDir, false)
+                        }
+                        TaskType.IMAGE_GENERATION -> {
+                            val userText = toolJob.userPrompt
+                            val model = when {
+                                userText.contains("chatgpt", ignoreCase = true) -> "chatgpt"
+                                userText.contains("dalle", ignoreCase = true) || userText.contains("dall-e", ignoreCase = true) -> "dalle"
+                                userText.contains("imagen", ignoreCase = true) || userText.contains("gemini", ignoreCase = true) -> "imagen"
+                                userText.contains("flux", ignoreCase = true) -> "flux"
+                                userText.contains("turbo", ignoreCase = true) -> "turbo"
+                                userText.contains("sdxl", ignoreCase = true) -> "sdxl"
+                                userText.contains("antigravity", ignoreCase = true) -> "antigravity"
+                                else -> ""
+                            }
+                            val genPayload = JsonObject().apply {
+                                addProperty("prompt", userText)
+                                if (model.isNotEmpty()) addProperty("model", model)
+                            }
+                            ai.deepcode.android.service.tools.ToolExecutor(applicationContext)
+                                .executeTool("generate_image", gson.toJson(genPayload), workingDir, false)
+                        }
+                        TaskType.AUDIO_GENERATION -> {
+                            val promptText = toolJob.userPrompt
+                            if (ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(promptText)) {
+                                var targetText = replyText?.replace(Regex("""\[(audio|file|image|video):[^\]]+\]"""), "")?.trim()
+                                if (targetText.isNullOrBlank()) {
+                                    val history = repository.getMessagesListForSession(sessionId)
+                                    val lastMsg = history.lastOrNull { msg ->
+                                        msg.role == "assistant" &&
+                                        !msg.isToolCall &&
+                                        !msg.content.startsWith("Executing tool") &&
+                                        !msg.content.startsWith("Running tool") &&
+                                        !msg.content.startsWith("I've completed") &&
+                                        !msg.content.startsWith("Tool result:") &&
+                                        !ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(msg.content) &&
+                                        msg.content.replace(Regex("""\[(audio|file|image|video):[^\]]+\]"""), "").trim().length > 3
+                                    }
+                                    targetText = lastMsg?.content?.replace(Regex("""\[(audio|file|image|video):[^\]]+\]"""), "")?.trim()
+                                }
+                                if (!targetText.isNullOrBlank()) {
+                                    val audioArgs = """{"text":${gson.toJson(targetText)},"voice":"","rate":"","pitch":""}"""
+                                    ai.deepcode.android.service.tools.ToolExecutor(applicationContext)
+                                        .executeTool("edge_tts", audioArgs, workingDir, false)
+                                } else {
+                                    "❓ What would you like me to create audio of? Please reply to the message, poem, or text you want converted, or provide the text directly."
+                                }
+                            } else {
+                                val audioArgs = """{"text":${gson.toJson(promptText)},"voice":"","rate":"","pitch":""}"""
+                                ai.deepcode.android.service.tools.ToolExecutor(applicationContext)
+                                    .executeTool("edge_tts", audioArgs, workingDir, false)
+                            }
+                        }
+                        TaskType.VIDEO_GENERATION -> {
+                            val videoArgs = """{"prompt":${gson.toJson(toolJob.userPrompt)}}"""
+                            ai.deepcode.android.service.tools.ToolExecutor(applicationContext)
+                                .executeTool("generate_video", videoArgs, workingDir, false)
+                        }
+                        else -> null
+                    }
+                    if (toolResult != null) {
+                        finalResponse = toolResult
+                        recordBypassExchange(text, toolResult)
+                    }
                 }
             }
 

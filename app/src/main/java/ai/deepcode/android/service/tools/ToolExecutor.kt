@@ -212,6 +212,108 @@ class ToolExecutor(private val context: Context? = null) {
             _cachedReferenceLayouts = layouts
             return layouts
         }
+
+        fun isMetaReferenceText(input: String): Boolean {
+            val clean = input.trim().lowercase()
+            if (clean.length > 250) return false
+
+            // Exact pronouns or short deictic phrases
+            val exactShortPhrases = setOf(
+                "this", "that", "it", "these", "those",
+                "of this", "of that", "of it", "for this", "for that", "about this", "about that",
+                "the above", "above", "below",
+                "this one", "that one",
+                "the poem", "this poem", "that poem", "a poem",
+                "the story", "this story", "that story",
+                "the script", "this script", "that script",
+                "the speech", "this speech", "that speech",
+                "the text", "this text", "that text",
+                "the lyrics", "this lyrics", "that lyrics",
+                "the verse", "this verse", "that verse",
+                "the article", "this article", "that article",
+                "the quote", "this quote", "that quote",
+                "the content", "this content", "that content",
+                "last response", "previous response", "this response", "that response", "the response", "your response",
+                "last message", "previous message", "this message", "that message", "the message", "your message",
+                "last reply", "previous reply", "this reply", "that reply", "the reply", "your reply",
+                "last answer", "previous answer", "this answer", "that answer", "the answer", "your answer"
+            )
+            if (clean in exactShortPhrases) return true
+
+            val explicitMetaRegex = Regex(
+                """\b(of\s+(this|that|it)|for\s+(this|that|it)|about\s+(this|that|it)|to\s+(this|that|it)|(this|that)\s+one|the\s+above|the\s+previous|the\s+last|what\s+you\s+(wrote|said|created|generated|composed)|you\s+just\s+(wrote|said|created|generated|composed)|(this|that|the|your|my|last|previous)\s+(poem|story|script|speech|article|text|essay|message|response|reply|answer|verse|lyrics|quote|summary|content|post|lines?|words?|draft|note))\b"""
+            )
+            if (explicitMetaRegex.containsMatchIn(clean)) return true
+
+            val metaPatterns = listOf(
+                "last response", "previous response", "last message", "previous message",
+                "last reply", "previous reply", "that response", "your response", "my last response",
+                "work last response", "create audio of last response", "audio of last response",
+                "read last response", "read the last response", "speak last response", "audio of that",
+                "audio of it", "audio of this", "audio for this", "audio for that",
+                "convert that", "convert it", "convert this", "read that", "read it", "read this",
+                "speak that", "speak it", "speak this", "narrate that", "narrate it", "narrate this",
+                "last answer", "previous answer", "your last reply", "your previous message",
+                "what you said", "what you wrote", "make audio of last response", "convert last message",
+                "make an audio of this", "make audio of this", "create a audio file of this",
+                "create an audio file of this", "create audio file of this", "create audio of this",
+                "create audio of this message", "create audio of that message", "create audio of the message",
+                "create audio of this poem", "create audio of that poem", "create audio of the poem",
+                "make audio of this message", "make audio of that message", "make audio of the poem",
+                "make audio file of this", "make an audio of that", "generate audio for this",
+                "generate audio of this", "generate audio of this message", "read this out", "read it out",
+                "read that out", "speak this out", "read aloud", "read it aloud", "read this aloud",
+                "read this message", "read that message", "speak this message", "speak that message",
+                "audio of this message", "audio of that message", "audio of the message",
+                "audio of this poem", "audio of that poem", "audio of the poem"
+            )
+            if (metaPatterns.any { clean.contains(it) }) return true
+
+            val hasMetaTarget = clean.contains("this") || clean.contains("that") || clean.contains("it") ||
+                    clean.contains("last") || clean.contains("previous") || clean.contains("above") ||
+                    clean.contains("what you") || clean.contains("poem") || clean.contains("story") ||
+                    clean.contains("script") || clean.contains("speech") || clean.contains("text") ||
+                    clean.contains("article") || clean.contains("quote") || clean.contains("summary") ||
+                    clean.contains("message") || clean.contains("reply") || clean.contains("response")
+            val hasMetaAction = clean.contains("audio") || clean.contains("speak") || clean.contains("read") ||
+                    clean.contains("voice") || clean.contains("tts") || clean.contains("narrate") ||
+                    clean.contains("sound") || clean.contains("vocal") || clean.contains("speech") ||
+                    clean.contains("convert") || clean.contains("say")
+            return hasMetaTarget && hasMetaAction
+        }
+
+        fun isAudioCreationRequest(input: String): Boolean {
+            val clean = input.trim().lowercase()
+            if (clean.length > 250) return false
+            val isMeta = isMetaReferenceText(clean)
+            val hasAudioWord = clean.contains("audio") || clean.contains("speak") ||
+                    clean.contains("read") || clean.contains("voice") || clean.contains("tts") ||
+                    clean.contains("speech") || clean.contains("mp3") || clean.contains("narrat")
+            if (isMeta && hasAudioWord) return true
+
+            val audioCommandRegex = Regex(
+                """\b(create|generate|make|convert|turn|produce|read|speak|synthesize|record|play)\s+(?:an?\s+)?(?:audio|voice|speech|tts|sound|mp3|narration|audiofile|audio\s+file)\b"""
+            )
+            if (audioCommandRegex.containsMatchIn(clean)) return true
+
+            val audioPattern = Regex("""\b(audio|voice|speech|tts|mp3)\s+(?:of|for|from|to)\b""")
+            return audioPattern.containsMatchIn(clean)
+        }
+
+        fun isPureAudioCreationRequest(input: String): Boolean {
+            val clean = input.trim().lowercase()
+            if (clean.length > 200) return false
+
+            val generativeKeywords = listOf(
+                "write ", "compose ", "tell me ", "generate a story", "write a poem", "create a story",
+                "explain ", "summarize ", "translate ", "rewrite ", "draft ", "code ", "implement "
+            )
+            if (generativeKeywords.any { clean.startsWith(it) || clean.contains(" and $it") || clean.contains(" then $it") }) {
+                return false
+            }
+
+            return isAudioCreationRequest(clean)
+        }
     }
 
     private fun getOrchestrator(): ai.deepcode.android.orchestrator.OrchestratorEngine {
@@ -1397,53 +1499,7 @@ class ToolExecutor(private val context: Context? = null) {
         }
     }
 
-    internal fun isMetaReferenceText(input: String): Boolean {
-        val clean = input.trim().lowercase()
-        if (clean.length > 200) return false
-
-        // Exact pronouns or short deictic phrases
-        val exactShortPhrases = setOf(
-            "this", "that", "it", "of this", "of that", "of it", "for this", "for that",
-            "the above", "above", "the poem", "the story", "the script", "the speech",
-            "the text", "the lyrics", "the verse", "the article", "the quote",
-            "last response", "previous response", "last message", "previous message"
-        )
-        if (clean in exactShortPhrases) return true
-
-        val explicitMetaRegex = Regex(
-            """\b(of\s+this|of\s+that|of\s+it|for\s+this|for\s+that|about\s+this|about\s+that|this\s+one|that\s+one|the\s+above|the\s+previous|the\s+last|what\s+you\s+(wrote|said|created|generated)|you\s+just\s+(wrote|said|created|generated)|the\s+(poem|story|script|speech|article|text|essay|message|response|reply|answer|verse|lyrics|quote|summary))\b"""
-        )
-        if (explicitMetaRegex.containsMatchIn(clean)) return true
-
-        val metaPatterns = listOf(
-            "last response", "previous response", "last message", "previous message",
-            "last reply", "previous reply", "that response", "your response", "my last response",
-            "work last response", "create audio of last response", "audio of last response",
-            "read last response", "read the last response", "speak last response", "audio of that",
-            "audio of it", "audio of this", "audio for this", "audio for that",
-            "convert that", "convert it", "convert this", "read that", "read it", "read this",
-            "speak that", "speak it", "speak this", "narrate that", "narrate it", "narrate this",
-            "last answer", "previous answer", "your last reply", "your previous message",
-            "what you said", "what you wrote", "make audio of last response", "convert last message",
-            "make an audio of this", "make audio of this", "create a audio file of this",
-            "create an audio file of this", "create audio file of this", "create audio of this",
-            "make audio file of this", "make an audio of that", "generate audio for this",
-            "generate audio of this", "read this out", "read it out", "read that out",
-            "speak this out", "read aloud", "read it aloud", "read this aloud"
-        )
-        if (metaPatterns.any { clean.contains(it) }) return true
-
-        val hasMetaTarget = clean.contains("this") || clean.contains("that") || clean.contains("it") ||
-                clean.contains("last") || clean.contains("previous") || clean.contains("above") ||
-                clean.contains("what you") || clean.contains("poem") || clean.contains("story") ||
-                clean.contains("script") || clean.contains("speech") || clean.contains("text") ||
-                clean.contains("article") || clean.contains("quote") || clean.contains("summary")
-        val hasMetaAction = clean.contains("audio") || clean.contains("speak") || clean.contains("read") ||
-                clean.contains("voice") || clean.contains("tts") || clean.contains("narrate") ||
-                clean.contains("sound") || clean.contains("vocal") || clean.contains("speech") ||
-                clean.contains("convert") || clean.contains("say")
-        return hasMetaTarget && hasMetaAction
-    }
+    internal fun isMetaReferenceText(input: String): Boolean = Companion.isMetaReferenceText(input)
 
     private fun resolveLastAssistantMessage(ctx: Context): String? {
         return try {
@@ -1475,10 +1531,13 @@ class ToolExecutor(private val context: Context? = null) {
     }
 
     internal fun cleanTextForSpeech(raw: String): String {
+        // First strip any [reply author="..." id="..."]...[/reply] quote wrapper if present
+        val withoutReply = raw.replace(Regex("""^\[reply[\s\S]*?\[/reply\]\s*""", RegexOption.IGNORE_CASE), "").trim()
+
         // Handle code blocks: if it has an actual programming language tag, replace with [code snippet].
         // If it's a plain block without language, or marked as text/poem/markdown/lyrics, preserve the inner text.
         val codeLangRegex = Regex("(?i)```(python|kotlin|java|c|cpp|csharp|cs|go|rust|javascript|js|typescript|ts|sh|bash|sql|html|css|xml|json|yaml|yml)\\n([\\s\\S]*?)```")
-        val withCodeCleaned = codeLangRegex.replace(raw) { " [code snippet] " }
+        val withCodeCleaned = codeLangRegex.replace(withoutReply) { " [code snippet] " }
 
         val plainBlockRegex = Regex("```[a-zA-Z0-9_-]*\\n?([\\s\\S]*?)```")
         val textUnwrapped = plainBlockRegex.replace(withCodeCleaned) { match -> match.groupValues[1] }

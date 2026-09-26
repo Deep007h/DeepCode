@@ -78,18 +78,36 @@ class ToolExecutorTest {
         val executor = ToolExecutor()
         val metaInputs = listOf(
             "this",
+            "this message",
+            "that message",
+            "the message",
+            "your message",
+            "this poem",
+            "that poem",
+            "the poem",
+            "your poem",
+            "this reply",
+            "that reply",
+            "this response",
+            "that response",
             "of this",
             "for this",
             "audio of this",
+            "create audio of this message",
+            "create audio of that message",
+            "make audio of this message",
             "create a audio file of this",
             "create an audio file of this",
             "make an audio of this",
             "make audio of this",
             "read this",
+            "read this message",
             "speak this",
+            "speak this message",
             "audio of the poem",
             "read the poem",
             "convert that to audio",
+            "convert this message to audio",
             "last response",
             "previous message",
             "audio of what you wrote"
@@ -105,6 +123,30 @@ class ToolExecutorTest {
         )
         for (input in nonMetaInputs) {
             assertFalse("Expected '$input' NOT to be identified as a meta-reference", executor.isMetaReferenceText(input))
+        }
+
+        // Test audio creation request detection
+        val audioRequests = listOf(
+            "create audio of this message",
+            "make audio file of this",
+            "read this aloud",
+            "speak this",
+            "convert this message to audio",
+            "create an audio file of this"
+        )
+        for (req in audioRequests) {
+            assertTrue("Expected '$req' to be identified as audio creation request", ToolExecutor.isAudioCreationRequest(req))
+            assertTrue("Expected '$req' to be pure audio creation request", ToolExecutor.isPureAudioCreationRequest(req))
+        }
+
+        // Generative + audio requests should NOT be pure audio shortcuts
+        val generativeRequests = listOf(
+            "write a poem about rain and create audio of it",
+            "compose a song and make audio",
+            "explain quantum physics and read aloud"
+        )
+        for (gen in generativeRequests) {
+            assertFalse("Expected '$gen' NOT to be pure audio creation request", ToolExecutor.isPureAudioCreationRequest(gen))
         }
     }
 

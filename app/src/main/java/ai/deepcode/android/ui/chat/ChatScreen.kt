@@ -5199,86 +5199,14 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         _agentsWorking.value = false
     }
 
-    private fun isMetaReferenceText(input: String): Boolean {
-        val clean = input.trim().lowercase()
-        if (clean.length > 200) return false
+    private fun isMetaReferenceText(input: String): Boolean =
+        ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(input)
 
-        // Exact pronouns or short deictic phrases
-        val exactShortPhrases = setOf(
-            "this", "that", "it", "of this", "of that", "of it", "for this", "for that",
-            "the above", "above", "the poem", "the story", "the script", "the speech",
-            "the text", "the lyrics", "the verse", "the article", "the quote",
-            "last response", "previous response", "last message", "previous message"
-        )
-        if (clean in exactShortPhrases) return true
+    private fun isAudioCreationRequest(input: String): Boolean =
+        ai.deepcode.android.service.tools.ToolExecutor.isAudioCreationRequest(input)
 
-        val explicitMetaRegex = Regex(
-            """\b(of\s+this|of\s+that|of\s+it|for\s+this|for\s+that|about\s+this|about\s+that|this\s+one|that\s+one|the\s+above|the\s+previous|the\s+last|what\s+you\s+(wrote|said|created|generated)|you\s+just\s+(wrote|said|created|generated)|the\s+(poem|story|script|speech|article|text|essay|message|response|reply|answer|verse|lyrics|quote|summary))\b"""
-        )
-        if (explicitMetaRegex.containsMatchIn(clean)) return true
-
-        val metaPatterns = listOf(
-            "last response", "previous response", "last message", "previous message",
-            "last reply", "previous reply", "that response", "your response", "my last response",
-            "work last response", "create audio of last response", "audio of last response",
-            "read last response", "read the last response", "speak last response", "audio of that",
-            "audio of it", "audio of this", "audio for this", "audio for that",
-            "convert that", "convert it", "convert this", "read that", "read it", "read this",
-            "speak that", "speak it", "speak this", "narrate that", "narrate it", "narrate this",
-            "last answer", "previous answer", "your last reply", "your previous message",
-            "what you said", "what you wrote", "make audio of last response", "convert last message",
-            "make an audio of this", "make audio of this", "create a audio file of this",
-            "create an audio file of this", "create audio file of this", "create audio of this",
-            "make audio file of this", "make an audio of that", "generate audio for this",
-            "generate audio of this", "read this out", "read it out", "read that out",
-            "speak this out", "read aloud", "read it aloud", "read this aloud"
-        )
-        if (metaPatterns.any { clean.contains(it) }) return true
-
-        val hasMetaTarget = clean.contains("this") || clean.contains("that") || clean.contains("it") ||
-                clean.contains("last") || clean.contains("previous") || clean.contains("above") ||
-                clean.contains("what you") || clean.contains("poem") || clean.contains("story") ||
-                clean.contains("script") || clean.contains("speech") || clean.contains("text") ||
-                clean.contains("article") || clean.contains("quote") || clean.contains("summary")
-        val hasMetaAction = clean.contains("audio") || clean.contains("speak") || clean.contains("read") ||
-                clean.contains("voice") || clean.contains("tts") || clean.contains("narrate") ||
-                clean.contains("sound") || clean.contains("vocal") || clean.contains("speech") ||
-                clean.contains("convert") || clean.contains("say")
-        return hasMetaTarget && hasMetaAction
-    }
-
-    private fun isAudioCreationRequest(input: String): Boolean {
-        val clean = input.trim().lowercase()
-        if (clean.length > 250) return false
-        val isMeta = isMetaReferenceText(clean)
-        val hasAudioWord = clean.contains("audio") || clean.contains("speak") ||
-                clean.contains("read") || clean.contains("voice") || clean.contains("tts") ||
-                clean.contains("speech") || clean.contains("mp3") || clean.contains("narrat")
-        if (isMeta && hasAudioWord) return true
-
-        val audioCommandRegex = Regex(
-            """\b(create|generate|make|convert|turn|produce|read|speak|synthesize|record|play)\s+(?:an?\s+)?(?:audio|voice|speech|tts|sound|mp3|narration|audiofile|audio\s+file)\b"""
-        )
-        if (audioCommandRegex.containsMatchIn(clean)) return true
-
-        val audioPattern = Regex("""\b(audio|voice|speech|tts|mp3)\s+(?:of|for|from|to)\b""")
-        return audioPattern.containsMatchIn(clean)
-    }
-
-    private fun isPureAudioCreationRequest(input: String): Boolean {
-        val clean = input.trim().lowercase()
-        if (clean.length > 200) return false
-
-        val generativeKeywords = listOf(
-            "write ", "compose ", "tell me ", "generate a story", "write a poem", "create a story",
-            "explain ", "summarize ", "translate ", "rewrite ", "draft ", "code ", "implement "
-        )
-        if (generativeKeywords.any { clean.startsWith(it) || clean.contains(" and $it") || clean.contains(" then $it") }) {
-            return false
-        }
-
-        return isAudioCreationRequest(clean)
-    }
+    private fun isPureAudioCreationRequest(input: String): Boolean =
+        ai.deepcode.android.service.tools.ToolExecutor.isPureAudioCreationRequest(input)
 
     private fun isImageCreationRequest(input: String): Boolean {
         val clean = input.trim().lowercase()

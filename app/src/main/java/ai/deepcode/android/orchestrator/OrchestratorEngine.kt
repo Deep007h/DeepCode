@@ -711,8 +711,11 @@ RESPONSIBILITIES
         if (lower.contains("text to speech") || lower.contains("tts") || lower.contains("voiceover") || lower.contains("generate audio") || lower.contains("generate speech") || lower.contains("create audio") || lower.contains("make audio") || lower.contains("elevenlabs") || lower.contains("audio of") || lower.matches(".*\\b(sing|song|music|melody|audio|speak|say|read aloud|narrate)\\b.*".toRegex())) {
             val cleaned = userMessage.replace(Regex("(?i)^.*?\\b(generate|create|make|play)\\b.*?\\b(audio|speech|voice)\\b(\\s+of|\\s+saying|\\s+that says|\\s+with text)?\\s*"), "").replace(Regex("(?i)^.*?\\b(speak|say|read aloud|narrate)\\b\\s*"), "").trim()
             val wordCount = cleaned.split("\\s+".toRegex()).count { it.isNotBlank() && it.length > 2 }
-            val genericPhrases = listOf("for me", "a message", "something", "this", "that")
-            val isGeneric = wordCount < 2 || genericPhrases.any { cleaned.lowercase() in listOf(it, "$it ", " $it") } || cleaned.length < 8
+            val isMeta = ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(cleaned) ||
+                ai.deepcode.android.service.tools.ToolExecutor.isMetaReferenceText(userMessage) ||
+                userMessage.contains("[reply", ignoreCase = true)
+            val genericPhrases = listOf("for me", "a message", "something", "this", "that", "this message", "that message", "the message", "this poem", "that poem", "the poem", "it")
+            val isGeneric = isMeta || wordCount < 2 || genericPhrases.any { cleaned.lowercase() in listOf(it, "$it ", " $it") } || cleaned.length < 8
             if (!isGeneric) return ToolJob(TaskType.AUDIO_GENERATION, TargetSite.EDGE_TTS, OutputFormat.AUDIO_URL, cleaned)
         }
         val videoExplicit = Regex("""(?i)\b(generate|create|make)\b.*\b(video|animation|clip)\b""")
