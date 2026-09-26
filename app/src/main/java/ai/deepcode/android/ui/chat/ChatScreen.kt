@@ -4440,6 +4440,17 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 return@launch
             }
 
+            val workflowMode = repository.securePrefs.getSetting("workflow_mode", ai.deepcode.android.data.local.WORKFLOW_DIRECT)
+            if (workflowMode != ai.deepcode.android.data.local.WORKFLOW_DIRECT) {
+                executeAutonomousAgentWorkflow(
+                    workflowMode = workflowMode,
+                    text = text,
+                    sessionId = sessionId,
+                    userMsg = userMsg
+                )
+                return@launch
+            }
+
             val model = _activeModel.value
             val provider = AIProviderFactory.providers.find { it.name.equals(model.provider, ignoreCase = true) }
                 ?: OPENAI_PROVIDERS.find { it.name.equals(model.provider, ignoreCase = true) }?.let { GenericOpenAIProvider(it) }
@@ -4777,6 +4788,9 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         // Cancel the in-flight network loop first so onToken stops appending after Stop.
         sendJob?.cancel()
         sendJob = null
+        try {
+            com.jarves.mh.runtime.RuntimeTaskController.requestStop()
+        } catch (_: Exception) {}
         _isStreaming.value = false
         viewModelScope.launch(Dispatchers.IO) {
             val text = _streamedText.value
@@ -4786,6 +4800,172 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             _streamedText.value = ""
             _streamingMessageId.value = ""
             _deferredResponse = ""
+        }
+    }
+
+    private suspend fun executeAutonomousAgentWorkflow(
+        workflowMode: String,
+        text: String,
+        sessionId: String,
+        userMsg: Message
+    ) {
+        val context = repository.appContext
+        val installer = com.jarves.mh.runtime.RuntimeInstaller(context)
+        if (!installer.isInstalled()) {
+            _isStreaming.value = false
+            _streamingMessageId.value = ""
+            _mediaProcessingType.value = null
+            _mediaProcessingPrompt.value = ""
+            appendAssistantMessage(
+                "⚠️ **Linux Subsystem is not installed.**\n\n" +
+                "The selected workflow (`$workflowMode`) requires the rootless Ubuntu 20.04 LTS subsystem to execute CLI agents. " +
+                "Please open **Settings → Linux Subsystem & Runtimes** to bootstrap the runtime, or switch to **Direct In-App Mode** in Settings.",
+                sessionId
+            )
+            return
+        }
+
+        val agentKind = when (workflowMode) {
+            ai.deepcode.android.data.local.WORKFLOW_DEEPSEEK_HARNESS -> com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS
+            ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE -> com.jarves.mh.model.AgentKind.CLAUDE_CODE
+            ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY -> com.jarves.mh.model.AgentKind.ANTIGRAVITY
+            else -> com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS
+        }
+
+        if (!installer.isAgentInstalled(agentKind)) {
+            _mediaProcessingType.value = "tool"
+            _mediaProcessingPrompt.value = "Installing ${agentKind.title} into subsystem..."
+            try {
+                installer.ensureAgentInstalled(agentKind) { prog ->
+                    _mediaProcessingPrompt.value = "Installing ${agentKind.title}: ${prog.message} (${(prog.fraction * 100).toInt()}%)"
+                }
+            } catch (e: Exception) {
+                _isStreaming.value = false
+                _streamingMessageId.value = ""
+                _mediaProcessingType.value = null
+                _mediaProcessingPrompt.value = ""
+                appendAssistantMessage("⚠️ Failed to install ${agentKind.title}: ${e.message}\n\nPlease check Settings → Linux Subsystem.", sessionId)
+                return
+            }
+        }
+
+        val appPrefs = com.jarves.mh.data.AppPreferences(context)
+        val vault = com.jarves.mh.data.ApiKeyVault(context)
+        val providerProfile = appPrefs.loadProvider(vault, agentKind)
+
+        val secret = vault.getSecret(providerProfile.kind.name)
+            ?: repository.securePrefs.getApiKey(providerProfile.kind.name.lowercase())
+            ?: repository.securePrefs.getApiKey(providerProfile.kind.title.lowercase())
+
+        if (agentKind == com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS && secret.isNullOrBlank() && providerProfile.kind != com.jarves.mh.model.ProviderKind.OPENCODE_ZEN) {
+            _isStreaming.value = false
+            _streamingMessageId.value = ""
+            _mediaProcessingType.value = null
+            _mediaProcessingPrompt.value = ""
+            appendAssistantMessage(
+                "⚠️ **No API Key Configured for ${providerProfile.kind.title}**\n\n" +
+                "DeepSeek Harness requires an API key for **${providerProfile.kind.title}**. " +
+                "Please go to **Settings → Agent Workflow & Runtimes** to configure your provider and enter your API key.",
+                sessionId
+            )
+            return
+        }
+
+        val historyList = repository.getMessagesListForSession(sessionId)
+        val conversationHistory = historyList.map { msg ->
+            com.jarves.mh.model.ChatMessage(
+                id = msg.id,
+                fromUser = msg.role == "user",
+                text = msg.content,
+                createdAt = java.time.Instant.ofEpochMilli(msg.timestamp)
+            )
+        }
+
+        val bridge: com.jarves.mh.runtime.RuntimeBridge = when (agentKind) {
+            com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS -> {
+                com.jarves.mh.runtime.DshRuntimeBridge(context) { prof ->
+                    vault.getSecret(prof.kind.name)
+                        ?: repository.securePrefs.getApiKey(prof.kind.name.lowercase())
+                        ?: repository.securePrefs.getApiKey(prof.kind.title.lowercase())
+                }
+            }
+            com.jarves.mh.model.AgentKind.CLAUDE_CODE -> {
+                com.jarves.mh.runtime.ClaudeRuntimeBridge(context) { prof ->
+                    vault.getSecret(prof.kind.name)
+                        ?: repository.securePrefs.getApiKey(prof.kind.name.lowercase())
+                }
+            }
+            com.jarves.mh.model.AgentKind.ANTIGRAVITY -> {
+                com.jarves.mh.runtime.AntigravityRuntimeBridge(
+                    context = context,
+                    model = { appPrefs.antigravityModel },
+                    effort = { appPrefs.antigravityEffort },
+                    conversationId = { pId -> appPrefs.loadAgentConversation(com.jarves.mh.model.AgentKind.ANTIGRAVITY, pId, sessionId) },
+                    saveConversationId = { pId, cId -> appPrefs.saveAgentConversation(com.jarves.mh.model.AgentKind.ANTIGRAVITY, pId, sessionId, cId) }
+                )
+            }
+        }
+
+        _mediaProcessingType.value = "tool"
+        _mediaProcessingPrompt.value = "Running ${agentKind.title}..."
+        _streamedText.value = ""
+
+        val projectSlug = "workspace-" + sessionId.take(8)
+        val projectKind = com.jarves.mh.model.ProjectKind.PROJECT
+
+        val eventsJob = viewModelScope.launch(Dispatchers.IO) {
+            bridge.events.collect { event ->
+                when (event) {
+                    is com.jarves.mh.model.RuntimeEvent.AssistantDelta -> {
+                        _mediaProcessingType.value = null
+                        _mediaProcessingPrompt.value = ""
+                        _streamedText.update { it + event.text }
+                    }
+                    is com.jarves.mh.model.RuntimeEvent.ToolStarted -> {
+                        _mediaProcessingType.value = "tool"
+                        _mediaProcessingPrompt.value = "${agentKind.title}: ${event.toolName} (${event.detail})"
+                    }
+                    is com.jarves.mh.model.RuntimeEvent.ToolCompleted -> {
+                        _mediaProcessingType.value = null
+                        _mediaProcessingPrompt.value = ""
+                    }
+                    is com.jarves.mh.model.RuntimeEvent.SessionCompleted -> {
+                        val fullOutput = _streamedText.value.trim()
+                        val finalMsg = if (fullOutput.isNotBlank()) fullOutput else "${agentKind.title} finished."
+                        appendAssistantMessage(finalMsg, sessionId)
+                        _isStreaming.value = false
+                        _streamingMessageId.value = ""
+                        _mediaProcessingType.value = null
+                        _mediaProcessingPrompt.value = ""
+                    }
+                    is com.jarves.mh.model.RuntimeEvent.SessionFailed -> {
+                        appendAssistantMessage("⚠️ **${agentKind.title} Error:**\n${event.reason}", sessionId)
+                        _isStreaming.value = false
+                        _streamingMessageId.value = ""
+                        _mediaProcessingType.value = null
+                        _mediaProcessingPrompt.value = ""
+                    }
+                    else -> {}
+                }
+            }
+        }
+
+        try {
+            bridge.startSession(
+                projectId = sessionId,
+                projectSlug = projectSlug,
+                projectKind = projectKind,
+                prompt = text,
+                conversationHistory = conversationHistory,
+                provider = providerProfile
+            )
+        } catch (e: Exception) {
+            eventsJob.cancel()
+            _isStreaming.value = false
+            _streamingMessageId.value = ""
+            _mediaProcessingType.value = null
+            _mediaProcessingPrompt.value = ""
+            appendAssistantMessage("⚠️ **Execution Exception:** ${e.message}", sessionId)
         }
     }
 

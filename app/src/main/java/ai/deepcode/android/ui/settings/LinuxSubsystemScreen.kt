@@ -1,10 +1,13 @@
 package ai.deepcode.android.ui.settings
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -19,13 +22,24 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ai.deepcode.android.data.local.EncryptedPrefs
+import ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY
+import ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE
+import ai.deepcode.android.data.local.WORKFLOW_DEEPSEEK_HARNESS
+import ai.deepcode.android.data.local.WORKFLOW_DIRECT
 import ai.deepcode.android.ui.theme.*
+import com.jarves.mh.data.AppPreferences
 import com.jarves.mh.model.AgentKind
 import com.jarves.mh.model.DevStack
+import com.jarves.mh.model.ProviderKind
+import com.jarves.mh.model.ProviderProfile
 import com.jarves.mh.runtime.RuntimeInstaller
 import com.jarves.mh.runtime.RuntimeInstallProgress
+import com.jarves.mh.data.ApiKeyVault
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -38,6 +52,17 @@ fun LinuxSubsystemScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val installer = remember { RuntimeInstaller(context) }
+    val securePrefs = remember { EncryptedPrefs.getInstance(context) }
+    val appPrefs = remember { AppPreferences(context) }
+    val vault = remember { ApiKeyVault(context) }
+
+    var workflowMode by remember { mutableStateOf(securePrefs.getWorkflowMode()) }
+    val initialProfile = remember { appPrefs.loadProvider(vault, AgentKind.DEEPSEEK_HARNESS) }
+    var dshProviderKind by remember { mutableStateOf(initialProfile.kind) }
+    var dshBaseUrl by remember { mutableStateOf(initialProfile.baseUrl) }
+    var dshModel by remember { mutableStateOf(initialProfile.model) }
+    var dshApiKey by remember { mutableStateOf(vault.getSecret(initialProfile.kind.name) ?: securePrefs.getApiKey(initialProfile.kind.name.lowercase())) }
+    var showDshKey by remember { mutableStateOf(false) }
 
     var isInstalled by remember { mutableStateOf(installer.isInstalled()) }
     var installedAgents by remember { mutableStateOf<Map<AgentKind, String>>(emptyMap()) }
@@ -107,6 +132,199 @@ fun LinuxSubsystemScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Workflow Selection Card
+            item {
+                Text("Agent Execution Workflow", fontWeight = FontWeight.Bold, color = AppWhite, fontSize = 14.sp)
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    color = AppSurface,
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AppBorder)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+                        Text("Select how prompts and autonomous agents are executed:", color = AppMuted, fontSize = 12.sp)
+                        Spacer(Modifier.height(10.dp))
+
+                        val modes = listOf(
+                            Triple(WORKFLOW_DIRECT, "Direct In-App Engine", "Native Android streaming agent loop"),
+                            Triple(WORKFLOW_DEEPSEEK_HARNESS, "DeepSeek Harness (DSH)", "Autonomous CLI in PRoot with multi-provider routing"),
+                            Triple(WORKFLOW_CLAUDE_CODE, "Claude Code CLI", "Anthropic autonomous terminal agent in PRoot"),
+                            Triple(WORKFLOW_ANTIGRAVITY, "Google Antigravity CLI", "Official Google agent in PRoot with reasoning effort")
+                        )
+
+                        modes.forEach { (modeId, modeTitle, modeDesc) ->
+                            val isSelected = workflowMode == modeId
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        workflowMode = modeId
+                                        securePrefs.setWorkflowMode(modeId)
+                                    }
+                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(modeTitle, fontWeight = FontWeight.SemiBold, color = AppWhite, fontSize = 13.sp)
+                                    Text(modeDesc, color = AppMuted, fontSize = 11.sp)
+                                }
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = {
+                                        workflowMode = modeId
+                                        securePrefs.setWorkflowMode(modeId)
+                                    },
+                                    colors = RadioButtonDefaults.colors(selectedColor = AppPrimary)
+                                )
+                            }
+                            if (modeId != modes.last().first) {
+                                HorizontalDivider(color = AppBorder.copy(alpha = 0.5f), modifier = Modifier.padding(vertical = 4.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
+            // DeepSeek Harness Provider Configuration Card
+            item {
+                Text("DeepSeek Harness (DSH) Provider", fontWeight = FontWeight.Bold, color = AppWhite, fontSize = 14.sp)
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    color = AppSurface,
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AppBorder)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Configure the API provider and model used by DeepSeek Harness:", color = AppMuted, fontSize = 12.sp)
+
+                        val dshProviders = listOf(
+                            ProviderKind.DEEPSEEK,
+                            ProviderKind.LLM_ROUTER,
+                            ProviderKind.OPENCODE_ZEN,
+                            ProviderKind.NVIDIA_NIM,
+                            ProviderKind.KIMI,
+                            ProviderKind.ANTHROPIC,
+                            ProviderKind.CUSTOM
+                        )
+
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(dshProviders) { p ->
+                                val isSelected = p == dshProviderKind
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        dshProviderKind = p
+                                        dshBaseUrl = p.defaultBaseUrl
+                                        dshModel = p.defaultModel
+                                    },
+                                    label = { Text(p.title, fontSize = 12.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = AppPrimary.copy(alpha = 0.2f),
+                                        selectedLabelColor = AppPrimary,
+                                        containerColor = AppSurfaceVariant,
+                                        labelColor = AppMuted
+                                    ),
+                                    border = FilterChipDefaults.filterChipBorder(
+                                        enabled = true,
+                                        selected = isSelected,
+                                        borderColor = if (isSelected) AppPrimary else AppBorder
+                                    )
+                                )
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = dshBaseUrl,
+                            onValueChange = { dshBaseUrl = it },
+                            label = { Text("Base URL") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = AppPrimary,
+                                unfocusedBorderColor = AppBorder,
+                                focusedContainerColor = AppSurfaceVariant,
+                                unfocusedContainerColor = AppSurfaceVariant,
+                                focusedTextColor = AppWhite,
+                                unfocusedTextColor = AppWhite
+                            )
+                        )
+
+                        OutlinedTextField(
+                            value = dshModel,
+                            onValueChange = { dshModel = it },
+                            label = { Text("Model Name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = AppPrimary,
+                                unfocusedBorderColor = AppBorder,
+                                focusedContainerColor = AppSurfaceVariant,
+                                unfocusedContainerColor = AppSurfaceVariant,
+                                focusedTextColor = AppWhite,
+                                unfocusedTextColor = AppWhite
+                            )
+                        )
+
+                        OutlinedTextField(
+                            value = dshApiKey,
+                            onValueChange = { dshApiKey = it },
+                            label = { Text("API Key (${dshProviderKind.title})") },
+                            placeholder = { Text("sk-...") },
+                            singleLine = true,
+                            visualTransformation = if (showDshKey) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { showDshKey = !showDshKey }) {
+                                    Icon(
+                                        imageVector = if (showDshKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = "Toggle key",
+                                        tint = AppMuted
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = AppPrimary,
+                                unfocusedBorderColor = AppBorder,
+                                focusedContainerColor = AppSurfaceVariant,
+                                unfocusedContainerColor = AppSurfaceVariant,
+                                focusedTextColor = AppWhite,
+                                unfocusedTextColor = AppWhite
+                            )
+                        )
+
+                        Button(
+                            onClick = {
+                                val prof = ProviderProfile(
+                                    kind = dshProviderKind,
+                                    baseUrl = dshBaseUrl,
+                                    model = dshModel,
+                                    hasSecret = dshApiKey.isNotBlank()
+                                )
+                                appPrefs.saveProvider(prof, AgentKind.DEEPSEEK_HARNESS)
+                                if (dshApiKey.isNotBlank()) {
+                                    vault.putSecret(dshProviderKind.name, dshApiKey.trim())
+                                    securePrefs.saveApiKey(dshProviderKind.name.lowercase(), dshApiKey.trim())
+                                    securePrefs.saveApiKey("deepseek", dshApiKey.trim())
+                                }
+                                Toast.makeText(context, "Saved DeepSeek Harness provider settings", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = AppPrimary),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Save, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Save DSH Provider Settings")
+                        }
+                    }
+                }
+            }
+
             // Environment Status Banner
             item {
                 Surface(

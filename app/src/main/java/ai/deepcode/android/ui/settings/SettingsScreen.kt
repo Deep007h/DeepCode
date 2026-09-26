@@ -274,6 +274,22 @@ fun SettingsScreen(
                 )
                 HorizontalDivider(color = AppDivider, thickness = 1.dp)
 
+                val currentWorkflowMode by securePrefs.workflowModeFlow.collectAsState()
+                val workflowSubtitle = when (currentWorkflowMode) {
+                    ai.deepcode.android.data.local.WORKFLOW_DEEPSEEK_HARNESS -> "DeepSeek Harness (Autonomous CLI)"
+                    ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE -> "Claude Code CLI"
+                    ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY -> "Google Antigravity CLI"
+                    else -> "Direct In-App Engine (Native Android)"
+                }
+
+                SettingsNavRow(
+                    icon = Icons.Default.AltRoute,
+                    title = "Agent Workflow Engine",
+                    subtitle = workflowSubtitle,
+                    onClick = onNavigateToLinuxSubsystem
+                )
+                HorizontalDivider(color = AppDivider, thickness = 1.dp)
+
                 SettingsNavRow(
                     icon = Icons.Default.Dns,
                     title = "Linux Subsystem & Runtimes",

@@ -104,7 +104,7 @@ fun LoginScreen(
                 }
             )
         } else if (firstRun || showOnboarding) {
-            OnboardingFlow(
+            ai.deepcode.android.ui.setup.SetupWizardScreen(
                 profileManager = profileManager,
                 isFirstRun = firstRun,
                 onBack = if (firstRun) null else ({ showOnboarding = false }),

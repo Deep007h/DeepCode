@@ -29,6 +29,9 @@ class ApiKeyVault(context: Context) {
         }
     }
 
+    fun putSecret(providerId: String, secret: String) = put(providerId, secret)
+    fun getSecret(providerId: String): String? = get(providerId)
+
     @Synchronized
     fun add(providerId: String, name: String, secret: String): ApiKeyInfo {
         require(secret.isNotBlank()) { "API key cannot be empty" }

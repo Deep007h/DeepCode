@@ -11,7 +11,7 @@ import androidx.core.app.NotificationCompat
 import ai.deepcode.android.ui.MainActivity
 import ai.deepcode.android.R
 
-internal object RuntimeTaskController {
+object RuntimeTaskController {
     @Volatile var stopAction: (() -> Unit)? = null
 
     fun requestStop() {

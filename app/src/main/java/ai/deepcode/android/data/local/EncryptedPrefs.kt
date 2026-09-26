@@ -84,6 +84,9 @@ class EncryptedPrefs private constructor(context: Context) {
     private val _customPersonaFlow = MutableStateFlow("")
     val customPersonaFlow: StateFlow<String> = _customPersonaFlow
 
+    private val _workflowModeFlow = MutableStateFlow(WORKFLOW_DIRECT)
+    val workflowModeFlow: StateFlow<String> = _workflowModeFlow
+
     init {
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
             _themeFlow.value = getSetting("theme", "system")
@@ -96,6 +99,7 @@ class EncryptedPrefs private constructor(context: Context) {
             _rootModeFlow.value = getBooleanSetting("root_mode", false)
             _personaEnabledFlow.value = getSetting("persona_enabled", "false") == "true"
             _customPersonaFlow.value = getSetting("custom_persona", "")
+            _workflowModeFlow.value = getSetting("workflow_mode", WORKFLOW_DIRECT)
         }
     }
 
@@ -173,6 +177,7 @@ class EncryptedPrefs private constructor(context: Context) {
             "ui_scale" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_uiScaleFlow, value)
             "persona_enabled" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_personaEnabledFlow, value == "true")
             "custom_persona" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_customPersonaFlow, value)
+            "workflow_mode" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_workflowModeFlow, value)
             "root_mode" -> {
                 val b = value == "true"
                 sharedPrefs.edit().putBoolean("setting_bool_root_mode", b).apply()
@@ -180,6 +185,9 @@ class EncryptedPrefs private constructor(context: Context) {
             }
         }
     }
+
+    fun getWorkflowMode(): String = getSetting("workflow_mode", WORKFLOW_DIRECT)
+    fun setWorkflowMode(mode: String) = saveSetting("workflow_mode", mode)
 
     fun getBooleanSetting(key: String, default: Boolean): Boolean {
         return sharedPrefs.getBoolean("setting_bool_$key", default)
@@ -204,6 +212,11 @@ class EncryptedPrefs private constructor(context: Context) {
     fun getChatGPTParentMessageId(): String = getSetting("chatgpt_parent_message_id", "").ifEmpty { getSetting("chatgpt_headless_parent_message_id", "") }
     fun saveChatGPTParentMessageId(msgId: String) = saveSetting("chatgpt_parent_message_id", msgId)
 }
+
+const val WORKFLOW_DIRECT = "direct"
+const val WORKFLOW_DEEPSEEK_HARNESS = "deepseek-harness"
+const val WORKFLOW_CLAUDE_CODE = "claude-code"
+const val WORKFLOW_ANTIGRAVITY = "antigravity"
 
 private const val DEFAULT_CUSTOM_PERSONA = ""
 
