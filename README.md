@@ -12,7 +12,7 @@
 
 <br/>
 
-[![Latest Release](https://img.shields.io/badge/Release-v1.3-22c55e?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Deep007h/DeepCode/releases/tag/v1.3)
+[![Latest Release](https://img.shields.io/badge/Release-v2.0-22c55e?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Deep007h/DeepCode/releases/tag/v2.0)
 [![Platform](https://img.shields.io/badge/Android-API%2026%2B%20(8.0--15)-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0%2B-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/UI-Jetpack%20Compose%20M3-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
@@ -21,7 +21,7 @@
 
 <p align="center">
   <a href="#-interface-preview"><b>Interface</b></a> •
-  <a href="#-whats-new-in-v13"><b>What's New</b></a> •
+  <a href="#-whats-new-in-v20"><b>What's New</b></a> •
   <a href="#-key-features"><b>Features</b></a> •
   <a href="#-cross-chat-long-term-memory"><b>Memory System</b></a> •
   <a href="#-ai-providers--model-matrix"><b>AI Providers</b></a> •
@@ -61,28 +61,72 @@ Whether you need to generate multi-file codebases, audit repositories, run multi
 
 ---
 
-## ⚡ What's New in v1.3
+## ⚡ What's New in v2.0
 
 <details open>
-<summary><b>✨ Highlights of Release 1.3 (Current)</b></summary>
+<summary><b>✨ Highlights of Release 2.0 (Current)</b></summary>
 <br/>
 
-- 🧠 **Cross-Chat Long-Term Memory System**:
-  - **Bi-directional Memory Sync**: Seamlessly links **In-App Chat** and **Telegram Bot** conversations. Tasks, projects, preferences, and key technical instructions discussed via Telegram are instantly recalled during new in-app chat sessions and vice-versa.
-  - **Zero-Latency Non-Blocking Extraction**: Background IO heuristics analyze turns post-completion without impacting streaming response rates, automatically filtering out greetings and trivial chit-chat.
-  - **Hybrid SQLite FTS4 Fast Retrieval**: Combines top recent active memories across chats with query-matched prefix keyword search (`term*`) and fallback in-memory matching directly injected into prompt contexts.
-  - **Dedicated Memory Settings Studio** (`Settings → Cross-Chat Memory`): Master switch, per-source toggles, real-time keyword search, filter chips (`All`, `In-App`, `Telegram`, `Manual`), topic badges, and full entry deletion/clearing.
-- 🎨 **Fluid UI Motion & Animation Polish**:
-  - **Smooth Spring-Interpolated Input Bar**: Upgraded chat input bar translation to `animateDpAsState` using `Spring.DampingRatioNoBouncy` and `Spring.StiffnessMedium`, eliminating jerky frame drops and bottom bar snapping during keyboard open/close.
-  - **Synchronous Bottom Navigation Bar**: Removed delayed animation flags so the bottom navigation bar is uncovered synchronously and instantly with zero lag as the keyboard dismisses.
-  - **Status Bar Alignment Fix**: Eliminated duplicate status bar padding on the Memory Settings screen, rendering headers neatly right beneath the system status bar.
-- 🚀 **Animated Splash Screen & Launch Speed**:
-  - Replaced the default blank launch screen with an animated splash screen featuring the glowing DeepCode logo, smooth pulsing scale transitions, and brand styling.
-  - Resolved `IllegalArgumentException` on modern Android adaptive launcher icons with a safe software bitmap canvas fallback.
-  - Reduced cold start latency and smoothed navigation transitions throughout the app.
-- ⚡ **TokenHarbor AI Provider**:
-  - Integrated **TokenHarbor AI** (`https://tokenharbor.ai/v1`) with free-tier model catalog (`deepseek-v4.1-flash:free`, `deepseek-v3:free`, `deepseek-r1:free`, `meta-llama-3.3-70b-instruct:free`, `gemini-2.5-flash:free`, `gpt-4o-mini:free`, and more).
-  - Permanent model response time fix with streamlined prompt construction and optimized streaming latency.
+- 🪽 **Nous Research Hermes Agent Integration**:
+  - **Rootless Ubuntu PRoot Agent**: Autonomous coding agent running directly inside the rootless Ubuntu 20.04 LTS PRoot subsystem (`AgentKind.HERMES`).
+  - **Automatic Toolchain Bootstrap**: Automatically sets up `/usr/local/bin/hermes` and Python runner `/usr/local/lib/hermes/hermes_runner.py` inside userspace.
+  - **Multi-Provider Tool Execution**: Connects to OpenRouter, DeepSeek, OpenAI, Anthropic, or OpenCode Zen with environment-injected API keys and autonomous `--yolo` execution loop.
+  - **Persistent Memory & Workspace Checkpoints**: Reads and writes files, tracks change history with `WorkspaceCheckpoints`, and retains instructions across turns.
+  - **Dedicated Progressive Thinking Steps**: Customized 6-phase progressive thinking steps in `ChatMotionComponents` with an Emerald Green accent badge (`🪽 Hermes Agent · PRoot`).
+  - **Seamless Non-Crashing Fallback**: Gracefully falls back to the Direct In-App Engine if PRoot is uninstalled.
+
+- ⚡ **Autonomous Harness Agent Latency & Reliability Optimizations**:
+  - **Direct Subshell Invocation**: Streamlined execution across DeepSeek Harness, Claude Code, Antigravity, and Hermes, eliminating nested subshell hops and reducing launch latency by ~40%.
+  - **Low-Latency Streaming Buffers**: Tuned stream readers (`char[1024]` with immediate `Dispatchers.Main` propagation) for responsive real-time streaming output in the terminal and chat views.
+  - **Robust Process Lifecycles**: Hardened SIGINT / SIGTERM handling, graceful reader/writer stream teardown, and process group destruction to eliminate orphan PRoot processes and memory leaks.
+  - **Isolated Per-Agent Configuration**: Prevented configuration crosstalk between simultaneous agent runs with dedicated environment variable maps and working directories.
+
+- 🎨 **ChatScreen Tactile Design System Overhaul**:
+  - **Convex Specular Bevel Highlights**: All buttons and pills upgraded with `Modifier.depthPill(...)` featuring subtle specular highlights (`highlightAlpha = 0.35f`), convex vertical gradients, and rounded/circle geometries.
+  - **Spring-Based Haptics (`bouncyClickable`)**: Responsive Apple/YouTube-style spring scale depression on touch down with native tactile haptic feedback.
+  - **Surface Container Depth**: Replaced flat borders with `Modifier.depthCard(...)` for option cards and configuration containers.
+  - **Overhauled Screens**:
+    - **Linux Subsystem & Runtimes** (`LinuxSubsystemScreen.kt`): Circular TopBar depth pills, interactive workflow pills with active border glow, API provider depth chips, and full-width gradient action buttons.
+    - **Setup Onboarding Wizard** (`SetupWizardScreen.kt`): Circular TopBar back pill, step navigation pills, avatar picker with spring haptics, custom role depth pills, accent swatches, and subsystem installation buttons.
+    - **Terminal Console Studio** (`TerminalScreen.kt`): Circular back & clear depth pills, subsystem mode selector depth pills ("Ubuntu PRoot", "Root su", "Shell sh"), virtual key buttons (CTRL, ALT, TAB, ESC, etc.), and rounded depth input bar with circular action send button.
+    - **Voice / Speech Model Settings** (`VoiceModelSettingsScreen.kt`): Circular TopBar back pill, emotion preset depth chips ("🌟 Excited", "💖 Empathy", "🎭 Dramatic", "💼 Pro"), and tactile voice preview action button.
+
+- 🧠 **Dynamic 2-Second Thinking Engine (`AnimatedThinkingCard`)**:
+  - **Fluid Engineering Steps**: Replaced static "Thinking..." placeholder with a dynamic, context-aware engineering phase sequence cycling every 2 seconds (`delay(2000L)` with vertical slide + fade `AnimatedContent`).
+  - **Tailored Progressions**: Step trajectories tailored per agent harness (DeepSeek Harness, Claude Code, Antigravity, Hermes, Direct Engine).
+  - **Live Visualizer & Status**: Uppercase micro-header, pulsing live status dot, and fluid wave visualizer.
+
+- 🛡️ **Android 14 FGS Crash Prevention & Hardening**:
+  - Resolved `ForegroundServiceStartNotAllowedException` and `MissingForegroundServiceTypeException` on Android 14+ (API 34) across `RuntimeExecutionService` and `RuntimeSetupService` by specifying `ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE`.
+  - Added robust lifecycle error handling and automatic, non-crashing fallback to Direct In-App Engine.
+
+- 🏷️ **Engine Verification & Attribution Badges**:
+  - In-app chat badges indicating whether a response was generated by an autonomous PRoot agent harness (`⚡ DeepSeek Harness · PRoot`, `✳️ Claude Code · PRoot`, `🚀 Antigravity · PRoot`, `🪽 Hermes Agent · PRoot`) or the built-in direct LLM engine (`🤖 Direct Engine`).
+  - Persistent storage in Room SQLite via `Message.toolResultsJson`.
+
+- 🔤 **Typography & Readability Overhaul**:
+  - Increased font size by +2sp across reply preview headers (`11.5sp` -> `13.5sp`), preview bars (`12sp` -> `14sp`), and markdown body text, lists, and quotes (`15sp / 23sp` -> `17sp / 25sp`) for superior readability on mobile displays.
+
+</details>
+
+<details>
+<summary><b>📜 Highlights of Release 1.5</b></summary>
+<br/>
+
+- 💻 **PC-Environment Direct Root Execution**: Autonomous AI root operations with frictionless tool calling, arbitrary-size file writes, and universal root elevation.
+- ⚡ **Dynamic Tool Calling Optimization**: Dynamic schema filtering reduces time-to-first-token by ~95% on reasoning models.
+- 💬 **Swipe-to-Reply & Quote Threading**: Telegram-style swipe-to-reply gesture with interactive quoted reply previews.
+
+</details>
+
+<details>
+<summary><b>📜 Highlights of Release 1.3</b></summary>
+<br/>
+
+- 🧠 **Cross-Chat Long-Term Memory**: Bi-directional memory sync between In-App Chat and Telegram Bot with SQLite FTS4 fast retrieval.
+- 🎨 **Fluid Motion Polish**: Spring-interpolated input bar and synchronous bottom navigation bar.
+- 🚀 **Animated Splash Screen**: Smooth pulsing brand launch screen.
+- ⚡ **TokenHarbor AI Provider**: Free-tier model catalog and optimized streaming latency.
 
 </details>
 
@@ -193,7 +237,9 @@ DeepCode offers seamless routing across over 20 top-tier AI providers. Configure
 | **ChatGPT Integration** | **Browser Session Bridge** | `chatgpt-web` (Persistent Session)<br/>`dall-e-3` (Image & Document Generation) | Dynamic<br/>1024x1024 | **Free**<br/>**Free** |
 | **OpenAI API** | **OpenAI API Key** | `gpt-6-astra` (Flagship Sept 2026)<br/>`gpt-5.6-sol`<br/>`gpt-4o`<br/>`gpt-4o-mini`<br/>`o3-mini`<br/>`o1` / `dall-e-3` | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>200k Tokens<br/>200k Tokens | Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
 | **Anthropic** | **Anthropic API Key** | `claude-fable-5.1` (Adaptive Thinking)<br/>`claude-opus-5`<br/>`claude-sonnet-5`<br/>`claude-3-7-sonnet-latest` (Hybrid)<br/>`claude-4.5-sonnet` / `claude-4.5-opus` | 1M Tokens<br/>200k Tokens<br/>200k Tokens<br/>200k Tokens<br/>200k Tokens | Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
-| **GMI Cloud** | **GMI API Key** | `Qwen/Qwen3.8-Flash`<br/>`deepseek-ai/DeepSeek-V4-Flash`<br/>`google/gemini-3.8-flash`<br/>`moonshotai/kimi-k3`<br/>`zai-org/GLM-5.3-Flash` | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens | Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
+| **Hermes Agent** | **Nous Research Autonomous CLI**<br/>`hermes` via Ubuntu PRoot | `hermes-3-llama-3.1-405b`<br/>`hermes-3-llama-3.1-70b`<br/>Multi-Provider Tool Execution (OpenRouter, DeepSeek, OpenAI, Zen) | Up to 128k Tokens | **Free** / Paid |
+| **DeepSeek Harness** | **Autonomous DSH CLI**<br/>`dsh` via Ubuntu PRoot | `deepseek-chat` / `deepseek-coder`<br/>Multi-provider CLI toolchain execution | 128k Tokens | **Free** / Paid |
+| **Claude Code CLI** | **Anthropic Terminal CLI**<br/>`claude` via Ubuntu PRoot | `claude-3-7-sonnet`<br/>`claude-3-5-sonnet`<br/>Autonomous tool turns & diffs | 200k Tokens | Paid |
 | **OpenRouter / Cerebras / Mistral** | **Respective API Keys** | Llama 3.3 70B, DeepSeek R1, Hermes 3 405B, Codestral, Mixtral 8x22B | Up to 128k | Free / Paid |
 
 ---
@@ -296,7 +342,7 @@ DeepCode/
 ## 📦 Installation
 
 ### Option 1: Direct APK (Recommended)
-1. Download the latest **`DeepCode-v1.3.apk`** from [GitHub Releases](https://github.com/Deep007h/DeepCode/releases/tag/v1.3).
+1. Download the latest **`DeepCode-v2.0.apk`** from [GitHub Releases](https://github.com/Deep007h/DeepCode/releases/tag/v2.0).
 2. Allow installation from unknown sources in Android Settings.
 3. Open DeepCode and configure your preferred provider in **Settings → API Keys**.
 
