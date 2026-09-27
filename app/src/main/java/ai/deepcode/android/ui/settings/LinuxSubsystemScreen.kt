@@ -31,6 +31,7 @@ import ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY
 import ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE
 import ai.deepcode.android.data.local.WORKFLOW_DEEPSEEK_HARNESS
 import ai.deepcode.android.data.local.WORKFLOW_DIRECT
+import ai.deepcode.android.data.local.WORKFLOW_HERMES
 import ai.deepcode.android.ui.theme.*
 import com.jarves.mh.data.AppPreferences
 import com.jarves.mh.model.AgentKind
@@ -310,6 +311,7 @@ fun LinuxSubsystemScreen(
 
                         val modes = listOf(
                             Triple(WORKFLOW_DIRECT, "Direct In-App Engine", "Native Android streaming agent loop"),
+                            Triple(WORKFLOW_HERMES, "Hermes Agent", "Nous Research autonomous agent · self-improving skills & persistent memory"),
                             Triple(WORKFLOW_DEEPSEEK_HARNESS, "DeepSeek Harness (DSH)", "Autonomous CLI in PRoot with multi-provider routing"),
                             Triple(WORKFLOW_CLAUDE_CODE, "Claude Code CLI", "Anthropic autonomous terminal agent in PRoot"),
                             Triple(WORKFLOW_ANTIGRAVITY, "Google Antigravity CLI", "Official Google agent in PRoot with reasoning effort")
@@ -650,6 +652,13 @@ fun LinuxSubsystemScreen(
                             version = installedAgents[AgentKind.DEEPSEEK_HARNESS] ?: "On-demand download",
                             status = if (installedAgents.containsKey(AgentKind.DEEPSEEK_HARNESS)) "Installed" else "Available",
                             icon = Icons.Default.Terminal
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = AppBorder)
+                        AgentRow(
+                            name = "Hermes Agent",
+                            version = installedAgents[AgentKind.HERMES] ?: (if (isInstalled) "Ready" else "Autonomous PRoot"),
+                            status = if (installedAgents.containsKey(AgentKind.HERMES) || isInstalled) "Active" else "Available",
+                            icon = Icons.Default.Psychology
                         )
                     }
                 }

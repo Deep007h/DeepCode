@@ -217,6 +217,7 @@ const val WORKFLOW_DIRECT = "direct"
 const val WORKFLOW_DEEPSEEK_HARNESS = "deepseek-harness"
 const val WORKFLOW_CLAUDE_CODE = "claude-code"
 const val WORKFLOW_ANTIGRAVITY = "antigravity"
+const val WORKFLOW_HERMES = "hermes"
 
 private const val DEFAULT_CUSTOM_PERSONA = ""
 

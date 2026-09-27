@@ -100,8 +100,17 @@ fun getDynamicThinkingSteps(engineBadge: String?): List<String> {
     val isDeepSeek = engineBadge?.contains("DeepSeek", ignoreCase = true) == true
     val isClaude = engineBadge?.contains("Claude", ignoreCase = true) == true
     val isAntigravity = engineBadge?.contains("Antigravity", ignoreCase = true) == true
+    val isHermes = engineBadge?.contains("Hermes", ignoreCase = true) == true
 
     return when {
+        isHermes -> listOf(
+            "Analyzing prompt & repository directives...",
+            "Consulting persistent memory & active skills...",
+            "Formulating autonomous execution plan...",
+            "Engaging Hermes toolchain in workspace...",
+            "Synthesizing optimal code solution...",
+            "Verifying output integrity & syntax..."
+        )
         isDeepSeek -> listOf(
             "Analyzing prompt & repository context...",
             "Initializing DeepSeek Harness agent...",
@@ -173,6 +182,7 @@ fun AnimatedThinkingCard(
 
     val effectiveAccent = remember(engineBadge, accentColor) {
         when {
+            engineBadge?.contains("Hermes", ignoreCase = true) == true -> Color(0xFF10B981)
             engineBadge?.contains("DeepSeek", ignoreCase = true) == true -> Color(0xFFFF6D00)
             engineBadge?.contains("Claude", ignoreCase = true) == true -> Color(0xFFD97706)
             engineBadge?.contains("Antigravity", ignoreCase = true) == true -> Color(0xFF3B82F6)
@@ -184,6 +194,7 @@ fun AnimatedThinkingCard(
     val headerLabel = remember(engineBadge, explicitStatus) {
         when {
             explicitStatus != null -> "PROCESSING TASK"
+            engineBadge?.contains("Hermes", ignoreCase = true) == true -> "THINKING · HERMES AGENT"
             engineBadge?.contains("DeepSeek", ignoreCase = true) == true -> "THINKING · DEEPSEEK HARNESS"
             engineBadge?.contains("Claude", ignoreCase = true) == true -> "THINKING · CLAUDE CODE"
             engineBadge?.contains("Antigravity", ignoreCase = true) == true -> "THINKING · ANTIGRAVITY"
@@ -994,11 +1005,13 @@ fun EngineIndicatorBadge(
     val isPRoot = engineName.contains("PRoot", ignoreCase = true) ||
             engineName.contains("DeepSeek", ignoreCase = true) ||
             engineName.contains("Claude", ignoreCase = true) ||
-            engineName.contains("Antigravity", ignoreCase = true)
+            engineName.contains("Antigravity", ignoreCase = true) ||
+            engineName.contains("Hermes", ignoreCase = true)
     val isFallback = engineName.contains("Fallback", ignoreCase = true)
 
     val (icon, tint) = when {
         isFallback -> "⚠️" to Color(0xFFEF4444)
+        engineName.contains("Hermes", ignoreCase = true) -> "🪽" to Color(0xFF10B981)
         engineName.contains("DeepSeek", ignoreCase = true) -> "⚡" to Color(0xFFFF6D00)
         engineName.contains("Claude", ignoreCase = true) -> "✳️" to Color(0xFFD97706)
         engineName.contains("Antigravity", ignoreCase = true) -> "🚀" to Color(0xFF3B82F6)

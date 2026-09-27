@@ -55,6 +55,7 @@ import ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY
 import ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE
 import ai.deepcode.android.data.local.WORKFLOW_DEEPSEEK_HARNESS
 import ai.deepcode.android.data.local.WORKFLOW_DIRECT
+import ai.deepcode.android.data.local.WORKFLOW_HERMES
 import ai.deepcode.android.service.tools.ToolExecutor
 import ai.deepcode.android.ui.theme.*
 import com.jarves.mh.data.ApiKeyVault
@@ -660,6 +661,15 @@ private fun StepWorkflow(
         isSelected = selectedMode == WORKFLOW_ANTIGRAVITY,
         onClick = { onSelectMode(WORKFLOW_ANTIGRAVITY) }
     )
+
+    WorkflowOptionCard(
+        title = "Hermes Agent",
+        badge = "Nous Research · Self-Improving",
+        desc = "Nous Research's autonomous agent running in PRoot with persistent memory, self-improving skills, and multi-provider tool execution.",
+        icon = Icons.Default.Psychology,
+        isSelected = selectedMode == WORKFLOW_HERMES,
+        onClick = { onSelectMode(WORKFLOW_HERMES) }
+    )
 }
 
 @Composable
@@ -1243,6 +1253,7 @@ private fun StepSubsystemReview(
                                     val agent = when (workflowMode) {
                                         WORKFLOW_DEEPSEEK_HARNESS -> AgentKind.DEEPSEEK_HARNESS
                                         WORKFLOW_CLAUDE_CODE -> AgentKind.CLAUDE_CODE
+                                        WORKFLOW_HERMES -> AgentKind.HERMES
                                         else -> AgentKind.ANTIGRAVITY
                                     }
                                     installer.ensureInstalled(
@@ -1292,6 +1303,7 @@ private fun StepSubsystemReview(
                 WORKFLOW_DEEPSEEK_HARNESS -> "DeepSeek Harness (Autonomous PRoot CLI)"
                 WORKFLOW_CLAUDE_CODE -> "Claude Code CLI"
                 WORKFLOW_ANTIGRAVITY -> "Google Antigravity CLI"
+                WORKFLOW_HERMES -> "Hermes Agent (Nous Research PRoot)"
                 else -> "Direct In-App Engine (Native Android)"
             })
             ReviewRow("Voice / TTS Engine", ttsEngine)

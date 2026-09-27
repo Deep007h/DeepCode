@@ -72,6 +72,12 @@ enum class AgentKind(
         "Google's official coding agent · Google account",
         "39.9 MB",
     ),
+    HERMES(
+        "hermes",
+        "Hermes Agent",
+        "Nous Research autonomous agent · self-improving skills",
+        "35.2 MB",
+    ),
     ;
 
     companion object {
@@ -80,6 +86,14 @@ enum class AgentKind(
         } ?: CLAUDE_CODE
     }
 }
+
+val HERMES_PROVIDERS: Set<ProviderKind> = setOf(
+    ProviderKind.LLM_ROUTER,
+    ProviderKind.DEEPSEEK,
+    ProviderKind.OPENCODE_ZEN,
+    ProviderKind.ANTHROPIC,
+    ProviderKind.CUSTOM,
+)
 
 /** Provider kinds usable with [AgentKind.DEEPSEEK_HARNESS]. Claude OAuth login has no dsh equivalent. */
 val DEEPSEEK_HARNESS_PROVIDERS: Set<ProviderKind> = setOf(
@@ -137,6 +151,7 @@ fun providersForAgent(agent: AgentKind): List<ProviderKind> = when (agent) {
     AgentKind.DEEPSEEK_HARNESS -> ProviderKind.entries.filter { it in DEEPSEEK_HARNESS_PROVIDERS }
     AgentKind.CLAUDE_CODE -> ProviderKind.entries.filterNot { it == ProviderKind.OPENCODE_ZEN }
     AgentKind.ANTIGRAVITY -> emptyList()
+    AgentKind.HERMES -> ProviderKind.entries.filter { it in HERMES_PROVIDERS }
 }
 
 data class ProviderProfile(

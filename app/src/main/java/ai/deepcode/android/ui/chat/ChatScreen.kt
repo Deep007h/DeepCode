@@ -1629,6 +1629,7 @@ private fun TopBar(
         ai.deepcode.android.data.local.WORKFLOW_DEEPSEEK_HARNESS -> Triple("⚡", "DSH", "DeepSeek Harness")
         ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE -> Triple("✳️", "Claude", "Claude Code")
         ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY -> Triple("🚀", "AGY", "Antigravity")
+        ai.deepcode.android.data.local.WORKFLOW_HERMES -> Triple("🪽", "Hermes", "Hermes Agent")
         else -> Triple("🤖", "Agent", "Autonomous Agent")
     }
 
@@ -2782,10 +2783,11 @@ private fun StreamingItem(
 
     val currentEngineBadge = remember(streamingBadge, workflowMode, activeModel) {
         streamingBadge ?: when (workflowMode) {
-            ai.deepcode.android.data.local.WORKFLOW_DEEPSEEK_HARNESS -> "DeepSeek Harness · PRoot"
-            ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE -> "Claude Code · PRoot"
-            ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY -> "Antigravity · PRoot"
-            else -> "Direct Engine · ${activeModel.name}"
+            ai.deepcode.android.data.local.WORKFLOW_DEEPSEEK_HARNESS -> "⚡ DeepSeek Harness · PRoot"
+            ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE -> "✳️ Claude Code · PRoot"
+            ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY -> "🚀 Antigravity · PRoot"
+            ai.deepcode.android.data.local.WORKFLOW_HERMES -> "🪽 Hermes Agent · PRoot"
+            else -> "🤖 Direct Engine · ${activeModel.name}"
         }
     }
 
@@ -5024,6 +5026,7 @@ class ChatViewModel(val repository: DeepCodeRepository) : ViewModel() {
             ai.deepcode.android.data.local.WORKFLOW_DEEPSEEK_HARNESS -> com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS
             ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE -> com.jarves.mh.model.AgentKind.CLAUDE_CODE
             ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY -> com.jarves.mh.model.AgentKind.ANTIGRAVITY
+            ai.deepcode.android.data.local.WORKFLOW_HERMES -> com.jarves.mh.model.AgentKind.HERMES
             else -> com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS
         }
         _streamingEngineBadge.value = "${agentKind.title} · PRoot"
@@ -5141,6 +5144,15 @@ class ChatViewModel(val repository: DeepCodeRepository) : ViewModel() {
                     conversationId = { pId -> appPrefs.loadAgentConversation(com.jarves.mh.model.AgentKind.ANTIGRAVITY, pId, sessionId) },
                     saveConversationId = { pId, cId -> appPrefs.saveAgentConversation(com.jarves.mh.model.AgentKind.ANTIGRAVITY, pId, sessionId, cId) }
                 )
+            }
+            com.jarves.mh.model.AgentKind.HERMES -> {
+                com.jarves.mh.runtime.HermesRuntimeBridge(context) { prof ->
+                    vault.getSecret(prof.kind.name)
+                        ?: repository.securePrefs.getApiKey(prof.kind.name.lowercase())
+                        ?: repository.securePrefs.getApiKey(prof.kind.title.lowercase())
+                        ?: repository.securePrefs.getApiKey("openrouter")
+                        ?: "zen-free"
+                }
             }
         }
 
