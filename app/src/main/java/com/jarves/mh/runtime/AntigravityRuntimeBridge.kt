@@ -229,30 +229,57 @@ class AntigravityRuntimeBridge(
                         return false
                     }
                     var done = false
-                    while (!done && (process.isAlive || outputFile.length() > offset)) {
-                        val available = outputFile.length() - offset
-                        if (available <= 0) {
-                            delay(100)
-                            continue
-                        }
-                        val bytes = ByteArray(minOf(available, 16L * 1024).toInt())
-                        val count = RandomAccessFile(outputFile, "r").use { file ->
-                            file.seek(offset)
-                            file.read(bytes)
-                        }
-                        if (count <= 0) continue
-                        offset += count
-                        pending.append(bytes.decodeToString(0, count))
-                        var newline = pending.indexOf("\n")
-                        while (newline >= 0) {
-                            val line = pending.substring(0, newline).trimEnd('\r')
-                            pending.delete(0, newline + 1)
-                            if (handleLine(line)) {
-                                done = true
-                                break
+                    val readBuffer = ByteArray(32 * 1024)
+                    var idleCount = 0
+                    var raf: RandomAccessFile? = null
+                    try {
+                        while (!done && (process.isAlive || (outputFile.exists() && outputFile.length() > offset))) {
+                            if (!outputFile.exists()) {
+                                if (!process.isAlive) break
+                                delay(10)
+                                continue
                             }
-                            newline = pending.indexOf("\n")
+                            if (raf == null) {
+                                raf = runCatching { RandomAccessFile(outputFile, "r") }.getOrNull()
+                                if (raf == null) {
+                                    if (!process.isAlive) break
+                                    delay(10)
+                                    continue
+                                }
+                            }
+                            val fileLength = raf.length()
+                            val available = fileLength - offset
+                            if (available <= 0) {
+                                if (!process.isAlive) break
+                                val pollDelay = when {
+                                    idleCount < 2 -> 8L
+                                    idleCount < 8 -> 18L
+                                    else -> 35L
+                                }
+                                idleCount++
+                                delay(pollDelay)
+                                continue
+                            }
+                            idleCount = 0
+                            val toRead = minOf(available, readBuffer.size.toLong()).toInt()
+                            raf.seek(offset)
+                            val count = raf.read(readBuffer, 0, toRead)
+                            if (count <= 0) continue
+                            offset += count
+                            pending.append(readBuffer.decodeToString(0, count))
+                            var newline = pending.indexOf("\n")
+                            while (newline >= 0) {
+                                val line = pending.substring(0, newline).trimEnd('\r')
+                                pending.delete(0, newline + 1)
+                                if (handleLine(line)) {
+                                    done = true
+                                    break
+                                }
+                                newline = pending.indexOf("\n")
+                            }
                         }
+                    } finally {
+                        runCatching { raf?.close() }
                     }
                     pending.toString().trim().takeIf(String::isNotEmpty)?.let { if (!done) done = handleLine(it) }
                     // Drain process exit without hanging past the timeout.
@@ -320,9 +347,11 @@ class AntigravityRuntimeBridge(
                 .put("event", "user")
                 .put("message", JSONObject().put("content", antigravityWorkspacePrompt(projectSlug, prompt)))
                 .toString() + "\n"
-            process.outputStream.write(request.toByteArray())
-            process.outputStream.flush()
-            process.outputStream.close()
+            runCatching {
+                process.outputStream.write(request.toByteArray())
+                process.outputStream.flush()
+                process.outputStream.close()
+            }
 
             val native = process as? NativeSpawnProcess ?: error("Unsupported Antigravity process")
             var offset = 0L
@@ -351,27 +380,54 @@ class AntigravityRuntimeBridge(
                     null -> Unit
                 }
             }
-            while (process.isAlive || native.outputFile.length() > offset) {
-                val available = native.outputFile.length() - offset
-                if (available <= 0) {
-                    delay(50)
-                    continue
+            val readBuffer = ByteArray(32 * 1024)
+            var idleCount = 0
+            var raf: RandomAccessFile? = null
+            try {
+                while (process.isAlive || (native.outputFile.exists() && native.outputFile.length() > offset)) {
+                    if (!native.outputFile.exists()) {
+                        if (!process.isAlive) break
+                        delay(10)
+                        continue
+                    }
+                    if (raf == null) {
+                        raf = runCatching { RandomAccessFile(native.outputFile, "r") }.getOrNull()
+                        if (raf == null) {
+                            if (!process.isAlive) break
+                            delay(10)
+                            continue
+                        }
+                    }
+                    val fileLength = raf.length()
+                    val available = fileLength - offset
+                    if (available <= 0) {
+                        if (!process.isAlive) break
+                        val pollDelay = when {
+                            idleCount < 2 -> 8L
+                            idleCount < 8 -> 18L
+                            else -> 35L
+                        }
+                        idleCount++
+                        delay(pollDelay)
+                        continue
+                    }
+                    idleCount = 0
+                    val toRead = minOf(available, readBuffer.size.toLong()).toInt()
+                    raf.seek(offset)
+                    val count = raf.read(readBuffer, 0, toRead)
+                    if (count <= 0) continue
+                    offset += count
+                    pending.append(readBuffer.decodeToString(0, count))
+                    var newline = pending.indexOf("\n")
+                    while (newline >= 0) {
+                        val line = pending.substring(0, newline).trimEnd('\r')
+                        pending.delete(0, newline + 1)
+                        handleLine(line)
+                        newline = pending.indexOf("\n")
+                    }
                 }
-                val bytes = ByteArray(minOf(available, 16L * 1024).toInt())
-                val count = RandomAccessFile(native.outputFile, "r").use { file ->
-                    file.seek(offset)
-                    file.read(bytes)
-                }
-                if (count <= 0) continue
-                offset += count
-                pending.append(bytes.decodeToString(0, count))
-                var newline = pending.indexOf("\n")
-                while (newline >= 0) {
-                    val line = pending.substring(0, newline).trimEnd('\r')
-                    pending.delete(0, newline + 1)
-                    handleLine(line)
-                    newline = pending.indexOf("\n")
-                }
+            } finally {
+                runCatching { raf?.close() }
             }
             pending.toString().trim().takeIf(String::isNotEmpty)?.let { handleLine(it) }
             val exit = process.waitFor()
@@ -403,10 +459,12 @@ class AntigravityRuntimeBridge(
         // product choice, so no Antigravity approval can be pending here.
     }
 
-    override suspend fun stopSession(sessionId: String) {
+    override suspend fun stopSession(sessionId: String) = withContext(Dispatchers.IO) {
         if (activeSessionId == sessionId) {
             userStopRequested = true
             activeProcess?.destroy()
+            delay(500)
+            if (activeProcess?.isAlive == true) activeProcess?.destroyForcibly()
             emitFailure(sessionId, "Stopped by user")
         }
     }

@@ -185,40 +185,67 @@ class ClaudeRuntimeBridge(
                 val nativeProcess = process as? NativeSpawnProcess
                     ?: error("Unsupported Android runtime process")
                 var outputOffset = 0L
-                while (process.isAlive || nativeProcess.outputFile.length() > outputOffset) {
-                    val available = nativeProcess.outputFile.length() - outputOffset
-                    if (available <= 0) {
-                        delay(50)
-                        continue
-                    }
-                    val bytes = ByteArray(minOf(available, 16L * 1024).toInt())
-                    val count = RandomAccessFile(nativeProcess.outputFile, "r").use { file ->
-                        file.seek(outputOffset)
-                        file.read(bytes)
-                    }
-                    if (count > 0) {
-                        outputOffset += count
-                        pendingOutput.append(bytes.decodeToString(0, count))
-                        var newline = pendingOutput.indexOf("\n")
-                        while (newline >= 0) {
-                            val line = pendingOutput.substring(0, newline).trimEnd('\r')
-                            pendingOutput.delete(0, newline + 1)
-                            if (line.isNotBlank()) {
-                                Log.d("ClaudeBridge", "OUTPUT: $line")
-                                ProviderRuntimeErrorDetector.detect(line)?.let { reason ->
-                                    process.destroyForcibly()
-                                    throw ProviderSessionException(reason)
-                                }
-                                if (!consumeClaudeEvent(sessionId, line)) {
-                                    lastDiagnostic = line.takeLast(500)
-                                    terminalStatus(line)?.let { (title, detail) ->
-                                        eventBus.emit(RuntimeEvent.RuntimeLog(sessionId, title, detail))
+                val readBuffer = ByteArray(32 * 1024)
+                var idleCount = 0
+                var raf: RandomAccessFile? = null
+                try {
+                    while (process.isAlive || (nativeProcess.outputFile.exists() && nativeProcess.outputFile.length() > outputOffset)) {
+                        if (!nativeProcess.outputFile.exists()) {
+                            if (!process.isAlive) break
+                            delay(10)
+                            continue
+                        }
+                        if (raf == null) {
+                            raf = runCatching { RandomAccessFile(nativeProcess.outputFile, "r") }.getOrNull()
+                            if (raf == null) {
+                                if (!process.isAlive) break
+                                delay(10)
+                                continue
+                            }
+                        }
+                        val fileLength = raf.length()
+                        val available = fileLength - outputOffset
+                        if (available <= 0) {
+                            if (!process.isAlive) break
+                            val pollDelay = when {
+                                idleCount < 2 -> 8L
+                                idleCount < 8 -> 18L
+                                else -> 35L
+                            }
+                            idleCount++
+                            delay(pollDelay)
+                            continue
+                        }
+                        idleCount = 0
+                        val toRead = minOf(available, readBuffer.size.toLong()).toInt()
+                        raf.seek(outputOffset)
+                        val count = raf.read(readBuffer, 0, toRead)
+                        if (count > 0) {
+                            outputOffset += count
+                            pendingOutput.append(readBuffer.decodeToString(0, count))
+                            var newline = pendingOutput.indexOf("\n")
+                            while (newline >= 0) {
+                                val line = pendingOutput.substring(0, newline).trimEnd('\r')
+                                pendingOutput.delete(0, newline + 1)
+                                if (line.isNotBlank()) {
+                                    Log.d("ClaudeBridge", "OUTPUT: $line")
+                                    ProviderRuntimeErrorDetector.detect(line)?.let { reason ->
+                                        process.destroyForcibly()
+                                        throw ProviderSessionException(reason)
+                                    }
+                                    if (!consumeClaudeEvent(sessionId, line)) {
+                                        lastDiagnostic = line.takeLast(500)
+                                        terminalStatus(line)?.let { (title, detail) ->
+                                            eventBus.emit(RuntimeEvent.RuntimeLog(sessionId, title, detail))
+                                        }
                                     }
                                 }
+                                newline = pendingOutput.indexOf("\n")
                             }
-                            newline = pendingOutput.indexOf("\n")
                         }
                     }
+                } finally {
+                    runCatching { raf?.close() }
                 }
                 pendingOutput.toString().trim().takeIf(String::isNotBlank)?.let { line ->
                     Log.d("ClaudeBridge", "TRAILING OUTPUT: $line")

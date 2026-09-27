@@ -88,21 +88,44 @@ class AntigravityAuthController(
         var renderingScreenCompleted = false
         var privacyScreenCompleted = false
         var workspaceTrustCompleted = false
+        val readBuffer = ByteArray(32 * 1024)
+        var idleCount = 0
+        var raf: RandomAccessFile? = null
         try {
-            while (running.isAlive || native.outputFile.length() > offset) {
-                val available = native.outputFile.length() - offset
-                if (available <= 0) {
-                    delay(80)
+            while (running.isAlive || (native.outputFile.exists() && native.outputFile.length() > offset)) {
+                if (!native.outputFile.exists()) {
+                    if (!running.isAlive) break
+                    delay(10)
                     continue
                 }
-                val bytes = ByteArray(minOf(available, 16L * 1024).toInt())
-                val count = RandomAccessFile(native.outputFile, "r").use { file ->
-                    file.seek(offset)
-                    file.read(bytes)
+                if (raf == null) {
+                    raf = runCatching { RandomAccessFile(native.outputFile, "r") }.getOrNull()
+                    if (raf == null) {
+                        if (!running.isAlive) break
+                        delay(10)
+                        continue
+                    }
                 }
+                val fileLength = raf.length()
+                val available = fileLength - offset
+                if (available <= 0) {
+                    if (!running.isAlive) break
+                    val pollDelay = when {
+                        idleCount < 2 -> 10L
+                        idleCount < 8 -> 25L
+                        else -> 50L
+                    }
+                    idleCount++
+                    delay(pollDelay)
+                    continue
+                }
+                idleCount = 0
+                val toRead = minOf(available, readBuffer.size.toLong()).toInt()
+                raf.seek(offset)
+                val count = raf.read(readBuffer, 0, toRead)
                 if (count <= 0) continue
                 offset += count
-                output.append(bytes.decodeToString(0, count))
+                output.append(readBuffer.decodeToString(0, count))
                 val clean = sanitizeTerminalOutput(output.toString()).takeLast(40_000)
                 // Antigravity's renderer asks a real terminal for DEC mode and
                 // Kitty keyboard-protocol status before it paints its UI, and it
@@ -230,6 +253,7 @@ class AntigravityAuthController(
                 )
             }
         } finally {
+            runCatching { raf?.close() }
             if (running.isAlive) running.destroy()
             runCatching { running.outputStream.close() }
             native.outputFile.delete() // OAuth terminal output is intentionally ephemeral.

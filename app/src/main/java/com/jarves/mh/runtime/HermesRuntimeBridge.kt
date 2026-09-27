@@ -16,6 +16,7 @@ import java.io.File
 import java.io.RandomAccessFile
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -130,7 +131,43 @@ class HermesRuntimeBridge(
                 val line = rawLine.trim()
                 if (line.isEmpty()) return
 
+                if (line.startsWith("{") && line.endsWith("}")) {
+                    val parsed = runCatching { JSONObject(line) }.getOrNull()
+                    if (parsed != null) {
+                        when (parsed.optString("event")) {
+                            "delta" -> {
+                                val text = parsed.optString("text")
+                                if (text.isNotEmpty()) eventBus.tryEmit(RuntimeEvent.AssistantDelta(sessionId, text))
+                                return
+                            }
+                            "thought" -> {
+                                val text = parsed.optString("text")
+                                if (text.isNotEmpty()) eventBus.tryEmit(RuntimeEvent.ReasoningSummary(sessionId, text, 1L))
+                                return
+                            }
+                            "tool" -> {
+                                val name = parsed.optString("name")
+                                val detail = parsed.optString("detail")
+                                currentTool = name
+                                eventBus.tryEmit(RuntimeEvent.ToolStarted(sessionId, name, detail.ifBlank { "Executing $name" }))
+                                pushForegroundProgress("Hermes: $name")
+                                return
+                            }
+                            "tool_result" -> {
+                                val summary = parsed.optString("summary")
+                                val tool = currentTool.ifBlank { "Tool" }
+                                eventBus.tryEmit(RuntimeEvent.ToolCompleted(sessionId, tool, summary.take(200)))
+                                currentTool = ""
+                                return
+                            }
+                        }
+                    }
+                }
+
                 when {
+                    line.startsWith("[Delta] ") -> {
+                        eventBus.tryEmit(RuntimeEvent.AssistantDelta(sessionId, line.removePrefix("[Delta] ")))
+                    }
                     line.startsWith("[Tool:") || line.startsWith("Tool:") -> {
                         val toolName = line.substringAfter("Tool:").substringBefore("]").substringBefore("\n").trim()
                         val detail = line.substringAfter("]", "").trim()
@@ -154,27 +191,55 @@ class HermesRuntimeBridge(
                 }
             }
 
-            while (process.isAlive || outputFile.length() > offset) {
-                val available = outputFile.length() - offset
-                if (available <= 0) {
-                    delay(80)
-                    continue
+            val readBuffer = ByteArray(32 * 1024)
+            var idleCount = 0
+            var raf: RandomAccessFile? = null
+            try {
+                while (process.isAlive || (outputFile.exists() && outputFile.length() > offset)) {
+                    if (!outputFile.exists()) {
+                        if (!process.isAlive) break
+                        delay(10)
+                        continue
+                    }
+                    if (raf == null) {
+                        raf = runCatching { RandomAccessFile(outputFile, "r") }.getOrNull()
+                        if (raf == null) {
+                            if (!process.isAlive) break
+                            delay(10)
+                            continue
+                        }
+                    }
+                    val fileLength = raf.length()
+                    val available = fileLength - offset
+                    if (available <= 0) {
+                        if (!process.isAlive) break
+                        val pollDelay = when {
+                            idleCount < 2 -> 8L
+                            idleCount < 8 -> 18L
+                            else -> 35L
+                        }
+                        idleCount++
+                        delay(pollDelay)
+                        continue
+                    }
+                    idleCount = 0
+                    val toRead = minOf(available, readBuffer.size.toLong()).toInt()
+                    raf.seek(offset)
+                    val count = raf.read(readBuffer, 0, toRead)
+                    if (count <= 0) continue
+                    offset += count
+                    pending.append(readBuffer.decodeToString(0, count))
+                    var newline = pending.indexOf('\n')
+                    while (newline >= 0) {
+                        val line = pending.substring(0, newline).trimEnd('\r')
+                        pending.delete(0, newline + 1)
+                        processLine(line)
+                        newline = pending.indexOf('\n')
+                    }
                 }
-                val bytes = ByteArray(minOf(available, 32L * 1024).toInt())
-                val count = RandomAccessFile(outputFile, "r").use { file ->
-                    file.seek(offset)
-                    file.read(bytes)
-                }
-                if (count <= 0) continue
-                offset += count
-                pending.append(bytes.decodeToString(0, count))
-                var newline = pending.indexOf('\n')
-                while (newline >= 0) {
-                    val line = pending.substring(0, newline).trimEnd('\r')
-                    pending.delete(0, newline + 1)
-                    processLine(line)
-                    newline = pending.indexOf('\n')
-                }
+            } finally {
+                runCatching { raf?.close() }
+                runCatching { outputFile.delete() }
             }
 
             if (pending.isNotEmpty()) {

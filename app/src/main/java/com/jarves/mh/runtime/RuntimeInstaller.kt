@@ -568,7 +568,7 @@ class RuntimeInstaller(private val context: Context) {
         fraction: Float,
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
-        if (isAgentInstalled(com.jarves.mh.model.AgentKind.HERMES)) return
+        if (isAgentInstalled(com.jarves.mh.model.AgentKind.HERMES) && hermesMarker.readTextOrNull() == HERMES_VERSION) return
         onProgress(RuntimeInstallProgress("Setting up Hermes Agent $HERMES_VERSION", fraction))
         val destination = File(rootfs, HERMES_GUEST_PATH.removePrefix("/"))
         destination.parentFile?.mkdirs()
@@ -589,7 +589,7 @@ class RuntimeInstaller(private val context: Context) {
             |#!/usr/bin/env bash
             |set -e
             |if [ "${'$'}1" = "--version" ] || [ "${'$'}1" = "-v" ]; then
-            |    echo "Hermes Agent v0.4.0 (Nous Research · DeepCode PRoot)"
+            |    echo "Hermes Agent v0.4.1 (Nous Research · DeepCode PRoot)"
             |    exit 0
             |fi
             |if [ "${'$'}1" = "--help" ] || [ "${'$'}1" = "-h" ]; then
@@ -665,38 +665,67 @@ class RuntimeInstaller(private val context: Context) {
             |        "Authorization": f"Bearer {api_key}" if api_key else "",
             |        "HTTP-Referer": "https://deepcode.ai",
             |        "X-Title": "DeepCode Hermes Agent",
-            |        "User-Agent": "DeepCode-Hermes/0.4.0"
+            |        "User-Agent": "DeepCode-Hermes/0.4.1"
             |    }
             |
             |    payload = {
             |        "model": model,
             |        "messages": [
             |            {
-            |                "role": "system",
-            |                "content": (
-            |                    "You are Hermes Agent, Nous Research's autonomous AI agent operating inside DeepCode PRoot Android Linux. "
-            |                    "You possess persistent memory, skills, and coding toolchains. "
-            |                    "Provide comprehensive, structured engineering solutions, clear code, and proactive assistance."
-            |                )
-            |            },
+                "role": "system",
+                "content": (
+                    "You are Hermes Agent, Nous Research's autonomous AI agent operating inside DeepCode PRoot Android Linux. "
+                    "You possess persistent memory, skills, and coding toolchains. "
+                    "Provide comprehensive, structured engineering solutions, clear code, and proactive assistance."
+                )
+            },
             |            {"role": "user", "content": prompt}
             |        ],
             |        "temperature": 0.6,
-            |        "stream": False
+            |        "stream": True
             |    }
             |
+            |    has_streamed = False
             |    try:
             |        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
             |        with urllib.request.urlopen(req, timeout=90) as response:
-            |            res_data = json.loads(response.read().decode("utf-8"))
-            |            content = res_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            |            if content:
-            |                print(content, flush=True)
-            |            else:
-            |                print("Hermes Agent: Received empty response from model.", flush=True)
-            |    except Exception as e:
-            |        print(f"[Thought] Operating in local autonomous execution mode...", flush=True)
-            |        print(f"**Hermes Agent (Offline Autonomous Mode)**\n\nCompleted inspection for prompt: *{prompt}*\n\nStatus: Runtime active in `/workspace`. Remote endpoint: {e}", flush=True)
+            |            for raw_chunk in response:
+            |                chunk_str = raw_chunk.decode("utf-8").strip()
+            |                if not chunk_str or chunk_str.startswith(":"):
+            |                    continue
+            |                if chunk_str == "data: [DONE]":
+            |                    break
+            |                if chunk_str.startswith("data:"):
+            |                    data_str = chunk_str[5:].strip()
+            |                    try:
+            |                        obj = json.loads(data_str)
+            |                        choice = obj.get("choices", [{}])[0]
+            |                        delta = choice.get("delta", {})
+            |                        token = delta.get("content", "")
+            |                        reasoning = delta.get("reasoning_content", "") or delta.get("thought", "")
+            |                        if reasoning:
+            |                            print(json.dumps({"event": "thought", "text": reasoning}), flush=True)
+            |                            has_streamed = True
+            |                        if token:
+            |                            print(json.dumps({"event": "delta", "text": token}), flush=True)
+            |                            has_streamed = True
+            |                    except Exception:
+            |                        pass
+            |    except Exception as stream_err:
+            |        if not has_streamed:
+            |            payload["stream"] = False
+            |            try:
+            |                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+            |                with urllib.request.urlopen(req, timeout=90) as response:
+            |                    res_data = json.loads(response.read().decode("utf-8"))
+            |                    content = res_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            |                    if content:
+            |                        print(content, flush=True)
+            |                    else:
+            |                        print("Hermes Agent: Received empty response from model.", flush=True)
+            |            except Exception as e:
+            |                print(f"[Thought] Operating in local autonomous execution mode...", flush=True)
+            |                print(f"**Hermes Agent (Offline Autonomous Mode)**\n\nCompleted inspection for prompt: *{prompt}*\n\nStatus: Runtime active in `/workspace`. Remote endpoint: {e}", flush=True)
             |
             |if __name__ == "__main__":
             |    main()
@@ -1446,39 +1475,60 @@ class RuntimeInstaller(private val context: Context) {
             withTimeout(timeoutMs) {
                 var offset = 0L
                 var pending = ""
-                while (running.isAlive || (native?.outputFile?.length() ?: 0L) > offset) {
-                    coroutineContext.ensureActive()
+                val buffer = ByteArray(32 * 1024)
+                var raf: RandomAccessFile? = null
+                var idleCount = 0
+                try {
                     val file = native?.outputFile
-                    if (file != null && file.length() > offset) {
-                        RandomAccessFile(file, "r").use { input ->
-                            input.seek(offset)
-                            val available = (input.length() - offset).coerceAtMost(256 * 1024).toInt()
-                            val bytes = ByteArray(available)
-                            input.readFully(bytes)
-                            offset += available
-                            pending += bytes.toString(Charsets.UTF_8).replace('\r', '\n')
-                        }
-                        val parts = pending.split('\n')
-                        pending = parts.last()
-                        for (raw in parts.dropLast(1)) {
-                            val line = sanitizeTerminalLine(raw)
-                            if (line.isNotBlank()) {
-                                collected.appendLine(line)
-                                if (collected.length > MAX_COLLECTED_OUTPUT) collected.delete(0, collected.length - MAX_COLLECTED_OUTPUT)
-                                onProgress(
-                                    RuntimeInstallProgress(
-                                        message = line,
-                                        fraction = fraction,
-                                        terminalLine = line,
-                                        indeterminate = true,
-                                        event = RuntimeInstallEvent.OUTPUT,
-                                    ),
-                                )
+                    while (running.isAlive || ((file?.exists() == true) && file.length() > offset)) {
+                        coroutineContext.ensureActive()
+                        if (file != null && file.exists()) {
+                            if (raf == null) {
+                                raf = runCatching { RandomAccessFile(file, "r") }.getOrNull()
+                            }
+                            val fileLength = raf?.length() ?: file.length()
+                            val available = fileLength - offset
+                            if (available > 0 && raf != null) {
+                                idleCount = 0
+                                raf.seek(offset)
+                                val toRead = minOf(available, buffer.size.toLong()).toInt()
+                                val count = raf.read(buffer, 0, toRead)
+                                if (count > 0) {
+                                    offset += count
+                                    pending += buffer.decodeToString(0, count).replace('\r', '\n')
+                                    val parts = pending.split('\n')
+                                    pending = parts.last()
+                                    for (raw in parts.dropLast(1)) {
+                                        val line = sanitizeTerminalLine(raw)
+                                        if (line.isNotBlank()) {
+                                            collected.appendLine(line)
+                                            if (collected.length > MAX_COLLECTED_OUTPUT) collected.delete(0, collected.length - MAX_COLLECTED_OUTPUT)
+                                            onProgress(
+                                                RuntimeInstallProgress(
+                                                    message = line,
+                                                    fraction = fraction,
+                                                    terminalLine = line,
+                                                    indeterminate = true,
+                                                    event = RuntimeInstallEvent.OUTPUT,
+                                                ),
+                                            )
+                                        }
+                                    }
+                                    continue
+                                }
                             }
                         }
-                    } else {
-                        delay(80)
+                        if (!running.isAlive) break
+                        val pollDelay = when {
+                            idleCount < 2 -> 15L
+                            idleCount < 6 -> 35L
+                            else -> 70L
+                        }
+                        idleCount++
+                        delay(pollDelay)
                     }
+                } finally {
+                    runCatching { raf?.close() }
                 }
                 sanitizeTerminalLine(pending).takeIf(String::isNotBlank)?.let { line ->
                     collected.appendLine(line)
@@ -1984,7 +2034,7 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         const val HERMES_GUEST_PATH = "/usr/local/bin/hermes"
         const val GITHUB_CLI_GUEST_PATH = "/root/.local/bin/gh"
         private const val AGY_VERSION = "1.1.27"
-        private const val HERMES_VERSION = "0.4.0"
+        private const val HERMES_VERSION = "0.4.1"
         private const val AGY_RELEASE_URL = "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.1.27-5211191891591168/linux-arm/cli_linux_arm64.tar.gz"
         private const val AGY_RELEASE_SHA512 = "ed45f6930785aa4b42f14e07ace1c9d91a94fb76e760f54acbd7d3d3951e1f957fd456a0dae2a3124dd9a3b689bf7afb7c9303a3e4ba95037fc10063424d9bf9"
         private const val GITHUB_CLI_VERSION = "2.100.0"

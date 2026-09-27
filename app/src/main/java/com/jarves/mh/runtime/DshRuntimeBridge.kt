@@ -243,9 +243,13 @@ class DshRuntimeBridge(
                 .put("id", id)
                 .put("method", method)
             if (params != null) frame.put("params", params)
-            writer.write(frame.toString())
-            writer.newLine()
-            writer.flush()
+            runCatching {
+                writer.write(frame.toString())
+                writer.newLine()
+                writer.flush()
+            }.onFailure {
+                Log.w("DshBridge", "Failed to send frame to DSH: ${it.message}")
+            }
         }
 
         fun closeInput() {
@@ -327,35 +331,64 @@ class DshRuntimeBridge(
             }
         }
 
-        while (process.isAlive || outputFile.length() > outputOffset) {
-            if (
-                process.isAlive &&
-                shutdownSentAt > 0L &&
-                android.os.SystemClock.elapsedRealtime() - shutdownSentAt >= SDK_SHUTDOWN_TIMEOUT_MS
-            ) {
-                closeInput()
-                process.destroy()
+        val readBuffer = ByteArray(32 * 1024)
+        var idleCount = 0
+        var raf: RandomAccessFile? = null
+        try {
+            while (process.isAlive || (outputFile.exists() && outputFile.length() > outputOffset)) {
+                if (
+                    process.isAlive &&
+                    shutdownSentAt > 0L &&
+                    android.os.SystemClock.elapsedRealtime() - shutdownSentAt >= SDK_SHUTDOWN_TIMEOUT_MS
+                ) {
+                    closeInput()
+                    process.destroy()
+                    delay(200)
+                    if (process.isAlive) process.destroyForcibly()
+                }
+                if (!outputFile.exists()) {
+                    if (!process.isAlive) break
+                    delay(10)
+                    continue
+                }
+                if (raf == null) {
+                    raf = runCatching { RandomAccessFile(outputFile, "r") }.getOrNull()
+                    if (raf == null) {
+                        if (!process.isAlive) break
+                        delay(10)
+                        continue
+                    }
+                }
+                val fileLength = raf.length()
+                val available = fileLength - outputOffset
+                if (available <= 0) {
+                    if (!process.isAlive) break
+                    val pollDelay = when {
+                        idleCount < 2 -> 8L
+                        idleCount < 8 -> 18L
+                        else -> 35L
+                    }
+                    idleCount++
+                    delay(pollDelay)
+                    continue
+                }
+                idleCount = 0
+                val toRead = minOf(available, readBuffer.size.toLong()).toInt()
+                raf.seek(outputOffset)
+                val count = raf.read(readBuffer, 0, toRead)
+                if (count <= 0) continue
+                outputOffset += count
+                pendingOutput.append(readBuffer.decodeToString(0, count))
+                var newline = pendingOutput.indexOf("\n")
+                while (newline >= 0) {
+                    val line = pendingOutput.substring(0, newline).trimEnd('\r')
+                    pendingOutput.delete(0, newline + 1)
+                    if (line.isNotBlank()) handle(parser.parseLine(line))
+                    newline = pendingOutput.indexOf("\n")
+                }
             }
-            val available = outputFile.length() - outputOffset
-            if (available <= 0) {
-                delay(50)
-                continue
-            }
-            val bytes = ByteArray(minOf(available, 16L * 1024).toInt())
-            val count = RandomAccessFile(outputFile, "r").use { file ->
-                file.seek(outputOffset)
-                file.read(bytes)
-            }
-            if (count <= 0) continue
-            outputOffset += count
-            pendingOutput.append(bytes.decodeToString(0, count))
-            var newline = pendingOutput.indexOf("\n")
-            while (newline >= 0) {
-                val line = pendingOutput.substring(0, newline).trimEnd('\r')
-                pendingOutput.delete(0, newline + 1)
-                if (line.isNotBlank()) handle(parser.parseLine(line))
-                newline = pendingOutput.indexOf("\n")
-            }
+        } finally {
+            runCatching { raf?.close() }
         }
         pendingOutput.toString().trim().takeIf(String::isNotBlank)?.let {
             handle(parser.parseLine(it))
