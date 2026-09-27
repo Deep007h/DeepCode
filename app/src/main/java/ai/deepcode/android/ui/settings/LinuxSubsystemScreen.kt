@@ -278,11 +278,18 @@ fun LinuxSubsystemScreen(
                     Text("Linux Subsystem & Runtimes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = AppWhite)
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = AppWhite)
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 12.dp)
+                            .size(38.dp)
+                            .depthPill(shape = CircleShape, elevation = 2.dp, isDark = isDarkThemeActive)
+                            .bouncyClickable(provideHaptic = true, onClick = onBack),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = AppWhite, modifier = Modifier.size(18.dp))
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurface)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = AppScreenBg)
             )
         },
         contentWindowInsets = WindowInsets(0.dp),
@@ -300,14 +307,13 @@ fun LinuxSubsystemScreen(
             item {
                 Text("Agent Execution Workflow", fontWeight = FontWeight.Bold, color = AppWhite, fontSize = 14.sp)
                 Spacer(Modifier.height(8.dp))
-                Surface(
-                    color = AppSurface,
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, AppBorder)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .depthCard(shape = RoundedCornerShape(18.dp), elevation = 3.dp)
                 ) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Select how prompts and autonomous agents are executed:", color = AppMuted, fontSize = 12.sp)
-                        Spacer(Modifier.height(10.dp))
 
                         val modes = listOf(
                             Triple(WORKFLOW_DIRECT, "Direct In-App Engine", "Native Android streaming agent loop"),
@@ -319,33 +325,50 @@ fun LinuxSubsystemScreen(
 
                         modes.forEach { (modeId, modeTitle, modeDesc) ->
                             val isSelected = workflowMode == modeId
-                            Row(
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
+                                    .depthPill(
+                                        shape = RoundedCornerShape(12.dp),
+                                        elevation = if (isSelected) 2.5.dp else 1.dp,
+                                        customGradient = if (isSelected) {
+                                            if (isDarkThemeActive) listOf(Color(0xFF1E2838), Color(0xFF131A26))
+                                            else listOf(Color(0xFFE8F1FC), Color(0xFFD6E6F8))
+                                        } else null,
+                                        customBorderColor = if (isSelected) AppPrimary else null,
+                                        highlightAlpha = if (isSelected) 0.35f else 0.08f,
+                                        isDark = isDarkThemeActive
+                                    )
+                                    .bouncyClickable(provideHaptic = true) {
                                         workflowMode = modeId
                                         securePrefs.setWorkflowMode(modeId)
                                     }
-                                    .padding(vertical = 8.dp, horizontal = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                    .padding(horizontal = 12.dp, vertical = 10.dp)
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(modeTitle, fontWeight = FontWeight.SemiBold, color = AppWhite, fontSize = 13.sp)
-                                    Text(modeDesc, color = AppMuted, fontSize = 11.sp)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            modeTitle,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                            color = if (isSelected) AppPrimary else AppWhite,
+                                            fontSize = 13.5.sp
+                                        )
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(modeDesc, color = AppMuted, fontSize = 11.5.sp)
+                                    }
+                                    RadioButton(
+                                        selected = isSelected,
+                                        onClick = {
+                                            workflowMode = modeId
+                                            securePrefs.setWorkflowMode(modeId)
+                                        },
+                                        colors = RadioButtonDefaults.colors(selectedColor = AppPrimary, unselectedColor = AppBorder)
+                                    )
                                 }
-                                RadioButton(
-                                    selected = isSelected,
-                                    onClick = {
-                                        workflowMode = modeId
-                                        securePrefs.setWorkflowMode(modeId)
-                                    },
-                                    colors = RadioButtonDefaults.colors(selectedColor = AppPrimary)
-                                )
-                            }
-                            if (modeId != modes.last().first) {
-                                HorizontalDivider(color = AppBorder.copy(alpha = 0.5f), modifier = Modifier.padding(vertical = 4.dp))
                             }
                         }
                     }
@@ -356,12 +379,12 @@ fun LinuxSubsystemScreen(
             item {
                 Text("Workflow API Provider (DeepSeek Harness)", fontWeight = FontWeight.Bold, color = AppWhite, fontSize = 14.sp)
                 Spacer(Modifier.height(8.dp))
-                Surface(
-                    color = AppSurface,
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, AppBorder)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .depthCard(shape = RoundedCornerShape(18.dp), elevation = 3.dp)
                 ) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("Select from API providers configured in DeepCode to power autonomous agents:", color = AppMuted, fontSize = 12.sp)
 
                         LazyRow(
@@ -371,64 +394,67 @@ fun LinuxSubsystemScreen(
                             items(APP_WORKFLOW_PROVIDERS) { p ->
                                 val isSelected = p.id == selectedWorkflowProvider.id
                                 val isConfigured = isWorkflowProviderConfigured(p, securePrefs, vault)
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = {
-                                        selectedWorkflowProvider = p
-                                        dshProviderKind = p.providerKind
-                                        dshDshApi = p.dshApi
-                                        dshBaseUrl = p.defaultBaseUrl
-                                        dshModel = p.defaultModel
-                                        val saved = getSavedKeyForWorkflowProvider(p, securePrefs, vault)
-                                        if (saved.isNotBlank()) {
-                                            dshApiKey = saved
+                                Box(
+                                    modifier = Modifier
+                                        .depthPill(
+                                            shape = RoundedCornerShape(20.dp),
+                                            elevation = if (isSelected) 3.dp else 1.5.dp,
+                                            customGradient = if (isSelected) {
+                                                listOf(AppPrimary.copy(alpha = 0.28f), AppPrimaryGradientEnd.copy(alpha = 0.18f))
+                                            } else null,
+                                            customBorderColor = if (isSelected) AppPrimary else if (isConfigured) Color(0xFF22C55E).copy(alpha = 0.5f) else null,
+                                            highlightAlpha = if (isSelected) 0.35f else 0.12f,
+                                            isDark = isDarkThemeActive
+                                        )
+                                        .bouncyClickable(provideHaptic = true) {
+                                            selectedWorkflowProvider = p
+                                            dshProviderKind = p.providerKind
+                                            dshDshApi = p.dshApi
+                                            dshBaseUrl = p.defaultBaseUrl
+                                            dshModel = p.defaultModel
+                                            val saved = getSavedKeyForWorkflowProvider(p, securePrefs, vault)
+                                            if (saved.isNotBlank()) {
+                                                dshApiKey = saved
+                                            }
                                         }
-                                    },
-                                    leadingIcon = if (isConfigured) {
-                                        {
+                                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        if (isConfigured) {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(6.dp)
+                                                    .size(7.dp)
                                                     .clip(CircleShape)
                                                     .background(Color(0xFF22C55E))
                                             )
                                         }
-                                    } else null,
-                                    label = {
                                         Text(
-                                            p.name,
+                                            text = p.name,
                                             fontSize = 12.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSelected) AppPrimary else if (isConfigured) AppWhite else AppMuted
                                         )
-                                    },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = AppPrimary.copy(alpha = 0.2f),
-                                        selectedLabelColor = AppPrimary,
-                                        containerColor = AppSurfaceVariant,
-                                        labelColor = if (isConfigured) AppWhite else AppMuted
-                                    ),
-                                    border = FilterChipDefaults.filterChipBorder(
-                                        enabled = true,
-                                        selected = isSelected,
-                                        borderColor = if (isSelected) AppPrimary else if (isConfigured) Color(0xFF22C55E).copy(alpha = 0.5f) else AppBorder
-                                    )
-                                )
+                                    }
+                                }
                             }
                         }
 
                         if (isWorkflowProviderConfigured(selectedWorkflowProvider, securePrefs, vault) && selectedWorkflowProvider.id != "custom") {
                             Surface(
                                 color = Color(0xFF22C55E).copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF22C55E).copy(alpha = 0.3f))
                             ) {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF22C55E), modifier = Modifier.size(14.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Using API credentials already saved in DeepCode", fontSize = 11.sp, color = Color(0xFF22C55E))
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF22C55E), modifier = Modifier.size(15.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Using API credentials already saved in DeepCode", fontSize = 11.5.sp, color = Color(0xFF22C55E))
                                 }
                             }
                         }
@@ -439,7 +465,7 @@ fun LinuxSubsystemScreen(
                             label = { Text("Base URL") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = AppPrimary,
                                 unfocusedBorderColor = AppBorder,
@@ -456,7 +482,7 @@ fun LinuxSubsystemScreen(
                             label = { Text("Model Name") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = AppPrimary,
                                 unfocusedBorderColor = AppBorder,
@@ -484,7 +510,7 @@ fun LinuxSubsystemScreen(
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = AppPrimary,
                                 unfocusedBorderColor = AppBorder,
@@ -495,33 +521,43 @@ fun LinuxSubsystemScreen(
                             )
                         )
 
-                        Button(
-                            onClick = {
-                                val prof = ProviderProfile(
-                                    kind = dshProviderKind,
-                                    baseUrl = dshBaseUrl,
-                                    model = dshModel,
-                                    hasSecret = dshApiKey.isNotBlank(),
-                                    dshApi = dshDshApi
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .depthPill(
+                                    shape = RoundedCornerShape(14.dp),
+                                    elevation = 3.dp,
+                                    customGradient = listOf(AppPrimary, AppPrimaryGradientEnd),
+                                    highlightAlpha = 0.35f,
+                                    isDark = isDarkThemeActive
                                 )
-                                appPrefs.saveProvider(prof, AgentKind.DEEPSEEK_HARNESS)
-                                appPrefs.preferences.edit().putString("provider_dsh_app_id", selectedWorkflowProvider.id).apply()
-                                if (dshApiKey.isNotBlank()) {
-                                    vault.putSecret(dshProviderKind.name, dshApiKey.trim())
-                                    vault.putSecret(selectedWorkflowProvider.id, dshApiKey.trim())
-                                    selectedWorkflowProvider.storageKeys.forEach { k ->
-                                        securePrefs.saveApiKey(k, dshApiKey.trim())
+                                .bouncyClickable(provideHaptic = true) {
+                                    val prof = ProviderProfile(
+                                        kind = dshProviderKind,
+                                        baseUrl = dshBaseUrl,
+                                        model = dshModel,
+                                        hasSecret = dshApiKey.isNotBlank(),
+                                        dshApi = dshDshApi
+                                    )
+                                    appPrefs.saveProvider(prof, AgentKind.DEEPSEEK_HARNESS)
+                                    appPrefs.preferences.edit().putString("provider_dsh_app_id", selectedWorkflowProvider.id).apply()
+                                    if (dshApiKey.isNotBlank()) {
+                                        vault.putSecret(dshProviderKind.name, dshApiKey.trim())
+                                        vault.putSecret(selectedWorkflowProvider.id, dshApiKey.trim())
+                                        selectedWorkflowProvider.storageKeys.forEach { k ->
+                                            securePrefs.saveApiKey(k, dshApiKey.trim())
+                                        }
                                     }
-                                }
-                                Toast.makeText(context, "Saved ${selectedWorkflowProvider.name} for autonomous workflows", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = AppPrimary),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
+                                    Toast.makeText(context, "Saved ${selectedWorkflowProvider.name} for autonomous workflows", Toast.LENGTH_SHORT).show()
+                                },
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.Save, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Save Workflow Provider Settings")
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Save, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Save Workflow Provider Settings", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp)
+                            }
                         }
                     }
                 }
@@ -529,10 +565,14 @@ fun LinuxSubsystemScreen(
 
             // Environment Status Banner
             item {
-                Surface(
-                    color = AppSurface,
-                    shape = RoundedCornerShape(16.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isInstalled) Color(0xFF22C55E).copy(alpha = 0.5f) else AppBorder)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .depthCard(
+                            shape = RoundedCornerShape(18.dp),
+                            elevation = 3.dp,
+                            customBorderColor = if (isInstalled) Color(0xFF22C55E).copy(alpha = 0.5f) else null
+                        )
                 ) {
                     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                         Row(
@@ -604,20 +644,42 @@ fun LinuxSubsystemScreen(
                         }
 
                         Spacer(Modifier.height(14.dp))
-                        Button(
-                            onClick = runSetup,
-                            enabled = !isInstalling,
-                            colors = ButtonDefaults.buttonColors(containerColor = AppPrimary),
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .depthPill(
+                                    shape = RoundedCornerShape(14.dp),
+                                    elevation = 3.dp,
+                                    customGradient = if (isInstalled) {
+                                        listOf(DepthTokens.PillGradientTopDark, DepthTokens.PillGradientBottomDark)
+                                    } else {
+                                        listOf(AppPrimary, AppPrimaryGradientEnd)
+                                    },
+                                    customBorderColor = if (isInstalled) AppBorder else null,
+                                    highlightAlpha = if (isInstalled) 0.15f else 0.35f,
+                                    isDark = isDarkThemeActive
+                                )
+                                .bouncyClickable(enabled = !isInstalling, provideHaptic = true) {
+                                    runSetup()
+                                },
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = if (isInstalled) Icons.Default.Refresh else Icons.Default.Download,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (isInstalled) "Repair / Update Runtime" else "Bootstrap Linux Subsystem")
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = if (isInstalled) Icons.Default.Refresh else Icons.Default.Download,
+                                    contentDescription = null,
+                                    tint = if (isInstalled) AppPrimary else Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = if (isInstalled) "Repair / Update Runtime" else "Bootstrap Linux Subsystem",
+                                    color = if (isInstalled) AppPrimary else Color.White,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.5.sp
+                                )
+                            }
                         }
                     }
                 }
@@ -627,10 +689,10 @@ fun LinuxSubsystemScreen(
             item {
                 Text("Autonomous Coding Agents", fontWeight = FontWeight.Bold, color = AppWhite, fontSize = 14.sp)
                 Spacer(Modifier.height(8.dp))
-                Surface(
-                    color = AppSurface,
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, AppBorder)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .depthCard(shape = RoundedCornerShape(18.dp), elevation = 3.dp)
                 ) {
                     Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
                         AgentRow(
@@ -639,21 +701,21 @@ fun LinuxSubsystemScreen(
                             status = if (isInstalled) "Active" else "Bundled",
                             icon = Icons.Default.AutoAwesome
                         )
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = AppBorder)
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = AppBorder.copy(alpha = 0.5f))
                         AgentRow(
                             name = "Claude Code CLI",
                             version = installedAgents[AgentKind.CLAUDE_CODE] ?: "On-demand download",
                             status = if (installedAgents.containsKey(AgentKind.CLAUDE_CODE)) "Installed" else "Available",
                             icon = Icons.Default.Code
                         )
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = AppBorder)
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = AppBorder.copy(alpha = 0.5f))
                         AgentRow(
                             name = "DeepSeek Harness (DSH)",
                             version = installedAgents[AgentKind.DEEPSEEK_HARNESS] ?: "On-demand download",
                             status = if (installedAgents.containsKey(AgentKind.DEEPSEEK_HARNESS)) "Installed" else "Available",
                             icon = Icons.Default.Terminal
                         )
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = AppBorder)
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = AppBorder.copy(alpha = 0.5f))
                         AgentRow(
                             name = "Hermes Agent",
                             version = installedAgents[AgentKind.HERMES] ?: (if (isInstalled) "Ready" else "Autonomous PRoot"),
@@ -668,18 +730,18 @@ fun LinuxSubsystemScreen(
             item {
                 Text("Development Toolchains", fontWeight = FontWeight.Bold, color = AppWhite, fontSize = 14.sp)
                 Spacer(Modifier.height(8.dp))
-                Surface(
-                    color = AppSurface,
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, AppBorder)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .depthCard(shape = RoundedCornerShape(18.dp), elevation = 3.dp)
                 ) {
                     Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
                         ToolchainRow(name = "Node.js & npm", desc = "Core runtime JavaScript/TypeScript engine", available = isInstalled)
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = AppBorder)
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = AppBorder.copy(alpha = 0.5f))
                         ToolchainRow(name = "Git Version Control", desc = "Repository cloning, commits & diffs", available = isInstalled)
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = AppBorder)
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = AppBorder.copy(alpha = 0.5f))
                         ToolchainRow(name = "Python 3 & pip", desc = "Python scripting and machine learning", available = isInstalled)
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = AppBorder)
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = AppBorder.copy(alpha = 0.5f))
                         ToolchainRow(name = "Android SDK & aapt2", desc = "On-device APK compilation without ADB", available = isInstalled)
                     }
                 }
@@ -708,13 +770,27 @@ private fun AgentRow(
                 Text(version, color = AppMuted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
             }
         }
+        val isActive = status.contains("Active", ignoreCase = true) || status.contains("Ready", ignoreCase = true)
         Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .background(AppSurfaceVariant)
-                .padding(horizontal = 8.dp, vertical = 3.dp)
+                .depthPill(
+                    shape = RoundedCornerShape(8.dp),
+                    elevation = 1.dp,
+                    customGradient = if (isActive) {
+                        listOf(Color(0xFF166534).copy(alpha = 0.45f), Color(0xFF14532D).copy(alpha = 0.35f))
+                    } else null,
+                    customBorderColor = if (isActive) Color(0xFF22C55E).copy(alpha = 0.45f) else null,
+                    highlightAlpha = if (isActive) 0.25f else 0.1f,
+                    isDark = isDarkThemeActive
+                )
+                .padding(horizontal = 9.dp, vertical = 4.dp)
         ) {
-            Text(status, color = AppWhite, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            Text(
+                text = status,
+                color = if (isActive) Color(0xFF4ADE80) else AppWhite,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }

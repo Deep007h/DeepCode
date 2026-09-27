@@ -332,16 +332,40 @@ fun TerminalScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = AppWhite)
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 12.dp)
+                            .size(38.dp)
+                            .depthPill(shape = CircleShape, elevation = 2.dp, isDark = isDarkThemeActive)
+                            .bouncyClickable(provideHaptic = true, onClick = onBack),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = AppWhite,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 },
                 actions = {
-                    IconButton(onClick = { lines = emptyList() }) {
-                        Icon(Icons.Default.DeleteOutline, contentDescription = "Clear", tint = AppMuted)
+                    Box(
+                        modifier = Modifier
+                            .padding(end = 12.dp)
+                            .size(38.dp)
+                            .depthPill(shape = CircleShape, elevation = 2.dp, isDark = isDarkThemeActive)
+                            .bouncyClickable(provideHaptic = true) { lines = emptyList() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteOutline,
+                            contentDescription = "Clear",
+                            tint = AppMuted,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurface)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0F141C))
             )
         },
         containerColor = Color(0xFF0F141C)
@@ -356,19 +380,28 @@ fun TerminalScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(AppSurfaceVariant.copy(alpha = 0.5f))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .background(Color(0xFF141A24))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 TerminalMode.entries.forEach { mode ->
                     val isSelected = selectedMode == mode
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isSelected) AppPrimary.copy(alpha = 0.2f) else Color.Transparent)
-                            .border(1.dp, if (isSelected) AppPrimary else Color.Transparent, RoundedCornerShape(8.dp))
-                            .clickable { selectedMode = mode }
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                            .depthPill(
+                                shape = RoundedCornerShape(10.dp),
+                                elevation = if (isSelected) 2.dp else 1.dp,
+                                customGradient = if (isSelected) listOf(
+                                    AppPrimary.copy(alpha = 0.32f),
+                                    AppPrimary.copy(alpha = 0.14f)
+                                ) else null,
+                                customBorderColor = if (isSelected) AppPrimary.copy(alpha = 0.8f) else null,
+                                highlightAlpha = if (isSelected) 0.35f else 0.12f,
+                                isDark = isDarkThemeActive
+                            )
+                            .bouncyClickable(provideHaptic = true) { selectedMode = mode }
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = when (mode) {
@@ -377,7 +410,7 @@ fun TerminalScreen(
                                 TerminalMode.STANDARD_SH -> "Shell (sh)"
                             },
                             fontSize = 12.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                             color = if (isSelected) AppPrimary else AppMuted
                         )
                     }
@@ -502,14 +535,17 @@ fun TerminalScreen(
             }
 
             // Command Input Bar
-            Surface(
-                color = Color(0xFF1A2230),
-                modifier = Modifier.fillMaxWidth()
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF101620))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .depthInputBar(shape = RoundedCornerShape(20.dp), elevation = 3.dp, isDark = isDarkThemeActive)
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -547,22 +583,36 @@ fun TerminalScreen(
                         )
                     )
 
-                    IconButton(
-                        onClick = {
-                            val cmd = commandInput.text
-                            commandInput = TextFieldValue()
-                            if (isRunning) {
-                                sendInput(cmd)
-                            } else {
-                                runCommand(cmd)
-                            }
-                        },
-                        enabled = commandInput.text.isNotBlank()
+                    val canSend = commandInput.text.isNotBlank()
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .depthPill(
+                                shape = CircleShape,
+                                elevation = if (canSend) 2.5.dp else 1.dp,
+                                customGradient = if (canSend) listOf(
+                                    AppPrimary,
+                                    AppPrimaryGradientEnd
+                                ) else null,
+                                highlightAlpha = if (canSend) 0.35f else 0.1f,
+                                isDark = isDarkThemeActive
+                            )
+                            .bouncyClickable(enabled = canSend, provideHaptic = true) {
+                                val cmd = commandInput.text
+                                commandInput = TextFieldValue()
+                                if (isRunning) {
+                                    sendInput(cmd)
+                                } else {
+                                    runCommand(cmd)
+                                }
+                            },
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
                             contentDescription = "Send",
-                            tint = if (commandInput.text.isNotBlank()) AppPrimary else AppMuted
+                            tint = if (canSend) Color.White else AppMuted,
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
@@ -580,17 +630,28 @@ private fun VirtualKeyButton(
 ) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (active) AppPrimary.copy(alpha = 0.3f) else Color(0xFF263244))
-            .border(1.dp, if (active) AppPrimary else Color(0xFF334155), RoundedCornerShape(6.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 5.dp),
+            .depthPill(
+                shape = RoundedCornerShape(8.dp),
+                elevation = if (active) 2.dp else 1.dp,
+                customGradient = if (active) listOf(
+                    AppPrimary.copy(alpha = 0.35f),
+                    AppPrimary.copy(alpha = 0.18f)
+                ) else listOf(
+                    Color(0xFF232D3D),
+                    Color(0xFF1B2330)
+                ),
+                customBorderColor = if (active) AppPrimary else Color(0xFF334155).copy(alpha = 0.6f),
+                highlightAlpha = if (active) 0.35f else 0.15f,
+                isDark = isDarkThemeActive
+            )
+            .bouncyClickable(provideHaptic = true, onClick = onClick)
+            .padding(horizontal = 11.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = label,
             fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
+            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
             color = if (active) AppPrimary else color,
             fontFamily = FontFamily.Monospace
         )

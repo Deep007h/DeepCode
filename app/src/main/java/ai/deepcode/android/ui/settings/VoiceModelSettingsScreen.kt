@@ -251,11 +251,19 @@ fun VoiceModelSettingsScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 12.dp)
+                            .size(38.dp)
+                            .depthPill(shape = CircleShape, elevation = 2.dp, isDark = isDarkThemeActive)
+                            .bouncyClickable(provideHaptic = true, onClick = onBack),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = AppWhite
+                            tint = AppWhite,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 },
@@ -353,21 +361,26 @@ fun VoiceModelSettingsScreen(
                             val isCurrent = previewText == presetString
                             Box(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isCurrent) AppPrimary.copy(alpha = 0.2f) else AppScreenBg.copy(alpha = 0.7f))
-                                    .border(
-                                        width = 1.dp,
-                                        color = if (isCurrent) AppPrimary else Color.White.copy(alpha = 0.08f),
-                                        shape = RoundedCornerShape(8.dp)
+                                    .depthPill(
+                                        shape = RoundedCornerShape(10.dp),
+                                        elevation = if (isCurrent) 2.dp else 1.dp,
+                                        customGradient = if (isCurrent) listOf(
+                                            AppPrimary.copy(alpha = 0.32f),
+                                            AppPrimary.copy(alpha = 0.14f)
+                                        ) else null,
+                                        customBorderColor = if (isCurrent) AppPrimary.copy(alpha = 0.8f) else null,
+                                        highlightAlpha = if (isCurrent) 0.35f else 0.1f,
+                                        isDark = isDarkThemeActive
                                     )
-                                    .clickable { previewText = presetString }
-                                    .padding(horizontal = 8.dp, vertical = 5.dp)
+                                    .bouncyClickable(provideHaptic = true) { previewText = presetString }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = label,
                                     fontSize = 11.sp,
                                     color = if (isCurrent) AppPrimary else AppWhite,
-                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium
                                 )
                             }
                         }
@@ -415,8 +428,17 @@ fun VoiceModelSettingsScreen(
                             )
                         }
 
-                        Button(
-                            onClick = {
+                        Box(
+                            modifier = Modifier
+                                .depthPill(
+                                    shape = RoundedCornerShape(12.dp),
+                                    elevation = 2.5.dp,
+                                    customGradient = if (isPlayingAudio) listOf(Color(0xFFDC2626), Color(0xFFB91C1C))
+                                    else listOf(AppPrimary, AppPrimaryGradientEnd),
+                                    highlightAlpha = 0.35f,
+                                    isDark = isDarkThemeActive
+                                )
+                                .bouncyClickable(enabled = !isTestingAudio, provideHaptic = true) {
                                 if (isPlayingAudio) {
                                     try {
                                         activeMediaPlayer?.stop()
@@ -500,13 +522,9 @@ fun VoiceModelSettingsScreen(
                                         }
                                     }
                                 }
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isPlayingAudio) Color(0xFFEF4444) else AppPrimary
-                            ),
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                            enabled = !isTestingAudio
+                            }
+                                .padding(horizontal = 14.dp, vertical = 9.dp),
+                            contentAlignment = Alignment.Center
                         ) {
                             if (isTestingAudio) {
                                 CircularProgressIndicator(
@@ -519,6 +537,7 @@ fun VoiceModelSettingsScreen(
                                     Icon(
                                         imageVector = if (isPlayingAudio) Icons.Default.Stop else Icons.Default.PlayArrow,
                                         contentDescription = null,
+                                        tint = AppWhite,
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
@@ -897,59 +916,71 @@ private fun PriorityOptionCard(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (isSelected) AppPrimary.copy(alpha = 0.12f) else AppScreenBg.copy(alpha = 0.5f))
-            .border(
-                width = 1.dp,
-                color = if (isSelected) AppPrimary else Color.Transparent,
-                shape = RoundedCornerShape(12.dp)
+            .depthCard(
+                shape = RoundedCornerShape(14.dp),
+                elevation = if (isSelected) 3.dp else 1.5.dp,
+                customGradient = if (isSelected) listOf(
+                    AppPrimary.copy(alpha = 0.16f),
+                    AppPrimary.copy(alpha = 0.05f)
+                ) else null,
+                customBorderColor = if (isSelected) AppPrimary else null,
+                isDark = isDarkThemeActive
             )
-            .clickable(onClick = onClick)
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .bouncyClickable(provideHaptic = true, onClick = onClick)
+            .padding(12.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(if (isSelected) AppPrimary.copy(alpha = 0.2f) else AppDivider),
-            contentAlignment = Alignment.Center
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (isSelected) AppPrimary else AppMuted,
-                modifier = Modifier.size(20.dp)
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .depthPill(
+                        shape = CircleShape,
+                        elevation = 1.dp,
+                        customGradient = if (isSelected) listOf(AppPrimary, AppPrimaryGradientEnd) else null,
+                        highlightAlpha = if (isSelected) 0.35f else 0.1f,
+                        isDark = isDarkThemeActive
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (isSelected) Color.White else AppMuted,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isSelected) AppPrimary else AppWhite
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 11.sp,
+                    color = AppMuted,
+                    lineHeight = 15.sp
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            RadioButton(
+                selected = isSelected,
+                onClick = onClick,
+                colors = RadioButtonDefaults.colors(
+                    selectedColor = AppPrimary,
+                    unselectedColor = AppMuted
+                )
             )
         }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isSelected) AppPrimary else AppWhite
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = subtitle,
-                fontSize = 11.sp,
-                color = AppMuted,
-                lineHeight = 15.sp
-            )
-        }
-        Spacer(modifier = Modifier.width(8.dp))
-        RadioButton(
-            selected = isSelected,
-            onClick = onClick,
-            colors = RadioButtonDefaults.colors(
-                selectedColor = AppPrimary,
-                unselectedColor = AppMuted
-            )
-        )
     }
 }
 
@@ -959,60 +990,79 @@ private fun ModelSelectionCard(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (isSelected) AppPrimary.copy(alpha = 0.12f) else AppScreenBg.copy(alpha = 0.5f))
-            .border(
-                width = 1.dp,
-                color = if (isSelected) AppPrimary else Color.Transparent,
-                shape = RoundedCornerShape(12.dp)
+            .depthCard(
+                shape = RoundedCornerShape(14.dp),
+                elevation = if (isSelected) 3.dp else 1.5.dp,
+                customGradient = if (isSelected) listOf(
+                    AppPrimary.copy(alpha = 0.16f),
+                    AppPrimary.copy(alpha = 0.05f)
+                ) else null,
+                customBorderColor = if (isSelected) AppPrimary else null,
+                isDark = isDarkThemeActive
             )
-            .clickable(onClick = onClick)
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .bouncyClickable(provideHaptic = true, onClick = onClick)
+            .padding(12.dp)
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = model.name,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isSelected) AppPrimary else AppWhite
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(if (model.isExpressive) Color(0xFF10B981).copy(alpha = 0.15f) else AppPrimary.copy(alpha = 0.15f))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = model.badge,
-                        fontSize = 10.sp,
+                        text = model.name,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (model.isExpressive) Color(0xFF10B981) else AppPrimary
+                        color = if (isSelected) AppPrimary else AppWhite
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .depthPill(
+                                shape = RoundedCornerShape(6.dp),
+                                elevation = 1.dp,
+                                customGradient = if (model.isExpressive) listOf(
+                                    Color(0xFF166534).copy(alpha = 0.5f),
+                                    Color(0xFF14532D).copy(alpha = 0.35f)
+                                ) else listOf(
+                                    AppPrimary.copy(alpha = 0.3f),
+                                    AppPrimary.copy(alpha = 0.15f)
+                                ),
+                                customBorderColor = if (model.isExpressive) Color(0xFF22C55E).copy(alpha = 0.5f) else AppPrimary.copy(alpha = 0.5f),
+                                highlightAlpha = 0.25f,
+                                isDark = isDarkThemeActive
+                            )
+                            .padding(horizontal = 7.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = model.badge,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (model.isExpressive) Color(0xFF4ADE80) else AppPrimary
+                        )
+                    }
                 }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = model.description,
+                    fontSize = 11.sp,
+                    color = AppMuted,
+                    lineHeight = 15.sp
+                )
             }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = model.description,
-                fontSize = 11.sp,
-                color = AppMuted,
-                lineHeight = 15.sp
+            Spacer(modifier = Modifier.width(8.dp))
+            RadioButton(
+                selected = isSelected,
+                onClick = onClick,
+                colors = RadioButtonDefaults.colors(
+                    selectedColor = AppPrimary,
+                    unselectedColor = AppMuted
+                )
             )
         }
-        Spacer(modifier = Modifier.width(8.dp))
-        RadioButton(
-            selected = isSelected,
-            onClick = onClick,
-            colors = RadioButtonDefaults.colors(
-                selectedColor = AppPrimary,
-                unselectedColor = AppMuted
-            )
-        )
     }
 }
 
@@ -1022,46 +1072,59 @@ private fun VoiceChipRow(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (isSelected) AppPrimary.copy(alpha = 0.12f) else Color.Transparent)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .depthPill(
+                shape = RoundedCornerShape(10.dp),
+                elevation = if (isSelected) 2.dp else 1.dp,
+                customGradient = if (isSelected) listOf(
+                    AppPrimary.copy(alpha = 0.28f),
+                    AppPrimary.copy(alpha = 0.12f)
+                ) else null,
+                customBorderColor = if (isSelected) AppPrimary.copy(alpha = 0.8f) else null,
+                highlightAlpha = if (isSelected) 0.3f else 0.1f,
+                isDark = isDarkThemeActive
+            )
+            .bouncyClickable(provideHaptic = true, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 9.dp)
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = voice.name,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSelected) AppPrimary else AppWhite
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "(${voice.gender})",
+                        fontSize = 10.sp,
+                        color = AppMuted
+                    )
+                }
                 Text(
-                    text = voice.name,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isSelected) AppPrimary else AppWhite
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "(${voice.gender})",
-                    fontSize = 10.sp,
-                    color = AppMuted
+                    text = voice.description,
+                    fontSize = 11.sp,
+                    color = AppMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
-            Text(
-                text = voice.description,
-                fontSize = 11.sp,
-                color = AppMuted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        if (isSelected) {
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = null,
-                tint = AppPrimary,
-                modifier = Modifier.size(16.dp)
-            )
+            if (isSelected) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = AppPrimary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
     }
 }

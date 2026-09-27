@@ -295,15 +295,22 @@ fun SetupWizardScreen(
                 },
                 navigationIcon = {
                     if (currentStep > 0 || onBack != null) {
-                        IconButton(onClick = {
-                            if (currentStep > 0) currentStep--
-                            else onBack?.invoke()
-                        }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = AppWhite)
+                        Box(
+                            modifier = Modifier
+                                .padding(start = 12.dp)
+                                .size(38.dp)
+                                .depthPill(shape = CircleShape, elevation = 2.dp, isDark = isDarkThemeActive)
+                                .bouncyClickable(provideHaptic = true) {
+                                    if (currentStep > 0) currentStep--
+                                    else onBack?.invoke()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = AppWhite, modifier = Modifier.size(18.dp))
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurface)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = AppScreenBg)
             )
         },
         bottomBar = {
@@ -320,33 +327,50 @@ fun SetupWizardScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (currentStep > 0) {
-                        OutlinedButton(
-                            onClick = { currentStep-- },
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, AppBorder)
+                        Box(
+                            modifier = Modifier
+                                .height(46.dp)
+                                .depthPill(
+                                    shape = RoundedCornerShape(14.dp),
+                                    elevation = 2.dp,
+                                    isDark = isDarkThemeActive
+                                )
+                                .bouncyClickable(provideHaptic = true) { currentStep-- }
+                                .padding(horizontal = 20.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text("Back", color = AppWhite)
+                            Text("Back", color = AppWhite, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp)
                         }
                     } else {
                         Spacer(Modifier.width(1.dp))
                     }
 
-                    Button(
-                        onClick = {
-                            if (currentStep < totalSteps - 1) {
-                                currentStep++
-                            } else {
-                                completeSetup()
+                    Box(
+                        modifier = Modifier
+                            .height(46.dp)
+                            .depthPill(
+                                shape = RoundedCornerShape(14.dp),
+                                elevation = 3.dp,
+                                customGradient = listOf(ActiveAccent.primary, ActiveAccent.primary.copy(alpha = 0.85f)),
+                                highlightAlpha = 0.35f,
+                                isDark = isDarkThemeActive
+                            )
+                            .bouncyClickable(provideHaptic = true) {
+                                if (currentStep < totalSteps - 1) {
+                                    currentStep++
+                                } else {
+                                    completeSetup()
+                                }
                             }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = ActiveAccent.primary),
-                        shape = RoundedCornerShape(12.dp)
+                            .padding(horizontal = 22.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = if (currentStep < totalSteps - 1) "Continue" else "Launch DeepCode",
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = Color.White,
+                                fontSize = 14.sp
                             )
                             Spacer(Modifier.width(6.dp))
                             Icon(
@@ -501,9 +525,8 @@ private fun StepIdentity(
         Box(
             modifier = Modifier
                 .size(68.dp)
-                .clip(CircleShape)
-                .background(AppSurfaceVariant)
-                .clickable(onClick = onPickAvatar),
+                .depthPill(shape = CircleShape, elevation = 3.dp, isDark = isDarkThemeActive)
+                .bouncyClickable(provideHaptic = true, onClick = onPickAvatar),
             contentAlignment = Alignment.Center
         ) {
             if (avatarBitmap != null) {
@@ -518,15 +541,25 @@ private fun StepIdentity(
         }
         Spacer(Modifier.width(16.dp))
         Column {
-            Button(
-                onClick = onPickAvatar,
-                colors = ButtonDefaults.buttonColors(containerColor = AppSurfaceVariant),
-                shape = RoundedCornerShape(10.dp)
+            Box(
+                modifier = Modifier
+                    .depthPill(shape = RoundedCornerShape(12.dp), elevation = 2.dp, isDark = isDarkThemeActive)
+                    .bouncyClickable(provideHaptic = true, onClick = onPickAvatar)
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.PhotoCamera, null, modifier = Modifier.size(16.dp), tint = AppWhite)
-                Spacer(Modifier.width(8.dp))
-                Text(if (avatarBitmap != null) "Change Photo" else "Upload Photo", color = AppWhite, fontSize = 12.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.PhotoCamera, null, modifier = Modifier.size(16.dp), tint = ActiveAccent.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (avatarBitmap != null) "Change Photo" else "Upload Photo",
+                        color = AppWhite,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
+            Spacer(Modifier.height(4.dp))
             Text("Optional profile picture", fontSize = 11.sp, color = AppMuted)
         }
     }
@@ -558,22 +591,30 @@ private fun StepIdentity(
     ) {
         items(RoleChips) { chipRole ->
             val isSelected = role.equals(chipRole, ignoreCase = true)
-            FilterChip(
-                selected = isSelected,
-                onClick = { onRoleChange(chipRole) },
-                label = { Text(chipRole, fontSize = 12.sp) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = ActiveAccent.primary.copy(alpha = 0.2f),
-                    selectedLabelColor = ActiveAccent.primary,
-                    containerColor = AppSurface,
-                    labelColor = AppMuted
-                ),
-                border = FilterChipDefaults.filterChipBorder(
-                    enabled = true,
-                    selected = isSelected,
-                    borderColor = if (isSelected) ActiveAccent.primary else AppBorder
+            Box(
+                modifier = Modifier
+                    .depthPill(
+                        shape = RoundedCornerShape(10.dp),
+                        elevation = if (isSelected) 2.dp else 1.dp,
+                        customGradient = if (isSelected) listOf(
+                            ActiveAccent.primary.copy(alpha = 0.32f),
+                            ActiveAccent.primary.copy(alpha = 0.14f)
+                        ) else null,
+                        customBorderColor = if (isSelected) ActiveAccent.primary.copy(alpha = 0.8f) else null,
+                        highlightAlpha = if (isSelected) 0.35f else 0.15f,
+                        isDark = isDarkThemeActive
+                    )
+                    .bouncyClickable(provideHaptic = true) { onRoleChange(chipRole) }
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = chipRole,
+                    fontSize = 12.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isSelected) ActiveAccent.primary else AppWhite
                 )
-            )
+            }
         }
     }
 
@@ -588,14 +629,15 @@ private fun StepIdentity(
             Box(
                 modifier = Modifier
                     .size(42.dp)
-                    .clip(CircleShape)
-                    .background(theme.primary)
-                    .border(
-                        width = if (isSelected) 3.dp else 1.dp,
-                        color = if (isSelected) Color.White else Color.Transparent,
-                        shape = CircleShape
+                    .depthPill(
+                        shape = CircleShape,
+                        elevation = if (isSelected) 3.dp else 1.5.dp,
+                        customGradient = listOf(theme.primary, theme.primaryGradientEnd),
+                        customBorderColor = if (isSelected) Color.White else Color.Transparent,
+                        highlightAlpha = 0.4f,
+                        isDark = isDarkThemeActive
                     )
-                    .clickable { onAccentChange(theme.id) },
+                    .bouncyClickable(provideHaptic = true) { onAccentChange(theme.id) },
                 contentAlignment = Alignment.Center
             ) {
                 if (isSelected) {
@@ -681,16 +723,20 @@ private fun WorkflowOptionCard(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    Surface(
-        color = if (isSelected) ActiveAccent.primary.copy(alpha = 0.12f) else AppSurface,
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(
-            width = if (isSelected) 2.dp else 1.dp,
-            color = if (isSelected) ActiveAccent.primary else AppBorder
-        ),
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .depthCard(
+                shape = RoundedCornerShape(18.dp),
+                elevation = if (isSelected) 3.5.dp else 2.dp,
+                customGradient = if (isSelected) listOf(
+                    ActiveAccent.primary.copy(alpha = 0.16f),
+                    ActiveAccent.primary.copy(alpha = 0.05f)
+                ) else null,
+                customBorderColor = if (isSelected) ActiveAccent.primary else null,
+                isDark = isDarkThemeActive
+            )
+            .bouncyClickable(provideHaptic = true, onClick = onClick)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -701,28 +747,36 @@ private fun WorkflowOptionCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(if (isSelected) ActiveAccent.primary else AppSurfaceVariant),
+                            .size(38.dp)
+                            .depthPill(
+                                shape = CircleShape,
+                                elevation = 2.dp,
+                                customGradient = if (isSelected) listOf(ActiveAccent.primary, ActiveAccent.primary.copy(alpha = 0.85f)) else null,
+                                highlightAlpha = if (isSelected) 0.35f else 0.15f,
+                                isDark = isDarkThemeActive
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = icon,
                             contentDescription = null,
-                            tint = if (isSelected) Color.White else AppPrimary,
+                            tint = if (isSelected) Color.White else ActiveAccent.primary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text(title, fontWeight = FontWeight.Bold, color = AppWhite, fontSize = 15.sp)
-                        Text(badge, color = ActiveAccent.primary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        Text(badge, color = ActiveAccent.primary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
                 RadioButton(
                     selected = isSelected,
                     onClick = onClick,
-                    colors = RadioButtonDefaults.colors(selectedColor = ActiveAccent.primary)
+                    colors = RadioButtonDefaults.colors(
+                        selectedColor = ActiveAccent.primary,
+                        unselectedColor = AppMuted
+                    )
                 )
             }
             Spacer(Modifier.height(10.dp))
@@ -774,26 +828,34 @@ private fun StepProvider(
         ) {
             items(ai.deepcode.android.ui.settings.APP_WORKFLOW_PROVIDERS) { prov ->
                 val isSelected = prov.providerKind == dshProviderKind && (prov.defaultBaseUrl.isBlank() || prov.defaultBaseUrl == dshBaseUrl)
-                FilterChip(
-                    selected = isSelected,
-                    onClick = {
-                        onDshProviderChange(prov.providerKind)
-                        onDshBaseUrlChange(prov.defaultBaseUrl)
-                        onDshModelChange(prov.defaultModel)
-                    },
-                    label = { Text(prov.name, fontSize = 12.sp) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = ActiveAccent.primary.copy(alpha = 0.2f),
-                        selectedLabelColor = ActiveAccent.primary,
-                        containerColor = AppSurface,
-                        labelColor = AppMuted
-                    ),
-                    border = FilterChipDefaults.filterChipBorder(
-                        enabled = true,
-                        selected = isSelected,
-                        borderColor = if (isSelected) ActiveAccent.primary else AppBorder
+                Box(
+                    modifier = Modifier
+                        .depthPill(
+                            shape = RoundedCornerShape(10.dp),
+                            elevation = if (isSelected) 2.dp else 1.dp,
+                            customGradient = if (isSelected) listOf(
+                                ActiveAccent.primary.copy(alpha = 0.32f),
+                                ActiveAccent.primary.copy(alpha = 0.14f)
+                            ) else null,
+                            customBorderColor = if (isSelected) ActiveAccent.primary.copy(alpha = 0.8f) else null,
+                            highlightAlpha = if (isSelected) 0.35f else 0.15f,
+                            isDark = isDarkThemeActive
+                        )
+                        .bouncyClickable(provideHaptic = true) {
+                            onDshProviderChange(prov.providerKind)
+                            onDshBaseUrlChange(prov.defaultBaseUrl)
+                            onDshModelChange(prov.defaultModel)
+                        }
+                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = prov.name,
+                        fontSize = 12.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isSelected) ActiveAccent.primary else AppWhite
                     )
-                )
+                }
             }
         }
 
@@ -839,11 +901,18 @@ private fun StepProvider(
             singleLine = true,
             visualTransformation = if (showDshKey) VisualTransformation.None else PasswordVisualTransformation(),
             trailingIcon = {
-                IconButton(onClick = onToggleShowDshKey) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .depthPill(shape = CircleShape, elevation = 1.dp, isDark = isDarkThemeActive)
+                        .bouncyClickable(provideHaptic = true, onClick = onToggleShowDshKey),
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
                         imageVector = if (showDshKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                         contentDescription = "Toggle key",
-                        tint = AppMuted
+                        tint = AppMuted,
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             },
@@ -879,22 +948,30 @@ private fun StepProvider(
         ) {
             items(directProviders) { p ->
                 val isSelected = p == directProvider
-                FilterChip(
-                    selected = isSelected,
-                    onClick = { onDirectProviderChange(p) },
-                    label = { Text(p, fontSize = 12.sp) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = ActiveAccent.primary.copy(alpha = 0.2f),
-                        selectedLabelColor = ActiveAccent.primary,
-                        containerColor = AppSurface,
-                        labelColor = AppMuted
-                    ),
-                    border = FilterChipDefaults.filterChipBorder(
-                        enabled = true,
-                        selected = isSelected,
-                        borderColor = if (isSelected) ActiveAccent.primary else AppBorder
+                Box(
+                    modifier = Modifier
+                        .depthPill(
+                            shape = RoundedCornerShape(10.dp),
+                            elevation = if (isSelected) 2.dp else 1.dp,
+                            customGradient = if (isSelected) listOf(
+                                ActiveAccent.primary.copy(alpha = 0.32f),
+                                ActiveAccent.primary.copy(alpha = 0.14f)
+                            ) else null,
+                            customBorderColor = if (isSelected) ActiveAccent.primary.copy(alpha = 0.8f) else null,
+                            highlightAlpha = if (isSelected) 0.35f else 0.15f,
+                            isDark = isDarkThemeActive
+                        )
+                        .bouncyClickable(provideHaptic = true) { onDirectProviderChange(p) }
+                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = p,
+                        fontSize = 12.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isSelected) ActiveAccent.primary else AppWhite
                     )
-                )
+                }
             }
         }
 
@@ -906,11 +983,18 @@ private fun StepProvider(
             singleLine = true,
             visualTransformation = if (showDirectKey) VisualTransformation.None else PasswordVisualTransformation(),
             trailingIcon = {
-                IconButton(onClick = onToggleShowDirectKey) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .depthPill(shape = CircleShape, elevation = 1.dp, isDark = isDarkThemeActive)
+                        .bouncyClickable(provideHaptic = true, onClick = onToggleShowDirectKey),
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
                         imageVector = if (showDirectKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                         contentDescription = "Toggle key",
-                        tint = AppMuted
+                        tint = AppMuted,
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             },
@@ -961,11 +1045,10 @@ private fun StepVoice(
     )
 
     // Switch row
-    Surface(
-        color = AppSurface,
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, AppBorder),
-        modifier = Modifier.fillMaxWidth()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.dp, isDark = isDarkThemeActive)
     ) {
         Row(
             modifier = Modifier
@@ -981,7 +1064,10 @@ private fun StepVoice(
             Switch(
                 checked = ttsEnabled,
                 onCheckedChange = onTtsEnabledChange,
-                colors = SwitchDefaults.colors(checkedThumbColor = ActiveAccent.primary)
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = ActiveAccent.primary
+                )
             )
         }
     }
@@ -998,13 +1084,20 @@ private fun StepVoice(
 
         engines.forEach { (engId, engTitle, engDesc) ->
             val isSelected = ttsEngine == engId
-            Surface(
-                color = if (isSelected) ActiveAccent.primary.copy(alpha = 0.12f) else AppSurface,
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(if (isSelected) 2.dp else 1.dp, if (isSelected) ActiveAccent.primary else AppBorder),
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onTtsEngineChange(engId) }
+                    .depthCard(
+                        shape = RoundedCornerShape(14.dp),
+                        elevation = if (isSelected) 3.dp else 1.5.dp,
+                        customGradient = if (isSelected) listOf(
+                            ActiveAccent.primary.copy(alpha = 0.16f),
+                            ActiveAccent.primary.copy(alpha = 0.05f)
+                        ) else null,
+                        customBorderColor = if (isSelected) ActiveAccent.primary else null,
+                        isDark = isDarkThemeActive
+                    )
+                    .bouncyClickable(provideHaptic = true) { onTtsEngineChange(engId) }
             ) {
                 Row(
                     modifier = Modifier.padding(14.dp),
@@ -1018,7 +1111,10 @@ private fun StepVoice(
                     RadioButton(
                         selected = isSelected,
                         onClick = { onTtsEngineChange(engId) },
-                        colors = RadioButtonDefaults.colors(selectedColor = ActiveAccent.primary)
+                        colors = RadioButtonDefaults.colors(
+                            selectedColor = ActiveAccent.primary,
+                            unselectedColor = AppMuted
+                        )
                     )
                 }
             }
@@ -1035,118 +1131,138 @@ private fun StepVoice(
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(sampleVoices) { v ->
                 val isSelected = ttsVoice.equals(v, ignoreCase = true)
-                FilterChip(
-                    selected = isSelected,
-                    onClick = { onTtsVoiceChange(v) },
-                    label = { Text(v, fontSize = 12.sp) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = ActiveAccent.primary.copy(alpha = 0.2f),
-                        selectedLabelColor = ActiveAccent.primary,
-                        containerColor = AppSurface,
-                        labelColor = AppMuted
-                    ),
-                    border = FilterChipDefaults.filterChipBorder(
-                        enabled = true,
-                        selected = isSelected,
-                        borderColor = if (isSelected) ActiveAccent.primary else AppBorder
+                Box(
+                    modifier = Modifier
+                        .depthPill(
+                            shape = RoundedCornerShape(10.dp),
+                            elevation = if (isSelected) 2.dp else 1.dp,
+                            customGradient = if (isSelected) listOf(
+                                ActiveAccent.primary.copy(alpha = 0.32f),
+                                ActiveAccent.primary.copy(alpha = 0.14f)
+                            ) else null,
+                            customBorderColor = if (isSelected) ActiveAccent.primary.copy(alpha = 0.8f) else null,
+                            highlightAlpha = if (isSelected) 0.35f else 0.15f,
+                            isDark = isDarkThemeActive
+                        )
+                        .bouncyClickable(provideHaptic = true) { onTtsVoiceChange(v) }
+                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = v,
+                        fontSize = 12.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isSelected) ActiveAccent.primary else AppWhite
                     )
-                )
+                }
             }
         }
 
         // Test Voice Button
-        Button(
-            onClick = {
-                if (isPlayingAudio) {
-                    try {
-                        activeMediaPlayer?.stop()
-                        activeMediaPlayer?.reset()
-                        activeMediaPlayer?.release()
-                    } catch (_: Exception) {}
-                    setActiveMediaPlayer(null)
-                    setIsPlayingAudio(false)
-                } else {
-                    setIsTestingAudio(true)
-                    scope.launch(Dispatchers.IO) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(46.dp)
+                .depthPill(
+                    shape = RoundedCornerShape(14.dp),
+                    elevation = 3.dp,
+                    customGradient = if (isPlayingAudio) listOf(Color(0xFFDC2626), Color(0xFFB91C1C))
+                    else listOf(ActiveAccent.primary, ActiveAccent.primary.copy(alpha = 0.85f)),
+                    highlightAlpha = 0.35f,
+                    isDark = isDarkThemeActive
+                )
+                .bouncyClickable(provideHaptic = true) {
+                    if (isPlayingAudio) {
                         try {
-                            val executor = ToolExecutor(context)
-                            val prov = when (ttsEngine) {
-                                "gemini" -> "Google Gemini"
-                                "openai" -> "OpenAI"
-                                else -> "Default"
-                            }
-                            val model = when (ttsEngine) {
-                                "gemini" -> "gemini-3.8-flash-tts"
-                                "openai" -> "tts-1"
-                                "android" -> "android"
-                                else -> "edge_tts"
-                            }
-                            val testSentence = "Hello! This is a test of your text to speech voice in DeepCode."
-                            val result = executor.synthesizeSpeechWithResult(
-                                text = testSentence,
-                                preferredProvider = prov,
-                                preferredModel = model,
-                                verbatim = true
-                            )
-                            withContext(Dispatchers.Main) {
-                                setIsTestingAudio(false)
-                                if (!result.audioPath.isNullOrBlank()) {
-                                    val f = File(result.audioPath)
-                                    if (f.exists() && f.length() > 0) {
-                                        val player = MediaPlayer().apply {
-                                            setAudioAttributes(
-                                                android.media.AudioAttributes.Builder()
-                                                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
-                                                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                                                    .build()
-                                            )
-                                            java.io.FileInputStream(f).use { fis -> setDataSource(fis.fd) }
-                                            setOnPreparedListener { mp ->
-                                                mp.start()
-                                                setIsPlayingAudio(true)
-                                            }
-                                            setOnCompletionListener {
-                                                setIsPlayingAudio(false)
-                                            }
-                                            setOnErrorListener { _, _, _ ->
-                                                setIsPlayingAudio(false)
-                                                true
-                                            }
-                                            prepareAsync()
-                                        }
-                                        setActiveMediaPlayer(player)
-                                    }
-                                } else {
-                                    Toast.makeText(context, "Voice test: ${result.message}", Toast.LENGTH_SHORT).show()
+                            activeMediaPlayer?.stop()
+                            activeMediaPlayer?.reset()
+                            activeMediaPlayer?.release()
+                        } catch (_: Exception) {}
+                        setActiveMediaPlayer(null)
+                        setIsPlayingAudio(false)
+                    } else {
+                        setIsTestingAudio(true)
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                val executor = ToolExecutor(context)
+                                val prov = when (ttsEngine) {
+                                    "gemini" -> "Google Gemini"
+                                    "openai" -> "OpenAI"
+                                    else -> "Default"
                                 }
-                            }
-                        } catch (e: Exception) {
-                            withContext(Dispatchers.Main) {
-                                setIsTestingAudio(false)
-                                Toast.makeText(context, "TTS Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                val model = when (ttsEngine) {
+                                    "gemini" -> "gemini-3.8-flash-tts"
+                                    "openai" -> "tts-1"
+                                    "android" -> "android"
+                                    else -> "edge_tts"
+                                }
+                                val testSentence = "Hello! This is a test of your text to speech voice in DeepCode."
+                                val result = executor.synthesizeSpeechWithResult(
+                                    text = testSentence,
+                                    preferredProvider = prov,
+                                    preferredModel = model,
+                                    verbatim = true
+                                )
+                                withContext(Dispatchers.Main) {
+                                    setIsTestingAudio(false)
+                                    if (!result.audioPath.isNullOrBlank()) {
+                                        val f = File(result.audioPath)
+                                        if (f.exists() && f.length() > 0) {
+                                            val player = MediaPlayer().apply {
+                                                setAudioAttributes(
+                                                    android.media.AudioAttributes.Builder()
+                                                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                                                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                                                        .build()
+                                                )
+                                                java.io.FileInputStream(f).use { fis -> setDataSource(fis.fd) }
+                                                setOnPreparedListener { mp ->
+                                                    mp.start()
+                                                    setIsPlayingAudio(true)
+                                                }
+                                                setOnCompletionListener {
+                                                    setIsPlayingAudio(false)
+                                                }
+                                                setOnErrorListener { _, _, _ ->
+                                                    setIsPlayingAudio(false)
+                                                    true
+                                                }
+                                                prepareAsync()
+                                            }
+                                            setActiveMediaPlayer(player)
+                                        }
+                                    } else {
+                                        Toast.makeText(context, "Voice test: ${result.message}", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    setIsTestingAudio(false)
+                                    Toast.makeText(context, "TTS Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                     }
-                }
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = AppSurfaceVariant),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
+                },
+            contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = if (isPlayingAudio) Icons.Default.Stop else Icons.AutoMirrored.Filled.VolumeUp,
-                contentDescription = null,
-                tint = if (isPlayingAudio) Color(0xFFEF4444) else ActiveAccent.primary,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = if (isTestingAudio) "Synthesizing test audio..."
-                else if (isPlayingAudio) "Stop playback"
-                else "Test Voice Preview",
-                color = AppWhite,
-                fontSize = 13.sp
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (isPlayingAudio) Icons.Default.Stop else Icons.AutoMirrored.Filled.VolumeUp,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (isTestingAudio) "Synthesizing test audio..."
+                    else if (isPlayingAudio) "Stop playback"
+                    else "Test Voice Preview",
+                    color = Color.White,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
     }
 }
@@ -1185,11 +1301,15 @@ private fun StepSubsystemReview(
     )
 
     // Subsystem Card
-    Surface(
-        color = AppSurface,
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, if (isSubsystemInstalled) Color(0xFF22C55E).copy(alpha = 0.5f) else AppBorder),
-        modifier = Modifier.fillMaxWidth()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .depthCard(
+                shape = RoundedCornerShape(18.dp),
+                elevation = 3.dp,
+                customBorderColor = if (isSubsystemInstalled) Color(0xFF22C55E).copy(alpha = 0.5f) else null,
+                isDark = isDarkThemeActive
+            )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -1243,58 +1363,71 @@ private fun StepSubsystemReview(
 
             if (!isSubsystemInstalled) {
                 Spacer(Modifier.height(14.dp))
-                Button(
-                    onClick = {
-                        if (!isInstallingSubsystem) {
-                            setIsInstallingSubsystem(true)
-                            setSubsystemError(null)
-                            scope.launch(Dispatchers.IO) {
-                                try {
-                                    val agent = when (workflowMode) {
-                                        WORKFLOW_DEEPSEEK_HARNESS -> AgentKind.DEEPSEEK_HARNESS
-                                        WORKFLOW_CLAUDE_CODE -> AgentKind.CLAUDE_CODE
-                                        WORKFLOW_HERMES -> AgentKind.HERMES
-                                        else -> AgentKind.ANTIGRAVITY
-                                    }
-                                    installer.ensureInstalled(
-                                        selectedStacks = setOf(DevStack.PYTHON, DevStack.ANDROID),
-                                        agent = agent
-                                    ) { p ->
-                                        withContext(Dispatchers.Main) { setSubsystemProgress(p) }
-                                    }
-                                    withContext(Dispatchers.Main) {
-                                        setIsInstallingSubsystem(false)
-                                        setSubsystemProgress(null)
-                                        onSubsystemInstalled()
-                                    }
-                                } catch (e: Exception) {
-                                    withContext(Dispatchers.Main) {
-                                        setIsInstallingSubsystem(false)
-                                        setSubsystemError(e.message ?: "Install failed")
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp)
+                        .depthPill(
+                            shape = RoundedCornerShape(14.dp),
+                            elevation = 3.dp,
+                            customGradient = listOf(ActiveAccent.primary, ActiveAccent.primary.copy(alpha = 0.85f)),
+                            highlightAlpha = 0.35f,
+                            isDark = isDarkThemeActive
+                        )
+                        .bouncyClickable(enabled = !isInstallingSubsystem, provideHaptic = true) {
+                            if (!isInstallingSubsystem) {
+                                setIsInstallingSubsystem(true)
+                                setSubsystemError(null)
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        val agent = when (workflowMode) {
+                                            WORKFLOW_DEEPSEEK_HARNESS -> AgentKind.DEEPSEEK_HARNESS
+                                            WORKFLOW_CLAUDE_CODE -> AgentKind.CLAUDE_CODE
+                                            WORKFLOW_HERMES -> AgentKind.HERMES
+                                            else -> AgentKind.ANTIGRAVITY
+                                        }
+                                        installer.ensureInstalled(
+                                            selectedStacks = setOf(DevStack.PYTHON, DevStack.ANDROID),
+                                            agent = agent
+                                        ) { p ->
+                                            withContext(Dispatchers.Main) { setSubsystemProgress(p) }
+                                        }
+                                        withContext(Dispatchers.Main) {
+                                            setIsInstallingSubsystem(false)
+                                            setSubsystemProgress(null)
+                                            onSubsystemInstalled()
+                                        }
+                                    } catch (e: Exception) {
+                                        withContext(Dispatchers.Main) {
+                                            setIsInstallingSubsystem(false)
+                                            setSubsystemError(e.message ?: "Install failed")
+                                        }
                                     }
                                 }
                             }
-                        }
-                    },
-                    enabled = !isInstallingSubsystem,
-                    colors = ButtonDefaults.buttonColors(containerColor = ActiveAccent.primary),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth()
+                        },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (isInstallingSubsystem) "Bootstrapping..." else "Install Linux Subsystem Now")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp), tint = Color.White)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = if (isInstallingSubsystem) "Bootstrapping..." else "Install Linux Subsystem Now",
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.5.sp
+                        )
+                    }
                 }
             }
         }
     }
 
     // Summary Card
-    Surface(
-        color = AppSurface,
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, AppBorder),
-        modifier = Modifier.fillMaxWidth()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .depthCard(shape = RoundedCornerShape(18.dp), elevation = 2.dp, isDark = isDarkThemeActive)
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Configuration Overview", fontWeight = FontWeight.Bold, color = AppWhite, fontSize = 14.sp)
