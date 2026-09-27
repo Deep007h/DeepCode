@@ -1253,11 +1253,12 @@ private fun SessionHistoryTab(
                                         .border(0.5.dp, BorderColor, RoundedCornerShape(4.dp))
                                         .padding(6.dp)
                                 ) {
+                                    val isTool = message.isToolCall || message.role == "tool"
                                     Text(
-                                        "📥 Tool Result:\n${message.toolResultsJson}",
+                                        if (isTool) "📥 Tool Result:\n${message.toolResultsJson}" else "🤖 Engine: ${message.toolResultsJson}",
                                         fontSize = 9.sp,
                                         fontFamily = FontFamily.Monospace,
-                                        color = AccentGreen
+                                        color = if (isTool) AccentGreen else AccentOrange
                                     )
                                 }
                             }

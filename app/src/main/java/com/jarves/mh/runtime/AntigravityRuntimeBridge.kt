@@ -1,6 +1,7 @@
 package com.jarves.mh.runtime
 
 import android.content.Context
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.jarves.mh.model.ChatMessage
 import com.jarves.mh.model.ChangeItem
@@ -472,12 +473,16 @@ class AntigravityRuntimeBridge(
     }
 
     private fun startForegroundRuntime(projectName: String) {
-        ContextCompat.startForegroundService(
-            context,
-            android.content.Intent(context, RuntimeExecutionService::class.java)
-                .setAction(RuntimeExecutionService.ACTION_START)
-                .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName),
-        )
+        runCatching {
+            ContextCompat.startForegroundService(
+                context,
+                android.content.Intent(context, RuntimeExecutionService::class.java)
+                    .setAction(RuntimeExecutionService.ACTION_START)
+                    .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName),
+            )
+        }.onFailure { error ->
+            Log.w("AntigravityBridge", "Could not start foreground runtime service", error)
+        }
     }
 
     private fun finishForegroundRuntime(completed: Boolean, projectName: String, detail: String) {

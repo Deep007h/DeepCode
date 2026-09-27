@@ -6,8 +6,11 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import ai.deepcode.android.ui.MainActivity
 import ai.deepcode.android.R
@@ -247,11 +250,24 @@ class RuntimeSetupService : Service() {
         if (intent?.action == ACTION_STOP) {
             installJob?.cancel(CancellationException("Stopped by user"))
             RuntimeSetupController.cancelled(this)
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
             stopSelf()
             return START_NOT_STICKY
         }
-        startForeground(NOTIFICATION_ID, setupNotification(RuntimeSetupController.snapshot.value))
+        try {
+            val notification = setupNotification(RuntimeSetupController.snapshot.value)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            Log.e("RuntimeSetupService", "Failed to startForeground", e)
+        }
         acquireWakeLock()
         if (installJob?.isActive != true) {
             val stacks = intent?.getStringExtra(EXTRA_STACKS).orEmpty().split(',')

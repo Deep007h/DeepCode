@@ -633,12 +633,16 @@ class DshRuntimeBridge(
     }
 
     private fun startForegroundRuntime(projectName: String) {
-        ContextCompat.startForegroundService(
-            context,
-            android.content.Intent(context, RuntimeExecutionService::class.java)
-                .setAction(RuntimeExecutionService.ACTION_START)
-                .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName),
-        )
+        runCatching {
+            ContextCompat.startForegroundService(
+                context,
+                android.content.Intent(context, RuntimeExecutionService::class.java)
+                    .setAction(RuntimeExecutionService.ACTION_START)
+                    .putExtra(RuntimeExecutionService.EXTRA_PROJECT_NAME, projectName),
+            )
+        }.onFailure { error ->
+            Log.w("DshBridge", "Could not start foreground runtime service", error)
+        }
     }
 
     private fun finishForegroundRuntime(completed: Boolean, projectName: String, detail: String) {

@@ -18,6 +18,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,14 +46,19 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -87,101 +93,262 @@ import kotlin.math.sin
  */
 
 /**
- * Ambient breathing thinking pill (transitions.dev P28 Thinking states).
- * Renders an illuminated breathing border with smooth text state morphing.
+ * Context-aware dynamic thinking steps that change every 2 seconds.
+ * Cycles through job-related engineering actions based on the active agent or engine.
+ */
+fun getDynamicThinkingSteps(engineBadge: String?): List<String> {
+    val isDeepSeek = engineBadge?.contains("DeepSeek", ignoreCase = true) == true
+    val isClaude = engineBadge?.contains("Claude", ignoreCase = true) == true
+    val isAntigravity = engineBadge?.contains("Antigravity", ignoreCase = true) == true
+
+    return when {
+        isDeepSeek -> listOf(
+            "Analyzing prompt & repository context...",
+            "Initializing DeepSeek Harness agent...",
+            "Inspecting project structure & files...",
+            "Formulating autonomous execution plan...",
+            "Evaluating toolchain & commands...",
+            "Synthesizing optimal code solution...",
+            "Verifying syntax & best practices...",
+            "Structuring finalized response..."
+        )
+        isClaude -> listOf(
+            "Analyzing requirements & context...",
+            "Initializing Claude Code agent...",
+            "Inspecting workspace codebase...",
+            "Formulating tool actions & edits...",
+            "Synthesizing verified solution...",
+            "Formatting finalized response..."
+        )
+        isAntigravity -> listOf(
+            "Engaging Antigravity reasoning engine...",
+            "Analyzing query intent & constraints...",
+            "Exploring codebase dependencies...",
+            "Constructing execution roadmap...",
+            "Synthesizing optimal solution...",
+            "Structuring finalized output..."
+        )
+        else -> listOf(
+            "Analyzing requirements & intent...",
+            "Inspecting project context...",
+            "Formulating solution architecture...",
+            "Evaluating edge cases & logic...",
+            "Synthesizing code & explanation...",
+            "Validating syntax & type safety...",
+            "Refining implementation details...",
+            "Structuring clean response..."
+        )
+    }
+}
+
+/**
+ * Modern, dynamic thinking card for in-app chat.
+ * Cycles through job-related engineering actions every 2 seconds during the thinking phase.
+ * Perfectly integrates with DeepCode's UI design system (AppSurface, AppBorder, AppPrimary).
  */
 @Composable
-fun AnimatedThinkingPill(
-    statusText: String,
-    accentColor: Color = Color(0xFFFF6D00),
+fun AnimatedThinkingCard(
+    engineBadge: String? = null,
+    explicitStatus: String? = null,
+    accentColor: Color = AppPrimary,
     modifier: Modifier = Modifier
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "ThinkingPillAura")
+    val dynamicSteps = remember(engineBadge) {
+        getDynamicThinkingSteps(engineBadge)
+    }
 
-    // Ambient glow pulse between 0.35f and 0.85f.
-    // NOTE: single infinite animation only. The previous second sweepOffset
-    // animation (600px linear sweep) forced a Brush.linearGradient recreation
-    // on every frame -> recomposition at 60fps + shader recompile = jank.
-    // A static alpha-pulsed border is visually identical and ~free.
+    var stepIndex by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(dynamicSteps, explicitStatus) {
+        if (explicitStatus == null) {
+            stepIndex = 0
+            while (isActive) {
+                delay(2000L)
+                stepIndex = (stepIndex + 1) % dynamicSteps.size
+            }
+        }
+    }
+
+    val displayStatus = explicitStatus ?: dynamicSteps[stepIndex % dynamicSteps.size]
+
+    val effectiveAccent = remember(engineBadge, accentColor) {
+        when {
+            engineBadge?.contains("DeepSeek", ignoreCase = true) == true -> Color(0xFFFF6D00)
+            engineBadge?.contains("Claude", ignoreCase = true) == true -> Color(0xFFD97706)
+            engineBadge?.contains("Antigravity", ignoreCase = true) == true -> Color(0xFF3B82F6)
+            engineBadge?.contains("Fallback", ignoreCase = true) == true -> Color(0xFFEF4444)
+            else -> accentColor
+        }
+    }
+
+    val headerLabel = remember(engineBadge, explicitStatus) {
+        when {
+            explicitStatus != null -> "PROCESSING TASK"
+            engineBadge?.contains("DeepSeek", ignoreCase = true) == true -> "THINKING · DEEPSEEK HARNESS"
+            engineBadge?.contains("Claude", ignoreCase = true) == true -> "THINKING · CLAUDE CODE"
+            engineBadge?.contains("Antigravity", ignoreCase = true) == true -> "THINKING · ANTIGRAVITY"
+            engineBadge?.contains("Direct Engine", ignoreCase = true) == true -> "THINKING · DIRECT ENGINE"
+            !engineBadge.isNullOrBlank() -> "THINKING · ${engineBadge.substringBefore("·").trim().uppercase()}"
+            else -> "THINKING"
+        }
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "ThinkingCardTransition")
+
     val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 0.85f,
+        initialValue = 0.25f,
+        targetValue = 0.70f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = MotionTokens.DurationBreathing, easing = MotionTokens.EaseInOut),
+            animation = tween(durationMillis = 1400, easing = MotionTokens.EaseInOut),
             repeatMode = RepeatMode.Reverse
         ),
         label = "GlowAlpha"
     )
 
+    val liveDotAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "LiveDotAlpha"
+    )
+
     val isDark = isDarkThemeActive
-    val pillBg = if (isDark) Color(0xFF13151A) else AppCard
-    val borderBrush = remember(glowAlpha, accentColor, isDark) {
+    val cardBg = if (isDark) AppSurface else Color.White
+    val borderBrush = remember(glowAlpha, effectiveAccent, isDark) {
         if (isDark) {
             Brush.linearGradient(
                 colors = listOf(
-                    accentColor.copy(alpha = glowAlpha * 0.4f),
-                    accentColor.copy(alpha = glowAlpha),
-                    accentColor.copy(alpha = glowAlpha * 0.2f)
+                    effectiveAccent.copy(alpha = glowAlpha * 0.40f),
+                    AppBorder.copy(alpha = 0.75f),
+                    effectiveAccent.copy(alpha = glowAlpha * 0.15f)
                 )
             )
         } else {
             Brush.linearGradient(
                 colors = listOf(
-                    accentColor.copy(alpha = (glowAlpha * 0.7f).coerceAtMost(1f)),
-                    accentColor.copy(alpha = glowAlpha),
-                    accentColor.copy(alpha = (glowAlpha * 0.4f).coerceAtMost(1f))
+                    effectiveAccent.copy(alpha = glowAlpha * 0.50f),
+                    AppBorder,
+                    effectiveAccent.copy(alpha = glowAlpha * 0.20f)
                 )
             )
         }
     }
 
-    Row(
+    Surface(
         modifier = modifier
+            .fillMaxWidth()
             .shadow(
-                elevation = if (isDark) 0.dp else 2.dp,
-                shape = RoundedCornerShape(16.dp),
-                spotColor = Color(0x18000000),
-                ambientColor = Color(0x0A000000)
-            )
-            .clip(RoundedCornerShape(16.dp))
-            .background(pillBg)
-            .border(1.2.dp, borderBrush, RoundedCornerShape(16.dp))
-            .padding(horizontal = 14.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                elevation = if (isDark) 0.dp else 1.5.dp,
+                shape = RoundedCornerShape(12.dp),
+                spotColor = Color(0x12000000),
+                ambientColor = Color(0x06000000)
+            ),
+        shape = RoundedCornerShape(12.dp),
+        color = cardBg,
+        border = BorderStroke(1.dp, borderBrush)
     ) {
-        BreathingSparkleIcon(tint = accentColor)
-
-        // Smooth vertical slide & fade text swap between states
-        AnimatedContent(
-            targetState = statusText,
-            transitionSpec = {
-                (slideInVertically(
-                    animationSpec = tween(MotionTokens.DurationFast, easing = MotionTokens.EaseOutCubic)
-                ) { height -> height / 2 } + fadeIn(
-                    animationSpec = tween(MotionTokens.DurationFast)
-                )).togetherWith(
-                    slideOutVertically(
-                        animationSpec = tween(MotionTokens.DurationMicro, easing = MotionTokens.EaseInOut)
-                    ) { height -> -height / 2 } + fadeOut(
-                        animationSpec = tween(MotionTokens.DurationMicro)
+        Row(
+            modifier = Modifier
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            effectiveAccent.copy(alpha = if (isDark) 0.08f else 0.04f),
+                            Color.Transparent
+                        )
                     )
                 )
-            },
-            label = "ThinkingTextSwap"
-        ) { targetText ->
-            Text(
-                text = targetText,
-                color = accentColor,
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.2.sp
-            )
-        }
+                .padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Leading animated sparkle icon container
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(effectiveAccent.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                BreathingSparkleIcon(tint = effectiveAccent, modifier = Modifier.size(17.dp))
+            }
 
-        Spacer(Modifier.width(2.dp))
-        TravelingWaveLoader(dotColor = accentColor)
+            // Center content: Micro-header with pulsing dot + Dynamic job step
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.5.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(effectiveAccent.copy(alpha = liveDotAlpha))
+                    )
+                    Text(
+                        text = headerLabel,
+                        color = effectiveAccent,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.6.sp
+                    )
+                }
+
+                // Smooth vertical slide & fade text swap between job steps
+                AnimatedContent(
+                    targetState = displayStatus,
+                    transitionSpec = {
+                        (slideInVertically(
+                            animationSpec = tween(MotionTokens.DurationFast, easing = MotionTokens.EaseOutCubic)
+                        ) { height -> height / 2 } + fadeIn(
+                            animationSpec = tween(MotionTokens.DurationFast)
+                        )).togetherWith(
+                            slideOutVertically(
+                                animationSpec = tween(MotionTokens.DurationMicro, easing = MotionTokens.EaseInOut)
+                            ) { height -> -height / 2 } + fadeOut(
+                                animationSpec = tween(MotionTokens.DurationMicro)
+                            )
+                        )
+                    },
+                    label = "ThinkingStepSwap"
+                ) { targetText ->
+                    Text(
+                        text = targetText,
+                        color = if (isDark) AppWhite.copy(alpha = 0.95f) else Color(0xFF1F2937),
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Trailing animated wave indicator
+            TravelingWaveLoader(dotColor = effectiveAccent)
+        }
     }
+}
+
+/**
+ * Backwards compatibility wrapper for AnimatedThinkingPill,
+ * delegating to AnimatedThinkingCard.
+ */
+@Composable
+fun AnimatedThinkingPill(
+    statusText: String,
+    accentColor: Color = AppPrimary,
+    modifier: Modifier = Modifier
+) {
+    AnimatedThinkingCard(
+        explicitStatus = statusText,
+        accentColor = accentColor,
+        modifier = modifier
+    )
 }
 
 /**
@@ -189,7 +356,7 @@ fun AnimatedThinkingPill(
  */
 @Composable
 fun BreathingSparkleIcon(
-    tint: Color = Color(0xFFFF6D00),
+    tint: Color = AppPrimary,
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "SparkleBreath")
@@ -234,7 +401,7 @@ fun BreathingSparkleIcon(
  */
 @Composable
 fun TravelingWaveLoader(
-    dotColor: Color = Color(0xFFFF6D00),
+    dotColor: Color = AppPrimary,
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "WavePhase")
@@ -717,7 +884,7 @@ fun ReplyPreviewBar(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = "Replying to $author",
-                fontSize = 12.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = AppPrimary,
                 maxLines = 1
@@ -725,7 +892,7 @@ fun ReplyPreviewBar(
             Spacer(Modifier.height(2.dp))
             Text(
                 text = snippet,
-                fontSize = 12.sp,
+                fontSize = 14.sp,
                 color = if (isDark) Color(0xFFD1D5DB) else Color(0xFF374151),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -795,7 +962,7 @@ fun QuotedReplyHeader(
                 Spacer(Modifier.width(4.dp))
                 Text(
                     text = author,
-                    fontSize = 11.5.sp,
+                    fontSize = 13.5.sp,
                     fontWeight = FontWeight.Bold,
                     color = AppPrimary,
                     maxLines = 1
@@ -804,7 +971,7 @@ fun QuotedReplyHeader(
             Spacer(Modifier.height(2.dp))
             Text(
                 text = snippet,
-                fontSize = 11.5.sp,
+                fontSize = 13.5.sp,
                 color = if (isDark) AppWhite.copy(alpha = 0.85f) else Color(0xFF1F2937),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -812,3 +979,77 @@ fun QuotedReplyHeader(
         }
     }
 }
+
+/**
+ * Engine indicator badge showing which autonomous harness agent or engine generated an assistant reply.
+ * Distinguishes PRoot autonomous agents (DeepSeek Harness, Claude Code, Antigravity) from Direct In-App Engine
+ * and highlights any fallback transitions.
+ */
+@Composable
+fun EngineIndicatorBadge(
+    engineName: String,
+    modifier: Modifier = Modifier
+) {
+    val isDark = isDarkThemeActive
+    val isPRoot = engineName.contains("PRoot", ignoreCase = true) ||
+            engineName.contains("DeepSeek", ignoreCase = true) ||
+            engineName.contains("Claude", ignoreCase = true) ||
+            engineName.contains("Antigravity", ignoreCase = true)
+    val isFallback = engineName.contains("Fallback", ignoreCase = true)
+
+    val (icon, tint) = when {
+        isFallback -> "⚠️" to Color(0xFFEF4444)
+        engineName.contains("DeepSeek", ignoreCase = true) -> "⚡" to Color(0xFFFF6D00)
+        engineName.contains("Claude", ignoreCase = true) -> "✳️" to Color(0xFFD97706)
+        engineName.contains("Antigravity", ignoreCase = true) -> "🚀" to Color(0xFF3B82F6)
+        else -> "🤖" to AppPrimary
+    }
+
+    val bgColor = if (isDark) {
+        tint.copy(alpha = 0.12f)
+    } else {
+        tint.copy(alpha = 0.08f)
+    }
+    val borderColor = tint.copy(alpha = 0.35f)
+
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = bgColor,
+        border = BorderStroke(0.8.dp, borderColor)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Text(
+                text = icon,
+                fontSize = 11.sp
+            )
+            Text(
+                text = engineName,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isDark) tint.copy(alpha = 0.95f) else tint,
+                letterSpacing = 0.2.sp
+            )
+            if (isPRoot && !isFallback) {
+                Box(
+                    modifier = Modifier
+                        .size(5.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF10B981))
+                )
+            } else if (isFallback) {
+                Box(
+                    modifier = Modifier
+                        .size(5.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFEF4444))
+                )
+            }
+        }
+    }
+}
+

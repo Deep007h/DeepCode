@@ -1564,8 +1564,8 @@ fun MarkdownText(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     styledText,
-                                    fontSize = 15.sp,
-                                    lineHeight = 23.sp,
+                                    fontSize = 17.sp,
+                                    lineHeight = 25.sp,
                                     color = AppWhite.copy(alpha = 0.8f),
                                     modifier = Modifier
                                         .padding(start = indentDp)
@@ -1586,11 +1586,11 @@ fun MarkdownText(
                                 modifier = Modifier.padding(start = indentDp).padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.Top
                             ) {
-                                Text("•  ", fontSize = 15.sp, lineHeight = 23.sp, fontWeight = FontWeight.Bold, color = AppWhite)
+                                Text("•  ", fontSize = 17.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold, color = AppWhite)
                                 Text(
                                     styledText,
-                                    fontSize = 15.sp,
-                                    lineHeight = 23.sp,
+                                    fontSize = 17.sp,
+                                    lineHeight = 25.sp,
                                     color = AppWhite,
                                     modifier = Modifier.weight(1f, fill = false)
                                 )
@@ -1605,11 +1605,11 @@ fun MarkdownText(
                                 modifier = Modifier.padding(start = indentDp).padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.Top
                             ) {
-                                Text(trimmedLine.substring(0, dotIdx + 2), fontSize = 15.sp, lineHeight = 23.sp, fontWeight = FontWeight.Bold, color = AppWhite)
+                                Text(trimmedLine.substring(0, dotIdx + 2), fontSize = 17.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold, color = AppWhite)
                                 Text(
                                     styledText,
-                                    fontSize = 15.sp,
-                                    lineHeight = 23.sp,
+                                    fontSize = 17.sp,
+                                    lineHeight = 25.sp,
                                     color = AppWhite,
                                     modifier = Modifier.weight(1f, fill = false)
                                 )
@@ -1649,8 +1649,8 @@ fun MarkdownText(
                                 ) {
                                     Text(
                                         batchStyled,
-                                        fontSize = 15.sp,
-                                        lineHeight = 23.sp,
+                                        fontSize = 17.sp,
+                                        lineHeight = 25.sp,
                                         color = AppWhite
                                     )
                                     if (isStreaming && isLastBatchLine) {

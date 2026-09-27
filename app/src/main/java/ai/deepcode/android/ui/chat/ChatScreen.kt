@@ -252,7 +252,7 @@ fun PlaceholderFeatureCard(
                 Box(
                     modifier = Modifier
                         .size(35.dp)
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(CircleShape)
                         .background(iconBackgroundColor),
                     contentAlignment = Alignment.Center
                 ) {
@@ -283,12 +283,12 @@ fun PlaceholderFeatureCard(
                     text = actionText,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = AppPrimary
+                    color = Color(0xFFFF6D00)
                 )
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = null,
-                    tint = AppPrimary,
+                    tint = Color(0xFFFF6D00),
                     modifier = Modifier.size(13.dp)
                 )
             }
@@ -765,7 +765,84 @@ fun ChatScreen(
                     val dynamicSuggestions = remember(integrations, sessions, automations) {
                         val items = mutableListOf<DynamicSuggestionCard>()
 
-                        // 1. Available Connections
+                        // 1. Core Developer Coding Templates (Always visible first to match design)
+                        items.add(
+                            DynamicSuggestionCard(
+                                id = "code_explain",
+                                title = "Explain code",
+                                subtitle = "Explain how recursion works with an example",
+                                actionText = "Get explanation",
+                                iconBackgroundColor = Color(0xFFFF6D00),
+                                iconContent = {
+                                    Text(
+                                        "</>",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                },
+                                onClick = { inputMsg = "Explain how recursion works with an example" }
+                            )
+                        )
+
+                        items.add(
+                            DynamicSuggestionCard(
+                                id = "code_debug",
+                                title = "Debug help",
+                                subtitle = "Why is my loop infinite?\nFind logic bugs",
+                                actionText = "Get help",
+                                iconBackgroundColor = Color(0xFFEF4444),
+                                iconContent = {
+                                    Icon(
+                                        imageVector = Icons.Default.BugReport,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                },
+                                onClick = { inputMsg = "Why is my loop infinite? Find logic bugs" }
+                            )
+                        )
+
+                        items.add(
+                            DynamicSuggestionCard(
+                                id = "code_style",
+                                title = "Code style",
+                                subtitle = "Validate code patterns and best practices",
+                                actionText = "Check now",
+                                iconBackgroundColor = Color(0xFF6366F1),
+                                iconContent = {
+                                    Text(
+                                        "{ }",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                },
+                                onClick = { inputMsg = "Validate code patterns and best practices" }
+                            )
+                        )
+
+                        items.add(
+                            DynamicSuggestionCard(
+                                id = "code_generate",
+                                title = "Generate code",
+                                subtitle = "Write a function to parse JSON in Python",
+                                actionText = "Generate",
+                                iconBackgroundColor = Color(0xFF3B82F6),
+                                iconContent = {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                },
+                                onClick = { inputMsg = "Write a function to parse JSON in Python" }
+                            )
+                        )
+
+                        // 2. Available Connections
                         val connectedIntegrations = integrations.filter { it.status.equals("connected", ignoreCase = true) }
 
                         // GitHub
@@ -939,84 +1016,6 @@ fun ChatScreen(
                                 )
                             )
                         }
-
-                        // 5. Core Coding Suggestions
-                        items.add(
-                            DynamicSuggestionCard(
-                                id = "code_explain",
-                                title = "Explain code",
-                                subtitle = "Explain how recursion works with an example",
-                                actionText = "Get explanation",
-                                iconBackgroundColor = Color(0xFFFF6D00),
-                                iconContent = {
-                                    Text(
-                                        "</>",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
-                                },
-                                onClick = { inputMsg = "Explain how recursion works with an example" }
-                            )
-                        )
-
-                        items.add(
-                            DynamicSuggestionCard(
-                                id = "code_debug",
-                                title = "Debug help",
-                                subtitle = "Why is my loop infinite? Find logic bugs",
-                                actionText = "Get help",
-                                iconBackgroundColor = Color(0xFFEF4444),
-                                iconContent = {
-                                    Icon(
-                                        imageVector = Icons.Default.BugReport,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(19.dp)
-                                    )
-                                },
-                                onClick = { inputMsg = "Why is my loop infinite? Help me debug it" }
-                            )
-                        )
-
-                        items.add(
-                            DynamicSuggestionCard(
-                                id = "code_style",
-                                title = "Code style",
-                                subtitle = "Validate code patterns and best practices",
-                                actionText = "Check now",
-                                iconBackgroundColor = Color(0xFF6366F1),
-                                iconContent = {
-                                    Text(
-                                        "{ }",
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
-                                },
-                                onClick = { inputMsg = "Validate code patterns and best practices" }
-                            )
-                        )
-
-                        items.add(
-                            DynamicSuggestionCard(
-                                id = "code_generate",
-                                title = "Generate code",
-                                subtitle = "Write a function to parse JSON in Python",
-                                actionText = "Generate",
-                                iconBackgroundColor = Color(0xFF3B82F6),
-                                iconContent = {
-                                    Icon(
-                                        imageVector = Icons.Default.AutoAwesome,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(19.dp)
-                                    )
-                                },
-                                onClick = { inputMsg = "Write a function to parse JSON in Python" }
-                            )
-                        )
-
                         // If no connections are connected, offer a connection setup suggestion
                         if (connectedIntegrations.isEmpty()) {
                             items.add(
@@ -2033,6 +2032,28 @@ private fun AiBubble(
                     )
                 }
 
+                val engineBadge = remember(message.toolResultsJson, message.content, message.isToolCall, message.role) {
+                    val stored = message.toolResultsJson?.trim()
+                    if (!stored.isNullOrEmpty() && !message.isToolCall && message.role == "assistant") {
+                        stored
+                    } else if (message.role == "assistant" && !message.isToolCall) {
+                        when {
+                            message.content.contains("DeepSeek Harness", ignoreCase = true) -> "DeepSeek Harness · PRoot"
+                            message.content.contains("Claude Code", ignoreCase = true) -> "Claude Code · PRoot"
+                            message.content.contains("Antigravity", ignoreCase = true) -> "Antigravity · PRoot"
+                            message.content.contains("Direct In-App Engine", ignoreCase = true) || message.content.contains("Fallback", ignoreCase = true) -> "Fallback: Direct Engine"
+                            else -> "Direct Engine"
+                        }
+                    } else null
+                }
+
+                if (engineBadge != null) {
+                    EngineIndicatorBadge(
+                        engineName = engineBadge,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                }
+
                 val groupedParts = remember(effectiveParts) {
                     val result = mutableListOf<Any>()
                     var currentTools = mutableListOf<MessageContentPart.ToolCall>()
@@ -2072,7 +2093,7 @@ private fun AiBubble(
                         is MessageContentPart.Markdown -> MarkdownText(text = item.text, imageCache = imageCache, onSendSuggestion = onSendSuggestion)
                         is MessageContentPart.Audio -> AudioPlayer(part = item)
                         is MessageContentPart.Video -> VideoPlayer(videoUrl = item.url)
-                        is MessageContentPart.PlainText -> Text(item.text, fontSize = 16.sp, lineHeight = 25.sp, color = MaterialTheme.colorScheme.onSurface)
+                        is MessageContentPart.PlainText -> Text(item.text, fontSize = 18.sp, lineHeight = 27.sp, color = MaterialTheme.colorScheme.onSurface)
                         is MessageContentPart.Thought -> {
                             // Suppressed: Thinking Process card is hidden
                         }
@@ -2755,6 +2776,19 @@ private fun StreamingItem(
     mediaProcessingPrompt: String
 ) {
     val streamedText by viewModel.streamedText.collectAsStateWithLifecycle(initialValue = "")
+    val activeModel by viewModel.activeModel.collectAsStateWithLifecycle()
+    val workflowMode by viewModel.repository.securePrefs.workflowModeFlow.collectAsStateWithLifecycle()
+    val streamingBadge by viewModel.streamingEngineBadge.collectAsStateWithLifecycle()
+
+    val currentEngineBadge = remember(streamingBadge, workflowMode, activeModel) {
+        streamingBadge ?: when (workflowMode) {
+            ai.deepcode.android.data.local.WORKFLOW_DEEPSEEK_HARNESS -> "DeepSeek Harness · PRoot"
+            ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE -> "Claude Code · PRoot"
+            ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY -> "Antigravity · PRoot"
+            else -> "Direct Engine · ${activeModel.name}"
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2765,7 +2799,8 @@ private fun StreamingItem(
             text = streamedText,
             imageCache = imageCache,
             mediaProcessingType = mediaProcessingType,
-            mediaProcessingPrompt = mediaProcessingPrompt
+            mediaProcessingPrompt = mediaProcessingPrompt,
+            engineBadge = currentEngineBadge
         )
     }
 }
@@ -2776,7 +2811,8 @@ fun StreamingBubble(
     text: String,
     imageCache: Map<String, ImageBitmap> = emptyMap(),
     mediaProcessingType: String? = null,
-    mediaProcessingPrompt: String = ""
+    mediaProcessingPrompt: String = "",
+    engineBadge: String? = null
 ) {
     // Thinking stripped entirely — stream only the final answer text.
     val cleanText = remember(text) {
@@ -2800,6 +2836,13 @@ fun StreamingBubble(
         // already smooth because the follow-scroll keeps the tail pinned.
         horizontalAlignment = Alignment.Start
     ) {
+        if (!engineBadge.isNullOrEmpty()) {
+            EngineIndicatorBadge(
+                engineName = engineBadge,
+                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+            )
+        }
+
         if (isImageGenerating) {
             ImageGenerationSkeleton(statusText = "Creating image")
         } else if (cleanText.isEmpty() || isAudioGenerating) {
@@ -2809,13 +2852,14 @@ fun StreamingBubble(
                     .padding(vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // transitions.dev P28: Ambient breathing thinking status pill
-                val status = if (mediaProcessingPrompt.isNotBlank()) mediaProcessingPrompt
-                    else if (isAudioGenerating) "Generating audio..."
-                    else "Thinking..."
-                AnimatedThinkingPill(
-                    statusText = status,
-                    accentColor = AppPrimary
+                val explicit = if (mediaProcessingPrompt.isNotBlank()) mediaProcessingPrompt
+                    else if (isAudioGenerating) "Generating speech audio..."
+                    else null
+                AnimatedThinkingCard(
+                    engineBadge = engineBadge,
+                    explicitStatus = explicit,
+                    accentColor = AppPrimary,
+                    modifier = Modifier.padding(horizontal = 4.dp)
                 )
             }
         } else {
@@ -2840,7 +2884,7 @@ fun StreamingBubble(
                         SpanStyle(
                             color = codeColor,
                             fontWeight = FontWeight.Normal,
-                            fontSize = 15.sp
+                            fontSize = 17.sp
                         )
                     ) {
                         append(trailingCursor)
@@ -2850,8 +2894,8 @@ fun StreamingBubble(
 
             Text(
                 text = streamingAnnotated,
-                fontSize = 15.sp,
-                lineHeight = 23.sp,
+                fontSize = 17.sp,
+                lineHeight = 25.sp,
                 color = textColor,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2860,9 +2904,11 @@ fun StreamingBubble(
 
             if (mediaProcessingPrompt.isNotBlank()) {
                 Spacer(modifier = Modifier.height(6.dp))
-                AnimatedThinkingPill(
-                    statusText = mediaProcessingPrompt,
-                    accentColor = AppPrimary
+                AnimatedThinkingCard(
+                    engineBadge = engineBadge,
+                    explicitStatus = mediaProcessingPrompt,
+                    accentColor = AppPrimary,
+                    modifier = Modifier.padding(horizontal = 4.dp)
                 )
             }
         }
@@ -3940,7 +3986,7 @@ data class AttachedFile(
 // ═══════════════════════════════════════════════
 // ChatViewModel
 // ═══════════════════════════════════════════════
-class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
+class ChatViewModel(val repository: DeepCodeRepository) : ViewModel() {
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages = _messages.asStateFlow()
 
@@ -3991,6 +4037,9 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
     val mediaProcessingType = _mediaProcessingType.asStateFlow()
     private val _mediaProcessingPrompt = MutableStateFlow("")
     val mediaProcessingPrompt = _mediaProcessingPrompt.asStateFlow()
+
+    private val _streamingEngineBadge = MutableStateFlow<String?>(null)
+    val streamingEngineBadge = _streamingEngineBadge.asStateFlow()
 
     private val _activeSessionIdFlow = MutableStateFlow("")
     val activeSessionIdFlow = _activeSessionIdFlow.asStateFlow()
@@ -4192,7 +4241,8 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         if (_isStreaming.value) return
         sendJob?.cancel()
         sendJob = viewModelScope.launch(Dispatchers.IO) {
-            var sessionId = activeSessionId
+            try {
+                var sessionId = activeSessionId
             val dynamicTitle = generateDynamicTitle(text)
             if (sessionId.isEmpty()) {
                 sessionId = repository.createSession(dynamicTitle)
@@ -4513,6 +4563,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
 
                 val bridge = ai.deepcode.android.service.chatgpt.ChatGPTBridge.getInstance(repository.appContext)
                 val accumulated = StringBuilder()
+                _streamingEngineBadge.value = "ChatGPT (OpenAI)"
 
                 bridge.streamTurn(
                     prompt = promptForGpt,
@@ -4532,9 +4583,9 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         val finalText = if (fullText.isNotBlank()) fullText else accumulated.toString().trim()
                         viewModelScope.launch(Dispatchers.IO) {
                             if (finalText.isNotBlank()) {
-                                appendAssistantMessage(finalText, sessionId)
+                                appendAssistantMessage(finalText, sessionId, agentBadge = "ChatGPT (OpenAI)")
                             } else {
-                                appendAssistantMessage("ChatGPT completed without text.", sessionId)
+                                appendAssistantMessage("ChatGPT completed without text.", sessionId, agentBadge = "ChatGPT (OpenAI)")
                             }
                         }
                     },
@@ -4545,8 +4596,9 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                         _mediaProcessingType.value = null
                         _mediaProcessingPrompt.value = ""
                         _streamedText.value = ""
+                        _streamingEngineBadge.value = null
                         viewModelScope.launch(Dispatchers.IO) {
-                            appendAssistantMessage("ChatGPT Error: ${err.message ?: "Unknown error"}", sessionId)
+                            appendAssistantMessage("ChatGPT Error: ${err.message ?: "Unknown error"}", sessionId, agentBadge = "ChatGPT (OpenAI)")
                         }
                     }
                 )
@@ -4565,6 +4617,15 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             }
 
             executeDirectInAppEngine(msgText, sessionId, userMsg)
+            } catch (e: Throwable) {
+                ai.deepcode.android.util.AppLogger.e("ChatViewModel", "Unhandled exception in sendMessage", e)
+                _isStreaming.value = false
+                _streamingMessageId.value = ""
+                _mediaProcessingType.value = null
+                _mediaProcessingPrompt.value = ""
+                _streamingEngineBadge.value = null
+                appendAssistantMessage("⚠️ **Error:** ${e.localizedMessage ?: e.message}")
+            }
         }
     }
 
@@ -4573,13 +4634,20 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         sessionId: String,
         userMsg: Message
     ) = kotlinx.coroutines.coroutineScope {
+        if (_streamingMessageId.value.isEmpty()) {
+            _streamingMessageId.value = UUID.randomUUID().toString()
+        }
+        _isStreaming.value = true
         val model = _activeModel.value
+        if (_streamingEngineBadge.value == null) {
+            _streamingEngineBadge.value = "Direct Engine · ${model.name}"
+        }
         val provider = AIProviderFactory.providers.find { it.name.equals(model.provider, ignoreCase = true) }
             ?: OPENAI_PROVIDERS.find { it.name.equals(model.provider, ignoreCase = true) }?.let { GenericOpenAIProvider(it) }
         if (provider == null) {
             _streamedText.value = "Provider ${model.provider} not available"
             _isStreaming.value = false
-            appendAssistantMessage(_streamedText.value)
+            appendAssistantMessage(_streamedText.value, sessionId)
             return@coroutineScope
         }
 
@@ -4913,6 +4981,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             com.jarves.mh.runtime.RuntimeTaskController.requestStop()
         } catch (_: Exception) {}
         _isStreaming.value = false
+        _streamingEngineBadge.value = null
         viewModelScope.launch(Dispatchers.IO) {
             val text = _streamedText.value
             if (text.isNotEmpty()) {
@@ -4930,8 +4999,9 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
         sessionId: String,
         userMsg: Message
     ) {
-        val context = repository.appContext
-        val installer = com.jarves.mh.runtime.RuntimeInstaller(context)
+        try {
+            val context = repository.appContext
+            val installer = com.jarves.mh.runtime.RuntimeInstaller(context)
         if (!installer.isInstalled()) {
             _isStreaming.value = false
             _streamingMessageId.value = ""
@@ -4942,8 +5012,10 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 "The selected workflow (`$workflowMode`) requires the rootless Linux subsystem. " +
                 "Falling back to **Direct In-App Engine** to answer your request. " +
                 "You can install the Linux Subsystem in **Settings → Linux Subsystem & Runtimes**.",
-                sessionId
+                sessionId,
+                agentBadge = "Fallback: Direct Engine"
             )
+            _streamingEngineBadge.value = "Fallback: Direct Engine · ${_activeModel.value.name}"
             executeDirectInAppEngine(text, sessionId, userMsg)
             return
         }
@@ -4954,6 +5026,7 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY -> com.jarves.mh.model.AgentKind.ANTIGRAVITY
             else -> com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS
         }
+        _streamingEngineBadge.value = "${agentKind.title} · PRoot"
 
         if (!installer.isAgentInstalled(agentKind)) {
             _mediaProcessingType.value = "tool"
@@ -4967,7 +5040,12 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                 _streamingMessageId.value = ""
                 _mediaProcessingType.value = null
                 _mediaProcessingPrompt.value = ""
-                appendAssistantMessage("⚠️ **Failed to install ${agentKind.title}:** ${e.message}\n\nFalling back to **Direct In-App Engine** to answer your request.", sessionId)
+                appendAssistantMessage(
+                    "⚠️ **Failed to install ${agentKind.title}:** ${e.message}\n\nFalling back to **Direct In-App Engine** to answer your request.",
+                    sessionId,
+                    agentBadge = "Fallback: Direct Engine"
+                )
+                _streamingEngineBadge.value = "Fallback: Direct Engine · ${_activeModel.value.name}"
                 executeDirectInAppEngine(text, sessionId, userMsg)
                 return
             }
@@ -5137,30 +5215,37 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
                     is com.jarves.mh.model.RuntimeEvent.SessionCompleted -> {
                         val fullOutput = _streamedText.value.trim()
                         if (fullOutput.isNotBlank()) {
-                            appendAssistantMessage(fullOutput, sessionId)
+                            appendAssistantMessage(fullOutput, sessionId, agentBadge = "${agentKind.title} · PRoot")
                         } else if (!hadWorkflowTools) {
-                            appendAssistantMessage("${agentKind.title} finished.", sessionId)
+                            appendAssistantMessage("${agentKind.title} finished.", sessionId, agentBadge = "${agentKind.title} · PRoot")
                         }
                         _isStreaming.value = false
                         _streamingMessageId.value = ""
                         _mediaProcessingType.value = null
                         _mediaProcessingPrompt.value = ""
+                        _streamingEngineBadge.value = null
                     }
                     is com.jarves.mh.model.RuntimeEvent.SessionFailed -> {
                         val hasOutput = _streamedText.value.isNotBlank()
                         if (!hasOutput && !hadWorkflowTools) {
-                            appendAssistantMessage("⚠️ **${agentKind.title} Error:**\n${event.reason}\n\n*Falling back to Direct In-App Engine...*", sessionId)
+                            appendAssistantMessage(
+                                "⚠️ **${agentKind.title} Error:**\n${event.reason}\n\n*Falling back to Direct In-App Engine...*",
+                                sessionId,
+                                agentBadge = "Fallback: Direct Engine"
+                            )
+                            _streamingEngineBadge.value = "Fallback: Direct Engine · ${_activeModel.value.name}"
                             viewModelScope.launch(Dispatchers.IO) {
                                 executeDirectInAppEngine(text, sessionId, userMsg)
                             }
                         } else {
                             val partial = _streamedText.value.trim()
                             val errorMsg = if (partial.isNotBlank()) "$partial\n\n⚠️ **${agentKind.title} Error:**\n${event.reason}" else "⚠️ **${agentKind.title} Error:**\n${event.reason}"
-                            appendAssistantMessage(errorMsg, sessionId)
+                            appendAssistantMessage(errorMsg, sessionId, agentBadge = "${agentKind.title} · PRoot")
                             _isStreaming.value = false
                             _streamingMessageId.value = ""
                             _mediaProcessingType.value = null
                             _mediaProcessingPrompt.value = ""
+                            _streamingEngineBadge.value = null
                         }
                     }
                     else -> {}
@@ -5181,17 +5266,37 @@ class ChatViewModel(private val repository: DeepCodeRepository) : ViewModel() {
             eventsJob.cancel()
             val hasOutput = _streamedText.value.isNotBlank()
             if (!hasOutput && !hadWorkflowTools) {
-                appendAssistantMessage("⚠️ **${agentKind.title} Exception:** ${e.message}\n\n*Falling back to Direct In-App Engine...*", sessionId)
+                appendAssistantMessage(
+                    "⚠️ **${agentKind.title} Exception:** ${e.message}\n\n*Falling back to Direct In-App Engine...*",
+                    sessionId,
+                    agentBadge = "Fallback: Direct Engine"
+                )
+                _streamingEngineBadge.value = "Fallback: Direct Engine · ${_activeModel.value.name}"
                 executeDirectInAppEngine(text, sessionId, userMsg)
             } else {
                 _isStreaming.value = false
                 _streamingMessageId.value = ""
                 _mediaProcessingType.value = null
                 _mediaProcessingPrompt.value = ""
-                appendAssistantMessage("⚠️ **Execution Exception:** ${e.message}", sessionId)
+                _streamingEngineBadge.value = null
+                appendAssistantMessage("⚠️ **Execution Exception:** ${e.message}", sessionId, agentBadge = "${agentKind.title} · PRoot")
             }
         }
+    } catch (e: Throwable) {
+        ai.deepcode.android.util.AppLogger.e("ChatViewModel", "Autonomous workflow failed", e)
+        _isStreaming.value = false
+        _streamingMessageId.value = ""
+        _mediaProcessingType.value = null
+        _mediaProcessingPrompt.value = ""
+        appendAssistantMessage(
+            "⚠️ **Agent Workflow Error:** ${e.message ?: "Failed to execute"}\n\nFalling back to **Direct In-App Engine** to answer your request.",
+            sessionId,
+            agentBadge = "Fallback: Direct Engine"
+        )
+        _streamingEngineBadge.value = "Fallback: Direct Engine · ${_activeModel.value.name}"
+        executeDirectInAppEngine(text, sessionId, userMsg)
     }
+}
 
     fun approveToolCall() {
         val toolCall = _pendingToolCall.value ?: return
@@ -5791,7 +5896,11 @@ $githubSection
 """.trim()
     }
 
-    private suspend fun appendAssistantMessage(content: String, sessionId: String? = null) = withContext(Dispatchers.IO) {
+    private suspend fun appendAssistantMessage(
+        content: String,
+        sessionId: String? = null,
+        agentBadge: String? = null
+    ) = withContext(Dispatchers.IO) {
         val targetSessionId = sessionId ?: activeSessionId
         if (targetSessionId.isEmpty()) return@withContext
         // Persist only the final answer — thinking is discarded entirely, never stored.
@@ -5849,17 +5958,20 @@ $githubSection
         if (finalContent.isEmpty()) return@withContext
 
         val id = _streamingMessageId.value.ifEmpty { UUID.randomUUID().toString() }
+        val effectiveBadge = agentBadge ?: _streamingEngineBadge.value
         val msg = Message(
             id = id,
             sessionId = targetSessionId,
             role = "assistant",
             content = finalContent,
-            timestamp = System.currentTimeMillis()
+            timestamp = System.currentTimeMillis(),
+            toolResultsJson = effectiveBadge
         )
         _messages.update { current ->
-            if (current.none { it.id == msg.id }) current + msg else current
+            if (current.none { it.id == msg.id }) current + msg else current.map { if (it.id == msg.id) msg else it }
         }
         repository.insertMessage(msg)
+        _streamingEngineBadge.value = null
 
         // Asynchronously extract and save important memory from this in-app exchange
         try {

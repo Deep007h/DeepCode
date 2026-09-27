@@ -5,8 +5,11 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import ai.deepcode.android.ui.MainActivity
 import ai.deepcode.android.R
@@ -37,21 +40,25 @@ class RuntimeExecutionService : Service() {
         if (intent?.hasExtra(EXTRA_CAN_STOP) == true) canStop = intent.getBooleanExtra(EXTRA_CAN_STOP, true)
         when (intent?.action ?: ACTION_START) {
             ACTION_STOP -> {
-                RuntimeTaskController.requestStop()
-                getSystemService(NotificationManager::class.java).notify(
-                    RUNNING_NOTIFICATION_ID,
-                    runningNotification("Stopping safely…", includeStop = false),
-                )
+                runCatching {
+                    RuntimeTaskController.requestStop()
+                    getSystemService(NotificationManager::class.java)?.notify(
+                        RUNNING_NOTIFICATION_ID,
+                        runningNotification("Stopping safely…", includeStop = false),
+                    )
+                }
             }
             ACTION_PROGRESS -> {
                 // Live step updates only matter while a task is actually running.
                 if (!taskRunning) return START_NOT_STICKY
                 val detail = intent?.getStringExtra(EXTRA_DETAIL)?.takeIf { it.isNotBlank() }
                     ?: "$notificationTitle in $projectName"
-                getSystemService(NotificationManager::class.java).notify(
-                    RUNNING_NOTIFICATION_ID,
-                    runningNotification(detail, includeStop = canStop),
-                )
+                runCatching {
+                    getSystemService(NotificationManager::class.java)?.notify(
+                        RUNNING_NOTIFICATION_ID,
+                        runningNotification(detail, includeStop = canStop),
+                    )
+                }
             }
             ACTION_COMPLETE -> finishTask(
                 title = "Task completed",
@@ -66,16 +73,26 @@ class RuntimeExecutionService : Service() {
             ACTION_CANCELLED -> {
                 taskRunning = false
                 releaseWakeLock()
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
                 stopSelf()
             }
             else -> {
                 taskRunning = true
-                startForeground(
-                    RUNNING_NOTIFICATION_ID,
-                    runningNotification("$notificationTitle in $projectName", includeStop = canStop),
-                )
-                acquireWakeLock()
+                try {
+                    val notification = runningNotification("$notificationTitle in $projectName", includeStop = canStop)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        startForeground(
+                            RUNNING_NOTIFICATION_ID,
+                            notification,
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                        )
+                    } else {
+                        startForeground(RUNNING_NOTIFICATION_ID, notification)
+                    }
+                    acquireWakeLock()
+                } catch (e: Exception) {
+                    Log.e("RuntimeExecutionService", "Failed to startForeground", e)
+                }
             }
         }
         return START_NOT_STICKY
@@ -106,18 +123,20 @@ class RuntimeExecutionService : Service() {
     private fun finishTask(title: String, detail: String, failed: Boolean) {
         taskRunning = false
         releaseWakeLock()
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        val notification = NotificationCompat.Builder(this, RESULT_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
-            .setContentText(detail)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
-            .setContentIntent(openAppIntent())
-            .setAutoCancel(true)
-            .setCategory(if (failed) NotificationCompat.CATEGORY_ERROR else NotificationCompat.CATEGORY_STATUS)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .build()
-        getSystemService(NotificationManager::class.java).notify(RESULT_NOTIFICATION_ID, notification)
+        runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+        runCatching {
+            val notification = NotificationCompat.Builder(this, RESULT_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title)
+                .setContentText(detail)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
+                .setContentIntent(openAppIntent())
+                .setAutoCancel(true)
+                .setCategory(if (failed) NotificationCompat.CATEGORY_ERROR else NotificationCompat.CATEGORY_STATUS)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .build()
+            getSystemService(NotificationManager::class.java)?.notify(RESULT_NOTIFICATION_ID, notification)
+        }
         stopSelf()
     }
 
