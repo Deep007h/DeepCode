@@ -281,6 +281,39 @@ class ToolExecutorTest {
         assertNotNull("Audio bytes must not be null from Edge TTS WebSocket", audioBytes)
         assertTrue("Audio bytes size must be > 1000 bytes", (audioBytes?.size ?: 0) > 1000)
     }
+
+    @Test
+    fun testStageDirectionsAndPromptPreambleStrippedFromSpeech() {
+        val executor = ToolExecutor()
+
+        // 1. VoiceModelSettings preview sample text with [excited]
+        val samplePreview = "[excited] Hello! I am Gemini 3.8 Flash Speech with expressive dynamic emotion sensing. How does my cadence sound?"
+        val cleanedPreview = executor.cleanTextForSpeech(samplePreview)
+        assertFalse("Cleaned speech text must never contain '[excited]'", cleanedPreview.contains("[excited]"))
+        assertTrue("Cleaned speech text must retain actual content", cleanedPreview.contains("Hello! I am Gemini 3.8 Flash Speech"))
+
+        // 2. EmotionSenseProcessor extracts style and cleans spoken text
+        val processed = EmotionSenseProcessor.process(samplePreview, "auto")
+        assertFalse("Processed cleanText must never contain '[excited]'", processed.cleanText.contains("[excited]"))
+        assertTrue("Processed cleanText must retain actual content", processed.cleanText.contains("Hello! I am Gemini 3.8 Flash Speech"))
+        assertTrue("Detected style must reflect excited emotion", processed.detectedStyle.contains("excited"))
+
+        // 3. Multi-tag stripping in EmotionSenseProcessor
+        val multiTag = "[excited] Welcome to DeepCode! [whispering] Here is a secret tip. [dramatic] Beware!"
+        val multiProcessed = EmotionSenseProcessor.process(multiTag, "auto")
+        assertFalse("Must strip [excited]", multiProcessed.cleanText.contains("[excited]"))
+        assertFalse("Must strip [whispering]", multiProcessed.cleanText.contains("[whispering]"))
+        assertFalse("Must strip [dramatic]", multiProcessed.cleanText.contains("[dramatic]"))
+        assertTrue("Must preserve actual message", multiProcessed.cleanText.contains("Welcome to DeepCode! Here is a secret tip. Beware!"))
+
+        // 4. Accidental directive preamble stripping
+        val preambleText = "Read the following text aloud with highly excited, cheerful, energetic tone and emotion. Speak ONLY the spoken text, without commentary:\n\nGood morning everyone!"
+        val cleanedPreamble = executor.cleanTextForSpeech(preambleText)
+        assertEquals("Good morning everyone!", cleanedPreamble)
+
+        val processedPreamble = EmotionSenseProcessor.process(preambleText, "auto")
+        assertEquals("Good morning everyone!", processedPreamble.cleanText)
+    }
 }
 
 

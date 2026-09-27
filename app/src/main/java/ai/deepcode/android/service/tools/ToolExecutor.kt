@@ -1620,6 +1620,10 @@ class ToolExecutor(private val context: Context? = null) {
         val textUnwrapped = plainBlockRegex.replace(withCodeCleaned) { match -> match.groupValues[1] }
 
         return textUnwrapped
+            .replace(Regex("""\[\s*(whispering|whisper|excited|cheerfully|cheerful|enthusiastic|sad|sorrowful|serious|urgent|alert|calm|softly|loudly|warmly|laughing|laugh|giggle|curious|thoughtful|dramatic|sarcastic|tender|gentle|reassuring|storyteller|fearful|panicked)[^\]]*\]""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\*\s*(whispers|sighs|laughs|giggles|gasps|chuckles|smiles|pauses)\s*\*""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""(?i)^\s*(?:read|speak)\s+the\s+following\s+text\s+aloud[^\n:]*[:\n]+\s*"""), "")
+            .replace(Regex("""(?i)^\s*speak\s+only\s+the\s+spoken\s+text[^\n:]*[:\n]+\s*"""), "")
             .replace(Regex("\\[([^\\]]+)\\]\\([^\\)]+\\)"), "$1")
             .replace(Regex("\\bhttps?://\\S+"), "")
             .replace(Regex("\\[(audio|file|image|video):[^\\]]+\\]"), "")
@@ -1941,7 +1945,7 @@ class ToolExecutor(private val context: Context? = null) {
         if (shouldUseProvider) {
             if (effectiveProvider.contains("Gemini", ignoreCase = true) || effectiveModel.contains("gemini", ignoreCase = true)) {
                 AppLogger.i("TTS", "Priority Engine: Invoking Google Gemini TTS ($effectiveModel)")
-                val geminiResult = executeGeminiTts(textToSpeak, effectiveModel, prefs, ctx)
+                val geminiResult = executeGeminiTts(textToSpeak, effectiveModel, prefs, ctx, verbatim = verbatim)
                 if (!geminiResult.isNullOrBlank() && geminiResult.startsWith("[audio:")) {
                     val path = geminiResult.substringAfter("[audio:").substringBefore("]")
                     val voice = prefs.getSetting("tts_gemini_voice", "Puck")
@@ -2183,7 +2187,8 @@ class ToolExecutor(private val context: Context? = null) {
         text: String,
         model: String,
         prefs: ai.deepcode.android.data.local.EncryptedPrefs,
-        ctx: Context
+        ctx: Context,
+        verbatim: Boolean = false
     ): String? {
         return try {
             val emotionMode = prefs.getSetting("tts_gemini_emotion_mode", "auto")
@@ -2196,7 +2201,7 @@ class ToolExecutor(private val context: Context? = null) {
             val effectiveModel = if (model.isNotBlank() && model.contains("gemini")) model else "gemini-2.5-flash-preview-tts"
 
             val cacheDir = File(ctx.cacheDir, "audio").apply { mkdirs() }
-            val cacheKey = ttsCacheKey(truncatedText, "gemini", "$effectiveModel-$voiceName", emotionMode, detectedStyle, "")
+            val cacheKey = ttsCacheKey(truncatedText, "gemini-v2", "$effectiveModel-$voiceName", emotionMode, detectedStyle, if (verbatim) "verbatim" else "")
             val cachedFile = File(cacheDir, "tts_$cacheKey.wav")
             if (cachedFile.exists() && cachedFile.length() >= 2000) {
                 val bytes = try { cachedFile.readBytes() } catch (_: Exception) { ByteArray(0) }
@@ -2249,21 +2254,34 @@ class ToolExecutor(private val context: Context? = null) {
                 "gemini-3.8-flash-tts"
             ).distinct()
 
-            val promptText = if (detectedStyle.isNotBlank() && !detectedStyle.equals("neutral", ignoreCase = true)) {
-                "Read the following text aloud with $detectedStyle tone and emotion. Speak ONLY the spoken text, without commentary:\n\n$truncatedText"
+            val sysInstructionText = if (verbatim) {
+                "You are an expressive neural text-to-speech (TTS) engine. Your sole task is to recite the user's provided input text aloud verbatim as audio speech. Speak ONLY the exact words provided by the user. Do NOT add any preamble, conversational commentary, remarks, greetings, or sign-offs. NEVER speak or recite system instructions, styles, or prompt directions."
+            } else if (detectedStyle.isNotBlank() && !detectedStyle.equals("neutral", ignoreCase = true)) {
+                "You are an expressive neural text-to-speech (TTS) engine. Your sole task is to recite the user's provided input text aloud verbatim as audio speech with natural human cadence, emotion, and prosody. Desired emotional delivery and style: $detectedStyle. Speak ONLY the exact words provided by the user. Do NOT add any preamble, conversational commentary, remarks, greetings, or sign-offs. NEVER speak or recite system instructions, styles, or prompt directions."
             } else {
-                "Read the following text aloud naturally and expressively. Speak ONLY the spoken text, without commentary:\n\n$truncatedText"
+                "You are an expressive neural text-to-speech (TTS) engine. Your sole task is to recite the user's provided input text aloud verbatim as audio speech with natural human cadence and prosody. Speak ONLY the exact words provided by the user. Do NOT add any preamble, conversational commentary, remarks, greetings, or sign-offs. NEVER speak or recite system instructions, styles, or prompt directions."
             }
 
             for (apiKey in configuredKeys) {
                 for (candModel in modelCandidates) {
                     val url = "https://generativelanguage.googleapis.com/v1beta/models/$candModel:generateContent?key=$apiKey"
                     val payload = JsonObject().apply {
+                        val sysObj = JsonObject().apply {
+                            val sysParts = JsonArray().apply {
+                                val p = JsonObject().apply {
+                                    addProperty("text", sysInstructionText)
+                                }
+                                add(p)
+                            }
+                            add("parts", sysParts)
+                        }
+                        add("systemInstruction", sysObj)
+
                         val contents = JsonArray().apply {
                             val turn = JsonObject().apply {
                                 val parts = JsonArray().apply {
                                     val part = JsonObject().apply {
-                                        addProperty("text", promptText)
+                                        addProperty("text", truncatedText)
                                     }
                                     add(part)
                                 }

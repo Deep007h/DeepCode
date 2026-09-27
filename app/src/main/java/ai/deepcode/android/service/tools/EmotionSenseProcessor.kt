@@ -42,24 +42,27 @@ object EmotionSenseProcessor {
         // 1. Check for explicit stage directions (e.g. "[whispering] Hello there" or "*sighs* It was tough")
         var explicitStyle: String? = null
 
-        val bracketMatch = STAGE_DIRECTION_REGEX.find(text)
-        if (bracketMatch != null) {
-            val cue = bracketMatch.groupValues[1].lowercase(Locale.ROOT)
+        val allBracketMatches = STAGE_DIRECTION_REGEX.findAll(text).toList()
+        if (allBracketMatches.isNotEmpty()) {
+            val cue = allBracketMatches.first().groupValues[1].lowercase(Locale.ROOT)
             explicitStyle = mapCueToStyle(cue)
-            // Remove the bracketed tag from spoken text so it is acted out, not spoken
-            text = text.replace(bracketMatch.value, "").trim()
+            // Remove all bracketed tags from spoken text so they are acted out, never spoken aloud
+            text = STAGE_DIRECTION_REGEX.replace(text, "").trim()
         }
 
-        val asteriskMatch = ASTERISK_EMOTION_REGEX.find(text)
-        if (asteriskMatch != null) {
-            val cue = asteriskMatch.groupValues[1].lowercase(Locale.ROOT)
+        val allAsteriskMatches = ASTERISK_EMOTION_REGEX.findAll(text).toList()
+        if (allAsteriskMatches.isNotEmpty()) {
             if (explicitStyle == null) {
+                val cue = allAsteriskMatches.first().groupValues[1].lowercase(Locale.ROOT)
                 explicitStyle = mapCueToStyle(cue)
             }
-            text = text.replace(asteriskMatch.value, "").trim()
+            // Remove all asterisk action cues from spoken text
+            text = ASTERISK_EMOTION_REGEX.replace(text, "").trim()
         }
 
-        // 2. Sanitize Markdown for natural speech flow
+        // 2. Sanitize prompt directives and Markdown for natural speech flow
+        text = text.replace(Regex("""(?i)^\s*(?:read|speak)\s+the\s+following\s+text\s+aloud[^\n:]*[:\n]+\s*"""), "").trim()
+        text = text.replace(Regex("""(?i)^\s*speak\s+only\s+the\s+spoken\s+text[^\n:]*[:\n]+\s*"""), "").trim()
         text = sanitizeMarkdownForSpeech(text)
 
         // 3. Determine style
@@ -192,8 +195,9 @@ object EmotionSenseProcessor {
         s = s.replace(Regex("""^#{1,6}\s+""", RegexOption.MULTILINE), "")
         // Strip bullet points * or -
         s = s.replace(Regex("""^[\*\-]\s+""", RegexOption.MULTILINE), "")
-        // Strip excessive newlines
+        // Strip excessive newlines and whitespace
         s = s.replace(Regex("""\n{2,}"""), ". ")
+        s = s.replace(Regex("""\s{2,}"""), " ")
         return s.trim()
     }
 }
