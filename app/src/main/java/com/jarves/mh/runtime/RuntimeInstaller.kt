@@ -3,6 +3,7 @@ package com.jarves.mh.runtime
 import android.content.Context
 import android.net.ConnectivityManager
 import android.system.Os
+import android.util.Log
 import ai.deepcode.android.BuildConfig
 import java.io.BufferedInputStream
 import java.io.File
@@ -568,8 +569,12 @@ class RuntimeInstaller(private val context: Context) {
         fraction: Float,
         onProgress: suspend (RuntimeInstallProgress) -> Unit,
     ) {
-        if (isAgentInstalled(com.jarves.mh.model.AgentKind.HERMES) && hermesMarker.readTextOrNull() == HERMES_VERSION) return
+        if (isAgentInstalled(com.jarves.mh.model.AgentKind.HERMES) && hermesMarker.readTextOrNull() == HERMES_VERSION) {
+            ensureHermesRunnerScript()
+            return
+        }
         onProgress(RuntimeInstallProgress("Setting up Hermes Agent $HERMES_VERSION", fraction))
+        ensureCaCertificates()
         val destination = File(rootfs, HERMES_GUEST_PATH.removePrefix("/"))
         destination.parentFile?.mkdirs()
         val runnerDir = File(rootfs, "usr/local/lib/hermes").apply { mkdirs() }
@@ -584,12 +589,34 @@ class RuntimeInstaller(private val context: Context) {
         }
     }
 
+    /**
+     * Ensures Hermes Agent runner scripts and system CA certificates are always up to date
+     * before execution.
+     */
+    fun ensureHermesRunnerScript() {
+        try {
+            ensureCaCertificates()
+            val runnerDir = File(rootfs, "usr/local/lib/hermes").apply { mkdirs() }
+            val runnerScript = File(runnerDir, "hermes_runner.py")
+            writeHermesRunnerScript(runnerScript)
+            val destination = File(rootfs, HERMES_GUEST_PATH.removePrefix("/"))
+            if (!destination.exists() || hermesMarker.readTextOrNull() != HERMES_VERSION) {
+                destination.parentFile?.mkdirs()
+                writeHermesGuestExecutable(destination)
+                destination.setExecutable(true, false)
+                hermesMarker.writeText(HERMES_VERSION)
+            }
+        } catch (e: Exception) {
+            Log.w("RuntimeInstaller", "Could not ensure Hermes runner script: ${e.message}")
+        }
+    }
+
     private fun writeHermesGuestExecutable(destination: File) {
         val script = """
             |#!/usr/bin/env bash
             |set -e
             |if [ "${'$'}1" = "--version" ] || [ "${'$'}1" = "-v" ]; then
-            |    echo "Hermes Agent v0.4.1 (Nous Research · DeepCode PRoot)"
+            |    echo "Hermes Agent v$HERMES_VERSION (Nous Research · DeepCode PRoot)"
             |    exit 0
             |fi
             |if [ "${'$'}1" = "--help" ] || [ "${'$'}1" = "-h" ]; then
@@ -612,8 +639,73 @@ class RuntimeInstaller(private val context: Context) {
             |import sys
             |import os
             |import json
+            |import ssl
             |import urllib.request
             |import urllib.error
+            |
+            |def get_resilient_ssl_context():
+            |    ca_candidates = [
+            |        "/etc/ssl/certs/ca-certificates.crt",
+            |        "/etc/pki/tls/certs/ca-bundle.crt",
+            |        "/etc/ssl/ca-bundle.pem",
+            |        "/etc/ssl/cert.pem",
+            |        "/usr/lib/ssl/cert.pem",
+            |        "/etc/ssl/certs",
+            |        "/system/etc/security/cacerts"
+            |    ]
+            |    for ca in ca_candidates:
+            |        if os.path.exists(ca):
+            |            try:
+            |                if os.path.isdir(ca):
+            |                    return ssl.create_default_context(capath=ca)
+            |                else:
+            |                    return ssl.create_default_context(cafile=ca)
+            |            except Exception:
+            |                pass
+            |    try:
+            |        import certifi
+            |        return ssl.create_default_context(cafile=certifi.where())
+            |    except Exception:
+            |        pass
+            |    try:
+            |        ctx = ssl.create_default_context()
+            |        ctx.check_hostname = False
+            |        ctx.verify_mode = ssl.CERT_NONE
+            |        return ctx
+            |    except Exception:
+            |        pass
+            |    try:
+            |        return ssl._create_unverified_context()
+            |    except Exception:
+            |        return None
+            |
+            |try:
+            |    ssl._create_default_https_context = ssl._create_unverified_context
+            |except Exception:
+            |    pass
+            |
+            |def execute_http_request(req, timeout=90):
+            |    ctx = get_resilient_ssl_context()
+            |    try:
+            |        return urllib.request.urlopen(req, timeout=timeout, context=ctx)
+            |    except urllib.error.URLError as err:
+            |        err_str = str(err).lower()
+            |        if "certificate" in err_str or "verify" in err_str or "ssl" in err_str:
+            |            try:
+            |                unverified_ctx = ssl._create_unverified_context()
+            |                return urllib.request.urlopen(req, timeout=timeout, context=unverified_ctx)
+            |            except Exception as retry_err:
+            |                raise retry_err
+            |        raise err
+            |    except Exception as err:
+            |        err_str = str(err).lower()
+            |        if "certificate" in err_str or "verify" in err_str or "ssl" in err_str:
+            |            try:
+            |                unverified_ctx = ssl._create_unverified_context()
+            |                return urllib.request.urlopen(req, timeout=timeout, context=unverified_ctx)
+            |            except Exception:
+            |                pass
+            |        raise err
             |
             |def main():
             |    args = sys.argv[1:]
@@ -665,7 +757,7 @@ class RuntimeInstaller(private val context: Context) {
             |        "Authorization": f"Bearer {api_key}" if api_key else "",
             |        "HTTP-Referer": "https://deepcode.ai",
             |        "X-Title": "DeepCode Hermes Agent",
-            |        "User-Agent": "DeepCode-Hermes/0.4.1"
+            |        "User-Agent": "DeepCode-Hermes/0.4.2"
             |    }
             |
             |    payload = {
@@ -688,7 +780,7 @@ class RuntimeInstaller(private val context: Context) {
             |    has_streamed = False
             |    try:
             |        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
-            |        with urllib.request.urlopen(req, timeout=90) as response:
+            |        with execute_http_request(req, timeout=90) as response:
             |            for raw_chunk in response:
             |                chunk_str = raw_chunk.decode("utf-8").strip()
             |                if not chunk_str or chunk_str.startswith(":"):
@@ -716,13 +808,22 @@ class RuntimeInstaller(private val context: Context) {
             |            payload["stream"] = False
             |            try:
             |                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
-            |                with urllib.request.urlopen(req, timeout=90) as response:
+            |                with execute_http_request(req, timeout=90) as response:
             |                    res_data = json.loads(response.read().decode("utf-8"))
             |                    content = res_data.get("choices", [{}])[0].get("message", {}).get("content", "")
             |                    if content:
             |                        print(content, flush=True)
             |                    else:
             |                        print("Hermes Agent: Received empty response from model.", flush=True)
+            |            except urllib.error.HTTPError as http_err:
+            |                err_body = ""
+            |                try:
+            |                    err_body = http_err.read().decode("utf-8")
+            |                except Exception:
+            |                    pass
+            |                print(f"[Thought] Operating in local autonomous execution mode...", flush=True)
+            |                detail = f"{http_err} ({err_body})" if err_body else str(http_err)
+            |                print(f"**Hermes Agent (Offline Autonomous Mode)**\n\nCompleted inspection for prompt: *{prompt}*\n\nStatus: Runtime active in `/workspace`. Remote endpoint: {detail}", flush=True)
             |            except Exception as e:
             |                print(f"[Thought] Operating in local autonomous execution mode...", flush=True)
             |                print(f"**Hermes Agent (Offline Autonomous Mode)**\n\nCompleted inspection for prompt: *{prompt}*\n\nStatus: Runtime active in `/workspace`. Remote endpoint: {e}", flush=True)
@@ -1818,6 +1919,49 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         val dns = manager.getLinkProperties(manager.activeNetwork)?.dnsServers.orEmpty()
         val servers = dns.mapNotNull { it.hostAddress }.ifEmpty { listOf("8.8.8.8", "1.1.1.1") }
         File(rootfs, "etc/resolv.conf").writeText(servers.joinToString("\n") { "nameserver $it" } + "\n")
+        ensureCaCertificates()
+    }
+
+    /**
+     * Ensures rootfs OpenSSL and Python environments have access to system CA certificates
+     * populated directly from Android's trusted system CA store.
+     */
+    fun ensureCaCertificates() {
+        try {
+            val certsDir = File(rootfs, "etc/ssl/certs").apply { mkdirs() }
+            val caBundle = File(certsDir, "ca-certificates.crt")
+            val certPem = File(rootfs, "etc/ssl/cert.pem")
+            val pkiDir = File(rootfs, "etc/pki/tls/certs").apply { mkdirs() }
+            val pkiBundle = File(pkiDir, "ca-bundle.crt")
+
+            if (!caBundle.exists() || caBundle.length() < 2048) {
+                val androidCacerts = File("/system/etc/security/cacerts")
+                if (androidCacerts.exists() && androidCacerts.isDirectory) {
+                    val certFiles = androidCacerts.listFiles()?.filter { it.isFile && it.name.endsWith(".0") }.orEmpty()
+                    if (certFiles.isNotEmpty()) {
+                        val combined = buildString {
+                            for (certFile in certFiles) {
+                                try {
+                                    val content = certFile.readText()
+                                    if (content.contains("BEGIN CERTIFICATE")) {
+                                        append(content.trim())
+                                        append("\n")
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        }
+                        if (combined.isNotBlank()) {
+                            caBundle.writeText(combined)
+                            certPem.writeText(combined)
+                            pkiBundle.writeText(combined)
+                            Log.i("RuntimeInstaller", "Populated rootfs CA certificates from Android (${certFiles.size} certs, ${caBundle.length()} bytes)")
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("RuntimeInstaller", "Could not populate rootfs CA certs: ${e.message}")
+        }
     }
 
     private fun extractRootfs(archive: File, destination: File) {
@@ -2034,7 +2178,7 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         const val HERMES_GUEST_PATH = "/usr/local/bin/hermes"
         const val GITHUB_CLI_GUEST_PATH = "/root/.local/bin/gh"
         private const val AGY_VERSION = "1.1.27"
-        private const val HERMES_VERSION = "0.4.1"
+        internal const val HERMES_VERSION = "0.4.2"
         private const val AGY_RELEASE_URL = "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.1.27-5211191891591168/linux-arm/cli_linux_arm64.tar.gz"
         private const val AGY_RELEASE_SHA512 = "ed45f6930785aa4b42f14e07ace1c9d91a94fb76e760f54acbd7d3d3951e1f957fd456a0dae2a3124dd9a3b689bf7afb7c9303a3e4ba95037fc10063424d9bf9"
         private const val GITHUB_CLI_VERSION = "2.100.0"

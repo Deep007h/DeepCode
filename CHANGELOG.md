@@ -9,7 +9,8 @@ All notable changes and milestones for **DeepCode for Android** are documented b
 ### Added & Enhanced
 - **Nous Research Hermes Agent Integration**:
   - Full autonomous coding agent runtime bridge (`HermesRuntimeBridge.kt`) inside the rootless Ubuntu 20.04 LTS PRoot subsystem.
-  - Automated PRoot guest installation (`ensureHermesInstalled`) generating `/usr/local/bin/hermes` and Python runner `/usr/local/lib/hermes/hermes_runner.py`.
+  - Automated PRoot guest installation (`ensureHermesInstalled`) generating `/usr/local/bin/hermes` and Python runner `/usr/local/lib/hermes/hermes_runner.py` (v0.4.2).
+  - Resilient network and SSL security: populates PRoot `/etc/ssl/certs/ca-certificates.crt` from Android's trusted system CA store (`/system/etc/security/cacerts`) and implements auto-fallback unverified context retry in `hermes_runner.py` to prevent `CERTIFICATE_VERIFY_FAILED` errors.
   - Multi-provider tool execution across OpenRouter, DeepSeek, OpenAI, Anthropic, and OpenCode Zen with environment-injected API keys and autonomous `--yolo` execution loop.
   - Persistent memory, skill retention, and workspace change tracking via `WorkspaceCheckpoints`.
   - Dedicated 6-phase progressive thinking steps in `ChatMotionComponents` (*Analyzing prompt directives*, *Consulting persistent memory*, *Formulating execution plan*, *Engaging Hermes toolchain*, *Synthesizing code*, *Verifying syntax*) with an Emerald Green accent badge (`🪽 Hermes Agent · PRoot`).

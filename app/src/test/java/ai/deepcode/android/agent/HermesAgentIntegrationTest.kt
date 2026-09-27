@@ -57,4 +57,33 @@ class HermesAgentIntegrationTest {
         assertNotNull(hermesDriver)
         assertEquals(AgentKind.HERMES, hermesDriver.kind)
     }
+
+    @Test
+    fun testHermesRunnerScriptIncludesResilientSslHandling() {
+        val tempDir = java.nio.file.Files.createTempDirectory("hermes_test").toFile()
+        try {
+            val runnerFile = java.io.File(tempDir, "hermes_runner.py")
+            assertEquals("0.4.2", com.jarves.mh.runtime.RuntimeInstaller.HERMES_VERSION)
+            val installerClass = com.jarves.mh.runtime.RuntimeInstaller::class.java
+            val method = installerClass.getDeclaredMethod("writeHermesRunnerScript", java.io.File::class.java)
+            method.isAccessible = true
+
+            val dummyContext = object : android.content.ContextWrapper(null) {
+                override fun getFilesDir(): java.io.File = tempDir
+                override fun getCacheDir(): java.io.File = tempDir
+            }
+            val installer = com.jarves.mh.runtime.RuntimeInstaller(dummyContext)
+            method.invoke(installer, runnerFile)
+
+            assertTrue("Runner file must be generated", runnerFile.exists())
+            val content = runnerFile.readText()
+            assertTrue("Must import ssl", content.contains("import ssl"))
+            assertTrue("Must define get_resilient_ssl_context", content.contains("def get_resilient_ssl_context():"))
+            assertTrue("Must define execute_http_request", content.contains("def execute_http_request("))
+            assertTrue("Must include _create_unverified_context fallback", content.contains("_create_unverified_context"))
+            assertTrue("Must handle certificate verification errors", content.contains("certificate") && content.contains("verify"))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
 }

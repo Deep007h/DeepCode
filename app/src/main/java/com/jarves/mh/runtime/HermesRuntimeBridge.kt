@@ -59,7 +59,16 @@ class HermesRuntimeBridge(
         pushForegroundProgress("Starting Hermes Agent…")
 
         val secret = secretFor(provider).orEmpty()
-        val effectiveSecret = if (secret.isBlank() && provider.kind == ProviderKind.OPENCODE_ZEN) "zen-free" else secret
+        val effectiveSecret = if (secret.isBlank()) {
+            val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context)
+            prefs.getApiKey("openrouter")
+                .ifBlank { prefs.getApiKey("deepseek") }
+                .ifBlank { prefs.getApiKey("openai") }
+                .ifBlank { prefs.getSetting("api_key_openrouter", "") }
+                .ifBlank { prefs.getSetting("api_key_deepseek", "") }
+                .ifBlank { prefs.getSetting("api_key_openai", "") }
+                .ifBlank { "zen-free" }
+        } else secret
 
         runCatching {
             RuntimeTaskController.stopAction = {
@@ -76,6 +85,7 @@ class HermesRuntimeBridge(
 
             startForegroundRuntime(projectSlug)
             val installed = installer.installedRuntime()
+            installer.ensureHermesRunnerScript()
             if (!installer.isAgentInstalled(AgentKind.HERMES)) {
                 pushForegroundProgress("Installing Hermes Agent…")
                 installer.ensureAgentInstalled(AgentKind.HERMES) { prog ->
