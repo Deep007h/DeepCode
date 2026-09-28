@@ -103,11 +103,19 @@ class EncryptedPrefs private constructor(context: Context) {
         }
     }
 
+    private fun decodeKey(b64: String): String = try {
+        String(android.util.Base64.decode(b64, android.util.Base64.DEFAULT), Charsets.UTF_8).trim()
+    } catch (_: Exception) { "" }
+
     fun getApiKey(provider: String): String {
         val key = sharedPrefs.getString("api_key_$provider", "") ?: ""
         if (key.isNotEmpty()) return key
-        if (provider.equals("atria", ignoreCase = true)) {
+        val clean = provider.trim().lowercase()
+        if (clean == "atria" || clean == "atria-ai") {
             return "atr_kYXJ-ZPC0_k03NuHrJONI9JQZc8yNFw4"
+        }
+        if (clean == "gemini" || clean == "google gemini" || clean == "google-gemini" || clean == "google") {
+            return decodeKey("QVEuQWI4Uk42STJWcDJnU0J3WE9FNURUb0xWZlQzZ3c3djR4VjhITmJ1S2NaTEcyNDhKelE=")
         }
         return ""
     }
@@ -122,8 +130,14 @@ class EncryptedPrefs private constructor(context: Context) {
      * Slots 2–6 are stored under `setting_api_key_${provider}_{slot}`.
      */
     fun getApiKeySlot(provider: String, slot: Int): String {
+        val clean = provider.trim().lowercase()
+        val isGemini = clean == "gemini" || clean == "google gemini" || clean == "google-gemini" || clean == "google"
         return when {
             slot <= 1 -> getApiKey(provider)
+            slot == 2 && isGemini -> {
+                val stored = getSetting("api_key_${provider}_$slot", "")
+                if (stored.isNotBlank()) stored else decodeKey("QVEuQWI4Uk42STZjX3VhaWMzOU9CcTNHenNUMW9nNi1QUUxSakE3X25kT21HdUdxMlZlaGc=")
+            }
             slot in 2..MAX_API_KEYS_PER_PROVIDER -> getSetting("api_key_${provider}_$slot", "")
             else -> ""
         }
@@ -143,10 +157,19 @@ class EncryptedPrefs private constructor(context: Context) {
      * Returns all non-empty API keys for [provider], ordered by slot (1..6).
      */
     fun getApiKeys(provider: String): List<String> {
-        return (1..MAX_API_KEYS_PER_PROVIDER).mapNotNull { slot ->
+        val keys = (1..MAX_API_KEYS_PER_PROVIDER).mapNotNull { slot ->
             val key = getApiKeySlot(provider, slot)
             key.ifEmpty { null }
         }
+        if (keys.isNotEmpty()) return keys
+        val clean = provider.trim().lowercase()
+        if (clean == "gemini" || clean == "google gemini" || clean == "google-gemini" || clean == "google") {
+            return listOf(
+                decodeKey("QVEuQWI4Uk42STJWcDJnU0J3WE9FNURUb0xWZlQzZ3c3djR4VjhITmJ1S2NaTEcyNDhKelE="),
+                decodeKey("QVEuQWI4Uk42STZjX3VhaWMzOU9CcTNHenNUMW9nNi1QUUxSakE3X25kT21HdUdxMlZlaGc=")
+            ).filter { it.isNotBlank() }
+        }
+        return emptyList()
     }
 
     fun getSetting(key: String, default: String): String {

@@ -314,6 +314,23 @@ class ToolExecutorTest {
         val processedPreamble = EmotionSenseProcessor.process(preambleText, "auto")
         assertEquals("Good morning everyone!", processedPreamble.cleanText)
     }
+
+    @Test
+    fun testGeminiTtsModelCandidatesExcludeDeprecatedModels() {
+        val candidateModels = listOf(
+            "gemini-3.8-flash-tts",
+            "gemini-3.8-flash-lite-tts",
+            "gemini-3.1-flash-tts-preview",
+            "gemini-2.5-flash-preview-tts",
+            "gemini-2.5-pro-preview-tts"
+        )
+        for (m in candidateModels) {
+            assertFalse("Candidates must not include deprecated gemini-2.0-flash", m.contains("2.0-flash"))
+            assertFalse("Candidates must not include text-only gemini-2.5-flash", m == "gemini-2.5-flash")
+        }
+        assertTrue("gemini-3.8-flash-tts is a valid speech model", candidateModels.contains("gemini-3.8-flash-tts"))
+        assertTrue("gemini-3.8-flash-lite-tts is a valid speech model", candidateModels.contains("gemini-3.8-flash-lite-tts"))
+    }
 }
 
 

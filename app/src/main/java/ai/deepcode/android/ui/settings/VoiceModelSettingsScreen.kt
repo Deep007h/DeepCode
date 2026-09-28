@@ -56,11 +56,19 @@ data class ProviderTtsModel(
 
 val GEMINI_TTS_MODELS = listOf(
     ProviderTtsModel(
-        id = "gemini-2.5-flash-preview-tts",
-        name = "Gemini 2.5 Flash Preview TTS",
+        id = "gemini-3.8-flash-tts",
+        name = "Gemini 3.8 Flash TTS",
         provider = "Google Gemini",
-        badge = "High Availability / Fast",
-        description = "High-availability neural speech synthesis with rapid response times and expressive dynamic prosody.",
+        badge = "Expressive / Emotion",
+        description = "Google's flagship Gemini 3.8 neural speech engine. Supports dynamic sentiment, emotion sensing, and dramatic pauses.",
+        isExpressive = true
+    ),
+    ProviderTtsModel(
+        id = "gemini-3.8-flash-lite-tts",
+        name = "Gemini 3.8 Flash Lite TTS",
+        provider = "Google Gemini",
+        badge = "Ultra Low Latency",
+        description = "High-speed expressive neural audio synthesis optimized for rapid conversational turns.",
         isExpressive = true
     ),
     ProviderTtsModel(
@@ -72,19 +80,11 @@ val GEMINI_TTS_MODELS = listOf(
         isExpressive = true
     ),
     ProviderTtsModel(
-        id = "gemini-3.8-flash-tts",
-        name = "Gemini 3.8 Flash TTS",
+        id = "gemini-2.5-flash-preview-tts",
+        name = "Gemini 2.5 Flash Preview TTS",
         provider = "Google Gemini",
-        badge = "Expressive / Emotion",
-        description = "Gemini 3.8 neural speech engine. Supports dynamic sentiment, emotion sensing, and dramatic pauses.",
-        isExpressive = true
-    ),
-    ProviderTtsModel(
-        id = "gemini-3.8-flash-lite-tts",
-        name = "Gemini 3.8 Flash Lite TTS",
-        provider = "Google Gemini",
-        badge = "Ultra Low Latency",
-        description = "High-speed expressive neural audio synthesis optimized for rapid conversational turns.",
+        badge = "High Availability / Fast",
+        description = "High-availability neural speech synthesis with rapid response times and expressive dynamic prosody.",
         isExpressive = true
     ),
     ProviderTtsModel(
