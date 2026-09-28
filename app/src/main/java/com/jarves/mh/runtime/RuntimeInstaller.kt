@@ -640,6 +640,8 @@ class RuntimeInstaller(private val context: Context) {
             |import os
             |import json
             |import ssl
+            |import random
+            |import string
             |import urllib.request
             |import urllib.error
             |
@@ -707,11 +709,254 @@ class RuntimeInstaller(private val context: Context) {
             |                pass
             |        raise err
             |
+            |# --- OpenCode Zen canonical ID generators ---
+            |_HEX = "0123456789abcdef"
+            |_B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+            |
+            |def generate_session_id():
+            |    p1 = "".join(random.choice(_HEX) for _ in range(12))
+            |    p2 = "".join(random.choice(_B62) for _ in range(14))
+            |    return f"ses_{p1}{p2}"
+            |
+            |def generate_request_id():
+            |    p1 = "".join(random.choice(_HEX) for _ in range(12))
+            |    p2 = "".join(random.choice(_B62) for _ in range(14))
+            |    return f"msg_{p1}{p2}"
+            |
+            |# --- Provider defaults ---
+            |PROVIDER_DEFAULTS = {
+            |    "opencode_zen": {
+            |        "url_suffix": "/chat/completions",
+            |        "base_url": "https://opencode.ai/zen/v1",
+            |        "model": "mimo-v2.5-free",
+            |    },
+            |    "openrouter": {
+            |        "url_suffix": "/v1/chat/completions",
+            |        "base_url": "https://openrouter.ai/api",
+            |        "model": "nousresearch/hermes-3-llama-3.1-405b:free",
+            |    },
+            |    "deepseek": {
+            |        "url_suffix": "/chat/completions",
+            |        "base_url": "https://api.deepseek.com",
+            |        "model": "deepseek-chat",
+            |    },
+            |    "anthropic": {
+            |        "url_suffix": "/v1/messages",
+            |        "base_url": "https://api.anthropic.com",
+            |        "model": "claude-sonnet-4-6",
+            |    },
+            |    "custom": {
+            |        "url_suffix": "/chat/completions",
+            |        "base_url": "",
+            |        "model": "",
+            |    },
+            |}
+            |
+            |ZEN_FREE_MODELS = ["mimo-v2.5-free", "ling-3.0-flash-fin-free", "nemotron-3-ultra-free", "nemotron-3.5-lightning-free"]
+            |
+            |def resolve_provider():
+            |    provider = os.environ.get("HERMES_PROVIDER", "").strip()
+            |    base_url = os.environ.get("HERMES_BASE_URL", "").strip().rstrip("/")
+            |    api_key = os.environ.get("HERMES_API_KEY", "").strip()
+            |
+            |    # Auto-detect provider if not explicitly set
+            |    if not provider:
+            |        if api_key and "zen" in api_key.lower():
+            |            provider = "opencode_zen"
+            |        elif os.environ.get("OPENROUTER_API_KEY", "").strip():
+            |            provider = "openrouter"
+            |        elif os.environ.get("DEEPSEEK_API_KEY", "").strip():
+            |            provider = "deepseek"
+            |        elif os.environ.get("ANTHROPIC_API_KEY", "").strip():
+            |            provider = "anthropic"
+            |        elif os.environ.get("OPENAI_API_KEY", "").strip():
+            |            provider = "custom"
+            |        else:
+            |            provider = "opencode_zen"
+            |            if not api_key:
+            |                api_key = "zen-free"
+            |
+            |    # Resolve API key from provider-specific env vars
+            |    if not api_key:
+            |        key_map = {
+            |            "openrouter": "OPENROUTER_API_KEY",
+            |            "deepseek": "DEEPSEEK_API_KEY",
+            |            "anthropic": "ANTHROPIC_API_KEY",
+            |            "custom": "OPENAI_API_KEY",
+            |        }
+            |        env_var = key_map.get(provider, "")
+            |        if env_var:
+            |            api_key = os.environ.get(env_var, "").strip()
+            |        if not api_key:
+            |            api_key = "zen-free"
+            |            provider = "opencode_zen"
+            |
+            |    # Resolve base URL
+            |    defaults = PROVIDER_DEFAULTS.get(provider, PROVIDER_DEFAULTS["opencode_zen"])
+            |    if not base_url:
+            |        base_url = defaults["base_url"]
+            |
+            |    return provider, base_url, api_key
+            |
+            |def build_url(provider, base_url):
+            |    defaults = PROVIDER_DEFAULTS.get(provider, PROVIDER_DEFAULTS["opencode_zen"])
+            |    suffix = defaults["url_suffix"]
+            |    base = base_url.rstrip("/")
+            |    if base.endswith(suffix.rstrip("/")):
+            |        return base if base.endswith(suffix) else base + "/"
+            |    # Strip /anthropic suffix for DeepSeek-style endpoints
+            |    if provider == "deepseek" and base.endswith("/anthropic"):
+            |        base = base[:-len("/anthropic")]
+            |    return base + suffix
+            |
+            |def resolve_model(provider, cli_model):
+            |    env_model = os.environ.get("HERMES_MODEL", "").strip()
+            |    model = cli_model or env_model
+            |    if not model:
+            |        defaults = PROVIDER_DEFAULTS.get(provider, {})
+            |        model = defaults.get("model", "mimo-v2.5-free")
+            |    # For Zen free tier, force a known free model
+            |    if provider == "opencode_zen":
+            |        api_key = os.environ.get("HERMES_API_KEY", "").strip()
+            |        if not api_key or api_key == "zen-free":
+            |            if model not in ZEN_FREE_MODELS:
+            |                model = "mimo-v2.5-free"
+            |    return model
+            |
+            |def build_headers(provider, api_key, session_id=None, request_id=None):
+            |    headers = {"Content-Type": "application/json"}
+            |
+            |    if provider == "opencode_zen":
+            |        sid = session_id or generate_session_id()
+            |        rid = request_id or generate_request_id()
+            |        headers["User-Agent"] = "opencode/1.18.31 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14"
+            |        headers["x-opencode-client"] = "cli"
+            |        headers["x-opencode-project"] = "global"
+            |        headers["x-opencode-session"] = sid
+            |        headers["x-opencode-request"] = rid
+            |        headers["x-session-affinity"] = sid
+            |        if api_key and api_key != "zen-free":
+            |            headers["Authorization"] = f"Bearer {api_key}"
+            |    elif provider == "openrouter":
+            |        headers["User-Agent"] = "DeepCode-Hermes/$HERMES_VERSION"
+            |        headers["HTTP-Referer"] = "https://deepcode.ai"
+            |        headers["X-Title"] = "DeepCode Hermes Agent"
+            |        if api_key:
+            |            headers["Authorization"] = f"Bearer {api_key}"
+            |    elif provider == "anthropic":
+            |        headers["User-Agent"] = "DeepCode-Hermes/$HERMES_VERSION"
+            |        headers["anthropic-version"] = "2023-06-01"
+            |        if api_key:
+            |            headers["x-api-key"] = api_key
+            |    else:
+            |        headers["User-Agent"] = "DeepCode-Hermes/$HERMES_VERSION"
+            |        if api_key:
+            |            headers["Authorization"] = f"Bearer {api_key}"
+            |
+            |    return headers
+            |
+            |def build_payload(provider, model, prompt, stream=True):
+            |    system_msg = (
+            |        "You are Hermes Agent, Nous Research's autonomous AI agent operating inside DeepCode PRoot Android Linux. "
+            |        "You possess persistent memory, skills, and coding toolchains. "
+            |        "Provide comprehensive, structured engineering solutions, clear code, and proactive assistance."
+            |    )
+            |
+            |    if provider == "anthropic":
+            |        payload = {
+            |            "model": model,
+            |            "max_tokens": 4096,
+            |            "system": system_msg,
+            |            "messages": [{"role": "user", "content": prompt}],
+            |            "stream": stream,
+            |        }
+            |    else:
+            |        payload = {
+            |            "model": model,
+            |            "messages": [
+            |                {"role": "system", "content": system_msg},
+            |                {"role": "user", "content": prompt},
+            |            ],
+            |            "temperature": 0.6,
+            |            "stream": stream,
+            |        }
+            |
+            |    # Inject OpenCode Zen decoy tools
+            |    if provider == "opencode_zen":
+            |        decoy_bash = {
+            |            "type": "function",
+            |            "function": {
+            |                "name": "bash",
+            |                "description": "This tool is currently unavailable and must not be used.",
+            |                "parameters": {"type": "object", "properties": {}},
+            |            },
+            |        }
+            |        decoy_read = {
+            |            "type": "function",
+            |            "function": {
+            |                "name": "read",
+            |                "description": "This tool is currently unavailable and must not be used.",
+            |                "parameters": {"type": "object", "properties": {}},
+            |            },
+            |        }
+            |        payload["tools"] = [decoy_bash, decoy_read]
+            |        payload["tool_choice"] = "none"
+            |
+            |    return payload
+            |
+            |def parse_anthropic_stream(response):
+            |    for raw_chunk in response:
+            |        chunk_str = raw_chunk.decode("utf-8").strip()
+            |        if not chunk_str or chunk_str.startswith(":"):
+            |            continue
+            |        if chunk_str.startswith("event:"):
+            |            continue
+            |        if chunk_str.startswith("data:"):
+            |            data_str = chunk_str[5:].strip()
+            |            if data_str == "[DONE]":
+            |                break
+            |            try:
+            |                obj = json.loads(data_str)
+            |                evt_type = obj.get("type", "")
+            |                if evt_type == "content_block_delta":
+            |                    delta = obj.get("delta", {})
+            |                    text = delta.get("text", "")
+            |                    if text:
+            |                        yield ("delta", text)
+            |                elif evt_type == "message_delta":
+            |                    pass
+            |                elif evt_type == "message_stop":
+            |                    break
+            |            except Exception:
+            |                pass
+            |
+            |def parse_openai_stream(response):
+            |    for raw_chunk in response:
+            |        chunk_str = raw_chunk.decode("utf-8").strip()
+            |        if not chunk_str or chunk_str.startswith(":"):
+            |            continue
+            |        if chunk_str == "data: [DONE]":
+            |            break
+            |        if chunk_str.startswith("data:"):
+            |            data_str = chunk_str[5:].strip()
+            |            try:
+            |                obj = json.loads(data_str)
+            |                choice = obj.get("choices", [{}])[0]
+            |                delta = choice.get("delta", {})
+            |                token = delta.get("content", "")
+            |                reasoning = delta.get("reasoning_content", "") or delta.get("thought", "")
+            |                if reasoning:
+            |                    yield ("thought", reasoning)
+            |                if token:
+            |                    yield ("delta", token)
+            |            except Exception:
+            |                pass
+            |
             |def main():
             |    args = sys.argv[1:]
             |    prompt = ""
-            |    model = "nousresearch/hermes-3-llama-3.1-405b:free"
-            |    
+            |    cli_model = ""
+            |
             |    i = 0
             |    while i < len(args):
             |        arg = args[i]
@@ -721,7 +966,7 @@ class RuntimeInstaller(private val context: Context) {
             |                i += 1
             |        elif arg == "--model":
             |            if i + 1 < len(args):
-            |                model = args[i + 1]
+            |                cli_model = args[i + 1]
             |                i += 1
             |        elif arg in ("chat", "run", "--oneshot", "--yolo"):
             |            pass
@@ -733,84 +978,41 @@ class RuntimeInstaller(private val context: Context) {
             |        print("Hermes Agent: No prompt provided.")
             |        sys.exit(0)
             |
-            |    print(f"[Thought] Analyzing directive with Hermes Agent ({model})...", flush=True)
+            |    provider, base_url, api_key = resolve_provider()
+            |    model = resolve_model(provider, cli_model)
+            |    url = build_url(provider, base_url)
             |
-            |    api_key = (
-            |        os.environ.get("OPENROUTER_API_KEY") or
-            |        os.environ.get("DEEPSEEK_API_KEY") or
-            |        os.environ.get("OPENAI_API_KEY") or
-            |        os.environ.get("HERMES_API_KEY") or
-            |        os.environ.get("ANTHROPIC_API_KEY") or
-            |        os.environ.get("NOUS_API_KEY") or
-            |        ""
-            |    ).strip()
+            |    print(f"[Thought] Analyzing directive with Hermes Agent ({model} via {provider})...", flush=True)
             |
-            |    if "deepseek" in model.lower() and not model.startswith("nousresearch"):
-            |        url = "https://api.deepseek.com/chat/completions"
-            |    elif "zen" in api_key.lower():
-            |        url = "https://opencode.ai/zen/v1/chat/completions"
-            |    else:
-            |        url = "https://openrouter.ai/api/v1/chat/completions"
-            |
-            |    headers = {
-            |        "Content-Type": "application/json",
-            |        "Authorization": f"Bearer {api_key}" if api_key else "",
-            |        "HTTP-Referer": "https://deepcode.ai",
-            |        "X-Title": "DeepCode Hermes Agent",
-            |        "User-Agent": "DeepCode-Hermes/0.4.2"
-            |    }
-            |
-            |    payload = {
-            |        "model": model,
-            |        "messages": [
-            |            {
-                "role": "system",
-                "content": (
-                    "You are Hermes Agent, Nous Research's autonomous AI agent operating inside DeepCode PRoot Android Linux. "
-                    "You possess persistent memory, skills, and coding toolchains. "
-                    "Provide comprehensive, structured engineering solutions, clear code, and proactive assistance."
-                )
-            },
-            |            {"role": "user", "content": prompt}
-            |        ],
-            |        "temperature": 0.6,
-            |        "stream": True
-            |    }
+            |    session_id = generate_session_id() if provider == "opencode_zen" else None
+            |    request_id = generate_request_id() if provider == "opencode_zen" else None
+            |    headers = build_headers(provider, api_key, session_id, request_id)
+            |    payload = build_payload(provider, model, prompt, stream=True)
             |
             |    has_streamed = False
             |    try:
             |        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
             |        with execute_http_request(req, timeout=90) as response:
-            |            for raw_chunk in response:
-            |                chunk_str = raw_chunk.decode("utf-8").strip()
-            |                if not chunk_str or chunk_str.startswith(":"):
-            |                    continue
-            |                if chunk_str == "data: [DONE]":
-            |                    break
-            |                if chunk_str.startswith("data:"):
-            |                    data_str = chunk_str[5:].strip()
-            |                    try:
-            |                        obj = json.loads(data_str)
-            |                        choice = obj.get("choices", [{}])[0]
-            |                        delta = choice.get("delta", {})
-            |                        token = delta.get("content", "")
-            |                        reasoning = delta.get("reasoning_content", "") or delta.get("thought", "")
-            |                        if reasoning:
-            |                            print(json.dumps({"event": "thought", "text": reasoning}), flush=True)
-            |                            has_streamed = True
-            |                        if token:
-            |                            print(json.dumps({"event": "delta", "text": token}), flush=True)
-            |                            has_streamed = True
-            |                    except Exception:
-            |                        pass
+            |            parser = parse_anthropic_stream if provider == "anthropic" else parse_openai_stream
+            |            for event_type, text in parser(response):
+            |                print(json.dumps({"event": event_type, "text": text}), flush=True)
+            |                has_streamed = True
             |    except Exception as stream_err:
             |        if not has_streamed:
+            |            # Retry without streaming
             |            payload["stream"] = False
+            |            if provider == "opencode_zen":
+            |                request_id = generate_request_id()
+            |                headers["x-opencode-request"] = request_id
             |            try:
             |                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
             |                with execute_http_request(req, timeout=90) as response:
             |                    res_data = json.loads(response.read().decode("utf-8"))
-            |                    content = res_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            |                    if provider == "anthropic":
+            |                        content_blocks = res_data.get("content", [])
+            |                        content = "".join(b.get("text", "") for b in content_blocks if b.get("type") == "text")
+            |                    else:
+            |                        content = res_data.get("choices", [{}])[0].get("message", {}).get("content", "")
             |                    if content:
             |                        print(content, flush=True)
             |                    else:
@@ -2178,7 +2380,7 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         const val HERMES_GUEST_PATH = "/usr/local/bin/hermes"
         const val GITHUB_CLI_GUEST_PATH = "/root/.local/bin/gh"
         private const val AGY_VERSION = "1.1.27"
-        internal const val HERMES_VERSION = "0.4.2"
+        internal const val HERMES_VERSION = "0.5.0"
         private const val AGY_RELEASE_URL = "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.1.27-5211191891591168/linux-arm/cli_linux_arm64.tar.gz"
         private const val AGY_RELEASE_SHA512 = "ed45f6930785aa4b42f14e07ace1c9d91a94fb76e760f54acbd7d3d3951e1f957fd456a0dae2a3124dd9a3b689bf7afb7c9303a3e4ba95037fc10063424d9bf9"
         private const val GITHUB_CLI_VERSION = "2.100.0"

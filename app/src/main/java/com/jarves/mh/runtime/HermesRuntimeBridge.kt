@@ -59,16 +59,38 @@ class HermesRuntimeBridge(
         pushForegroundProgress("Starting Hermes Agent…")
 
         val secret = secretFor(provider).orEmpty()
+        val isZen = provider.kind == ProviderKind.OPENCODE_ZEN
         val effectiveSecret = if (secret.isBlank()) {
-            val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context)
-            prefs.getApiKey("openrouter")
-                .ifBlank { prefs.getApiKey("deepseek") }
-                .ifBlank { prefs.getApiKey("openai") }
-                .ifBlank { prefs.getSetting("api_key_openrouter", "") }
-                .ifBlank { prefs.getSetting("api_key_deepseek", "") }
-                .ifBlank { prefs.getSetting("api_key_openai", "") }
-                .ifBlank { "zen-free" }
+            if (isZen) {
+                "zen-free"
+            } else {
+                val prefs = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(context)
+                when (provider.kind) {
+                    ProviderKind.LLM_ROUTER -> prefs.getApiKey("openrouter")
+                        .ifBlank { prefs.getSetting("api_key_openrouter", "") }
+                    ProviderKind.DEEPSEEK -> prefs.getApiKey("deepseek")
+                        .ifBlank { prefs.getSetting("api_key_deepseek", "") }
+                    ProviderKind.ANTHROPIC -> prefs.getApiKey("anthropic")
+                        .ifBlank { prefs.getSetting("api_key_anthropic", "") }
+                    else -> prefs.getApiKey("openrouter")
+                        .ifBlank { prefs.getApiKey("deepseek") }
+                        .ifBlank { prefs.getApiKey("openai") }
+                        .ifBlank { prefs.getSetting("api_key_openrouter", "") }
+                        .ifBlank { prefs.getSetting("api_key_deepseek", "") }
+                        .ifBlank { prefs.getSetting("api_key_openai", "") }
+                }.ifBlank { "zen-free" }
+            }
         } else secret
+
+        // Map provider kind to a stable identifier the Python runner understands
+        val providerTag = when (provider.kind) {
+            ProviderKind.OPENCODE_ZEN -> "opencode_zen"
+            ProviderKind.LLM_ROUTER -> "openrouter"
+            ProviderKind.DEEPSEEK -> "deepseek"
+            ProviderKind.ANTHROPIC -> "anthropic"
+            ProviderKind.CUSTOM -> "custom"
+            else -> "openrouter"
+        }
 
         runCatching {
             RuntimeTaskController.stopAction = {
@@ -101,13 +123,19 @@ class HermesRuntimeBridge(
                 put("HERMES_HOME", "/root/.hermes")
                 put("WORKSPACE", "/workspace/$projectSlug")
                 put("DEBIAN_FRONTEND", "noninteractive")
+                put("HERMES_PROVIDER", providerTag)
+                put("HERMES_BASE_URL", provider.resolvedBaseUrl)
+                put("HERMES_MODEL", provider.model)
                 if (effectiveSecret.isNotBlank()) {
-                    put("OPENROUTER_API_KEY", effectiveSecret)
-                    put("DEEPSEEK_API_KEY", effectiveSecret)
-                    put("OPENAI_API_KEY", effectiveSecret)
                     put("HERMES_API_KEY", effectiveSecret)
-                    put("ANTHROPIC_API_KEY", effectiveSecret)
-                    put("NOUS_API_KEY", effectiveSecret)
+                    // Set the provider-specific key that the runner checks
+                    when (provider.kind) {
+                        ProviderKind.LLM_ROUTER -> put("OPENROUTER_API_KEY", effectiveSecret)
+                        ProviderKind.DEEPSEEK -> put("DEEPSEEK_API_KEY", effectiveSecret)
+                        ProviderKind.ANTHROPIC -> put("ANTHROPIC_API_KEY", effectiveSecret)
+                        ProviderKind.OPENCODE_ZEN -> {} // Zen uses HERMES_API_KEY directly
+                        else -> put("OPENAI_API_KEY", effectiveSecret)
+                    }
                 }
             }
 

@@ -63,7 +63,7 @@ class HermesAgentIntegrationTest {
         val tempDir = java.nio.file.Files.createTempDirectory("hermes_test").toFile()
         try {
             val runnerFile = java.io.File(tempDir, "hermes_runner.py")
-            assertEquals("0.4.2", com.jarves.mh.runtime.RuntimeInstaller.HERMES_VERSION)
+            assertEquals("0.5.0", com.jarves.mh.runtime.RuntimeInstaller.HERMES_VERSION)
             val installerClass = com.jarves.mh.runtime.RuntimeInstaller::class.java
             val method = installerClass.getDeclaredMethod("writeHermesRunnerScript", java.io.File::class.java)
             method.isAccessible = true
@@ -77,11 +77,43 @@ class HermesAgentIntegrationTest {
 
             assertTrue("Runner file must be generated", runnerFile.exists())
             val content = runnerFile.readText()
+
+            // SSL resilience (carried from v0.4.2)
             assertTrue("Must import ssl", content.contains("import ssl"))
             assertTrue("Must define get_resilient_ssl_context", content.contains("def get_resilient_ssl_context():"))
             assertTrue("Must define execute_http_request", content.contains("def execute_http_request("))
             assertTrue("Must include _create_unverified_context fallback", content.contains("_create_unverified_context"))
             assertTrue("Must handle certificate verification errors", content.contains("certificate") && content.contains("verify"))
+
+            // Provider-aware routing (new in v0.5.0)
+            assertTrue("Must read HERMES_PROVIDER env var", content.contains("HERMES_PROVIDER"))
+            assertTrue("Must read HERMES_BASE_URL env var", content.contains("HERMES_BASE_URL"))
+            assertTrue("Must define resolve_provider", content.contains("def resolve_provider():"))
+            assertTrue("Must define build_url", content.contains("def build_url("))
+            assertTrue("Must define build_headers", content.contains("def build_headers("))
+            assertTrue("Must define build_payload", content.contains("def build_payload("))
+
+            // OpenCode Zen wire protocol
+            assertTrue("Must generate Zen session IDs", content.contains("def generate_session_id():"))
+            assertTrue("Must generate Zen request IDs", content.contains("def generate_request_id():"))
+            assertTrue("Must set x-opencode-client header", content.contains("x-opencode-client"))
+            assertTrue("Must set x-opencode-project header", content.contains("x-opencode-project"))
+            assertTrue("Must set x-opencode-session header", content.contains("x-opencode-session"))
+            assertTrue("Must set x-session-affinity header", content.contains("x-session-affinity"))
+            assertTrue("Must inject decoy bash tool", content.contains("\"name\": \"bash\""))
+            assertTrue("Must inject decoy read tool", content.contains("\"name\": \"read\""))
+            assertTrue("Must set tool_choice none", content.contains("tool_choice"))
+
+            // Provider-specific handling
+            assertTrue("Must support opencode_zen provider", content.contains("opencode_zen"))
+            assertTrue("Must support openrouter provider", content.contains("openrouter"))
+            assertTrue("Must support deepseek provider", content.contains("deepseek"))
+            assertTrue("Must support anthropic provider", content.contains("anthropic"))
+            assertTrue("Must define Anthropic stream parser", content.contains("def parse_anthropic_stream("))
+            assertTrue("Must define OpenAI stream parser", content.contains("def parse_openai_stream("))
+
+            // Default free model for Zen
+            assertTrue("Must default to mimo-v2.5-free", content.contains("mimo-v2.5-free"))
         } finally {
             tempDir.deleteRecursively()
         }

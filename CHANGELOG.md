@@ -9,9 +9,11 @@ All notable changes and milestones for **DeepCode for Android** are documented b
 ### Added & Enhanced
 - **Nous Research Hermes Agent Integration**:
   - Full autonomous coding agent runtime bridge (`HermesRuntimeBridge.kt`) inside the rootless Ubuntu 20.04 LTS PRoot subsystem.
-  - Automated PRoot guest installation (`ensureHermesInstalled`) generating `/usr/local/bin/hermes` and Python runner `/usr/local/lib/hermes/hermes_runner.py` (v0.4.2).
+  - Automated PRoot guest installation (`ensureHermesInstalled`) generating `/usr/local/bin/hermes` and Python runner `/usr/local/lib/hermes/hermes_runner.py` (v0.5.0).
+  - **Provider-aware routing (v0.5.0)**: The Python runner now receives explicit `HERMES_PROVIDER`, `HERMES_BASE_URL`, and `HERMES_MODEL` environment variables from the bridge, enabling deterministic API endpoint selection instead of fragile URL heuristics.
+  - **OpenCode Zen wire protocol**: Full Zen API compatibility with canonical session/request ID generators (`ses_`/`msg_` + hex + base62), required headers (`User-Agent`, `x-opencode-client`, `x-opencode-project`, `x-opencode-session`, `x-opencode-request`, `x-session-affinity`), decoy `bash`/`read` tool injection, `tool_choice: "none"`, and automatic free-tier model fallback (`mimo-v2.5-free`). Works out of the box with zero configuration.
+  - **Multi-provider support**: Per-provider URL routing, headers, and payload formats for OpenCode Zen (free tier), OpenRouter, DeepSeek, Anthropic (native messages API), and custom OpenAI-compatible endpoints. Each provider gets only its own API key env var.
   - Resilient network and SSL security: populates PRoot `/etc/ssl/certs/ca-certificates.crt` from Android's trusted system CA store (`/system/etc/security/cacerts`) and implements auto-fallback unverified context retry in `hermes_runner.py` to prevent `CERTIFICATE_VERIFY_FAILED` errors.
-  - Multi-provider tool execution across OpenRouter, DeepSeek, OpenAI, Anthropic, and OpenCode Zen with environment-injected API keys and autonomous `--yolo` execution loop.
   - Persistent memory, skill retention, and workspace change tracking via `WorkspaceCheckpoints`.
   - Dedicated 6-phase progressive thinking steps in `ChatMotionComponents` (*Analyzing prompt directives*, *Consulting persistent memory*, *Formulating execution plan*, *Engaging Hermes toolchain*, *Synthesizing code*, *Verifying syntax*) with an Emerald Green accent badge (`🪽 Hermes Agent · PRoot`).
   - Seamless fallback protection: non-crashing graceful fallback to Direct In-App Engine if PRoot is uninstalled.
