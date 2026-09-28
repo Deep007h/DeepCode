@@ -1617,6 +1617,7 @@ private fun TopBar(
     onOpenApiKeys: () -> Unit = {}
 ) {
     var expandedSelectorDropdown by remember { mutableStateOf(false) }
+    var expandedAgentDropdown by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val isRootGranted by ai.deepcode.android.util.RootSystem.isRootGranted.collectAsStateWithLifecycle()
     val rootFlavor by ai.deepcode.android.util.RootSystem.rootFlavor.collectAsStateWithLifecycle()
@@ -1630,7 +1631,7 @@ private fun TopBar(
         ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE -> Triple("✳️", "Claude", "Claude Code")
         ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY -> Triple("🚀", "AGY", "Antigravity")
         ai.deepcode.android.data.local.WORKFLOW_HERMES -> Triple("🪽", "Hermes", "Hermes Agent")
-        else -> Triple("🤖", "Agent", "Autonomous Agent")
+        else -> Triple("🤖", "Direct", "Direct Engine")
     }
 
     val flavorLabel = when (rootFlavor) {
@@ -1658,53 +1659,86 @@ private fun TopBar(
             MenuTwoBarsIcon(color = AppWhite)
         }
 
-        // Right Group: [👑 ROOT / Agent] badge + [Model Selection Capsule Pill]
+        // Right Group: [Agent / Engine Selector Capsule Pill] + [Model Selection Capsule Pill]
         Row(
             modifier = Modifier.weight(1f, fill = false),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (isRootActive || isIndirectChat) {
-                key("top_bar_agent_root_badge") {
+            key("top_bar_agent_selector_pill") {
+                Box {
                     val pillIcon = if (isRootActive) "👑" else agentIcon
                     val pillText = when {
                         isIndirectChat && isRootActive -> "$agentShortName · $flavorLabel"
                         isIndirectChat -> agentShortName
-                        else -> flavorLabel
+                        isRootActive -> "Direct · $flavorLabel"
+                        else -> "Direct"
                     }
-                    val pillTextColor = if (isRootActive) AppSuccess else AppPrimary
-                    val toastMessage = when {
-                        isIndirectChat && isRootActive -> "👑 Superuser Active: $flavorLabel (uid=0) • Autonomous Agent: $agentFullName in Ubuntu PRoot"
-                        isIndirectChat -> "🤖 Autonomous Agent: $agentFullName (Ubuntu 20.04 PRoot Subsystem)"
-                        else -> "👑 Superuser Active: $flavorLabel (uid=0)"
+                    val pillTextColor = when {
+                        isRootActive -> AppSuccess
+                        isIndirectChat -> AppPrimary
+                        else -> AppWhite
                     }
+                    val agentChevronRotation by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = if (expandedAgentDropdown) 180f else 0f,
+                        animationSpec = MotionTokens.SnappySpring,
+                        label = "topBarAgentChevronRotation"
+                    )
+
                     Row(
                         modifier = Modifier
                             .depthPill(
-                                shape = RoundedCornerShape(20.dp),
-                                elevation = 2.dp,
+                                shape = RoundedCornerShape(24.dp),
+                                elevation = 3.dp,
                                 isDark = isDarkThemeActive
                             )
-                            .clip(RoundedCornerShape(20.dp))
-                            .clickable {
-                                Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
+                            .bouncyClickable(provideHaptic = true) {
+                                expandedAgentDropdown = !expandedAgentDropdown
                             }
-                            .padding(horizontal = 9.dp, vertical = 7.dp),
+                            .padding(horizontal = 11.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
                             text = pillIcon,
-                            fontSize = 11.sp
+                            fontSize = 13.sp
                         )
                         Text(
                             text = pillText,
-                            fontSize = 11.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = pillTextColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Select execution engine or agent",
+                            tint = pillTextColor,
+                            modifier = Modifier
+                                .size(16.dp)
+                                .graphicsLayer { rotationZ = agentChevronRotation }
+                        )
+                    }
+
+                    if (expandedAgentDropdown) {
+                        val density = LocalDensity.current
+                        val offsetPx = with(density) { 52.dp.roundToPx() }
+                        Popup(
+                            alignment = Alignment.TopEnd,
+                            offset = IntOffset(0, offsetPx),
+                            onDismissRequest = { expandedAgentDropdown = false },
+                            properties = PopupProperties(focusable = true)
+                        ) {
+                            AgentSelectionOverlay(
+                                currentWorkflowMode = workflowMode,
+                                onModeSelected = { newMode ->
+                                    repository.securePrefs.saveSetting("workflow_mode", newMode)
+                                    expandedAgentDropdown = false
+                                },
+                                onDismiss = { expandedAgentDropdown = false }
+                            )
+                        }
                     }
                 }
             }
@@ -3845,6 +3879,179 @@ fun ModelSelectionOverlay(
 }
 
 @Composable
+fun AgentSelectionOverlay(
+    currentWorkflowMode: String,
+    onModeSelected: (String) -> Unit,
+    onDismiss: () -> Unit = {}
+) {
+    val context = LocalContext.current
+    val isDarkThemeActive = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
+    data class AgentOption(
+        val id: String,
+        val icon: String,
+        val title: String,
+        val subtitle: String,
+        val badge: String,
+        val accentColor: Color
+    )
+
+    val options = listOf(
+        AgentOption(
+            id = ai.deepcode.android.data.local.WORKFLOW_DIRECT,
+            icon = "🤖",
+            title = "Direct Engine",
+            subtitle = "Native fast in-app chat & real-time toolchain",
+            badge = "Direct Chat",
+            accentColor = Color(0xFF3B82F6)
+        ),
+        AgentOption(
+            id = ai.deepcode.android.data.local.WORKFLOW_DEEPSEEK_HARNESS,
+            icon = "⚡",
+            title = "DeepSeek Harness",
+            subtitle = "Autonomous PRoot coding loop & subshell",
+            badge = "Autonomous",
+            accentColor = Color(0xFF6366F1)
+        ),
+        AgentOption(
+            id = ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE,
+            icon = "✳️",
+            title = "Claude Code",
+            subtitle = "Anthropic's official agent CLI in PRoot",
+            badge = "PRoot Subsystem",
+            accentColor = Color(0xFFD97706)
+        ),
+        AgentOption(
+            id = ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY,
+            icon = "🚀",
+            title = "Antigravity CLI",
+            subtitle = "Google Deepmind agent with persistent memory",
+            badge = "Google AGY",
+            accentColor = Color(0xFF10B981)
+        ),
+        AgentOption(
+            id = ai.deepcode.android.data.local.WORKFLOW_HERMES,
+            icon = "🪽",
+            title = "Hermes Agent",
+            subtitle = "Nous Research autonomous agent · OpenCode Zen free tier",
+            badge = "Nous · Zen Free",
+            accentColor = Color(0xFF059669)
+        )
+    )
+
+    Box(
+        modifier = Modifier
+            .width(310.dp)
+            .depthCard(
+                shape = RoundedCornerShape(22.dp),
+                elevation = 8.dp,
+                isDark = isDarkThemeActive
+            )
+            .padding(12.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "EXECUTION ENGINE & AGENTS",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    letterSpacing = 1.sp
+                )
+            }
+
+            Spacer(Modifier.height(4.dp))
+
+            options.forEach { opt ->
+                val isSelected = currentWorkflowMode == opt.id
+                val shape = RoundedCornerShape(14.dp)
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp)
+                        .depthPill(
+                            shape = shape,
+                            elevation = if (isSelected) 3.dp else 1.dp,
+                            customGradient = if (isSelected) {
+                                if (isDarkThemeActive) listOf(opt.accentColor.copy(alpha = 0.28f), opt.accentColor.copy(alpha = 0.12f))
+                                else listOf(opt.accentColor.copy(alpha = 0.18f), opt.accentColor.copy(alpha = 0.08f))
+                            } else null,
+                            customBorderColor = if (isSelected) opt.accentColor.copy(alpha = 0.7f) else null,
+                            isDark = isDarkThemeActive
+                        )
+                        .bouncyClickable(provideHaptic = true) {
+                            onModeSelected(opt.id)
+                            Toast.makeText(context, "Active: ${opt.title}", Toast.LENGTH_SHORT).show()
+                        }
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = opt.icon,
+                        fontSize = 20.sp,
+                        modifier = Modifier.padding(end = 10.dp)
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = opt.title,
+                                fontSize = 13.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) opt.accentColor else MaterialTheme.colorScheme.onSurface
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(opt.accentColor.copy(alpha = 0.15f))
+                                    .padding(horizontal = 5.dp, vertical = 1.5.dp)
+                            ) {
+                                Text(
+                                    text = opt.badge,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = opt.accentColor
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = opt.subtitle,
+                            fontSize = 10.5.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            lineHeight = 13.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    if (isSelected) {
+                        Spacer(Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Selected",
+                            tint = opt.accentColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun ProviderMiniLogo(providerName: String) {
     val (bgColor, textColor, label) = when (providerName) {
         "Google Gemini" -> Triple(Color(0xFF8B5CF6).copy(alpha = 0.15f), Color(0xFF8B5CF6), "G")
@@ -4799,17 +5006,17 @@ class ChatViewModel(val repository: DeepCodeRepository) : ViewModel() {
                                     _streamedText.update { it + nextChunk }
                                 }
                                 if (isDone) {
-                                    if (remainingLen > 0) delay(4L)
+                                    if (remainingLen > 0) delay(2L)
                                 } else {
                                     when {
-                                        remainingLen > 80 -> delay(4L)
-                                        remainingLen > 30 -> delay(8L)
-                                        else -> delay(16L)
+                                        remainingLen > 80 -> delay(2L)
+                                        remainingLen > 30 -> delay(4L)
+                                        else -> delay(6L)
                                     }
                                 }
                             } else {
                                 if (isDone) break
-                                delay(16L)
+                                delay(6L)
                             }
                         }
                     }
@@ -5147,11 +5354,18 @@ class ChatViewModel(val repository: DeepCodeRepository) : ViewModel() {
             }
             com.jarves.mh.model.AgentKind.HERMES -> {
                 com.jarves.mh.runtime.HermesRuntimeBridge(context) { prof ->
-                    vault.getSecret(prof.kind.name)
-                        ?: repository.securePrefs.getApiKey(prof.kind.name.lowercase())
-                        ?: repository.securePrefs.getApiKey(prof.kind.title.lowercase())
-                        ?: repository.securePrefs.getApiKey("openrouter")
-                        ?: "zen-free"
+                    if (prof.kind == com.jarves.mh.model.ProviderKind.OPENCODE_ZEN) {
+                        vault.getSecret("OPENCODE_ZEN")
+                            ?: listOf("zen", "opencode-zen", "opencode", "zenmux").firstNotNullOfOrNull { k ->
+                                vault.getSecret(k) ?: repository.securePrefs.getApiKey(k).takeIf { it.isNotBlank() }
+                            }
+                            ?: "zen-free"
+                    } else {
+                        vault.getSecret(prof.kind.name)
+                            ?: repository.securePrefs.getApiKey(prof.kind.name.lowercase())
+                            ?: repository.securePrefs.getApiKey(prof.kind.title.lowercase())
+                            ?: ""
+                    }
                 }
             }
         }

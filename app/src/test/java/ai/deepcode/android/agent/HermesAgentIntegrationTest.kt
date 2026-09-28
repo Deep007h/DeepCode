@@ -63,7 +63,7 @@ class HermesAgentIntegrationTest {
         val tempDir = java.nio.file.Files.createTempDirectory("hermes_test").toFile()
         try {
             val runnerFile = java.io.File(tempDir, "hermes_runner.py")
-            assertEquals("0.5.0", com.jarves.mh.runtime.RuntimeInstaller.HERMES_VERSION)
+            assertEquals("0.5.1", com.jarves.mh.runtime.RuntimeInstaller.HERMES_VERSION)
             val installerClass = com.jarves.mh.runtime.RuntimeInstaller::class.java
             val method = installerClass.getDeclaredMethod("writeHermesRunnerScript", java.io.File::class.java)
             method.isAccessible = true

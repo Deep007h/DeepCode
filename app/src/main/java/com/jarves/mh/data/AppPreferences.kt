@@ -180,10 +180,10 @@ class AppPreferences(private val context: Context) {
         val kind = when {
             agent == null -> storedKind ?: ProviderKind.ANTHROPIC
             agent == AgentKind.DEEPSEEK_HARNESS && (!hasAgentProfile || legacyClaudeDefaultInDeepSeek) -> ProviderKind.DEEPSEEK
-            agent == AgentKind.HERMES && !hasAgentProfile -> ProviderKind.LLM_ROUTER
+            agent == AgentKind.HERMES && !hasAgentProfile -> ProviderKind.OPENCODE_ZEN
             storedKind != null && storedKind in providersForAgent(agent) -> storedKind
             agent == AgentKind.DEEPSEEK_HARNESS -> ProviderKind.DEEPSEEK
-            agent == AgentKind.HERMES -> ProviderKind.LLM_ROUTER
+            agent == AgentKind.HERMES -> ProviderKind.OPENCODE_ZEN
             else -> ProviderKind.ANTHROPIC
         }
         val useStoredValues = storedKind == kind

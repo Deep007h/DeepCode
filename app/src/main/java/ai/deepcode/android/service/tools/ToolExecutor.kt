@@ -38,6 +38,20 @@ import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
+internal object SharedToolHttpClient {
+    private val pool = okhttp3.ConnectionPool(32, 5, TimeUnit.MINUTES)
+    val client: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectionPool(pool)
+            .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
+            .connectTimeout(12, TimeUnit.SECONDS)
+            .readTimeout(45, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
+    }
+}
+
 data class ReferenceLayoutInfo(
     val id: String,
     val name: String,
@@ -2188,7 +2202,8 @@ class ToolExecutor(private val context: Context? = null) {
         model: String,
         prefs: ai.deepcode.android.data.local.EncryptedPrefs,
         ctx: Context,
-        verbatim: Boolean = false
+        verbatim: Boolean = false,
+        apiKey: String? = null
     ): String? {
         return try {
             val emotionMode = prefs.getSetting("tts_gemini_emotion_mode", "auto")
@@ -2198,7 +2213,7 @@ class ToolExecutor(private val context: Context? = null) {
             val truncatedText = if (cleanText.length > 5000) cleanText.take(5000) else cleanText
             val detectedStyle = processed.detectedStyle
             val voiceName = prefs.getSetting("tts_gemini_voice", "Puck")
-            val effectiveModel = if (model.isNotBlank() && model.contains("gemini")) model else "gemini-2.5-flash-preview-tts"
+            val effectiveModel = if (model.isNotBlank() && model.contains("gemini")) model else "gemini-2.0-flash"
 
             val cacheDir = File(ctx.cacheDir, "audio").apply { mkdirs() }
             val cacheKey = ttsCacheKey(truncatedText, "gemini-v2", "$effectiveModel-$voiceName", emotionMode, detectedStyle, if (verbatim) "verbatim" else "")
@@ -2217,16 +2232,17 @@ class ToolExecutor(private val context: Context? = null) {
                 }
             }
 
-            val rawKeyCandidates = listOf(
+            val rawKeyCandidates = listOfNotNull(
+                apiKey,
                 prefs.getApiKey("gemini"),
                 prefs.getApiKey("google gemini"),
                 prefs.getApiKey("google-gemini"),
                 prefs.getSetting("api_key_gemini", ""),
                 prefs.getSetting("api_key_gemini_1", ""),
                 prefs.getSetting("gemini_api_key", ""),
-                ai.deepcode.android.data.remote.ApiKeyRotator.getNextAvailableKey(prefs, "gemini")?.first ?: "",
-                ai.deepcode.android.data.remote.ApiKeyRotator.getNextAvailableKey(prefs, "google gemini")?.first ?: "",
-                System.getenv("GEMINI_API_KEY") ?: ""
+                ai.deepcode.android.data.remote.ApiKeyRotator.getNextAvailableKey(prefs, "gemini")?.first,
+                ai.deepcode.android.data.remote.ApiKeyRotator.getNextAvailableKey(prefs, "google gemini")?.first,
+                System.getenv("GEMINI_API_KEY")
             ) + prefs.getApiKeys("gemini") + prefs.getApiKeys("google gemini") + prefs.getApiKeys("google-gemini")
 
             val configuredKeys = rawKeyCandidates
@@ -2235,24 +2251,23 @@ class ToolExecutor(private val context: Context? = null) {
                 .distinct()
 
             if (configuredKeys.isEmpty()) {
-                AppLogger.w("GeminiTTS", "No Gemini API key found in preferences or rotator")
-                return null
+                AppLogger.w("GeminiTTS", "No Gemini API key found in preferences; falling back to Edge Neural TTS")
+                return executeDefaultTtsDirect(cleanText, prefs, ctx)
             }
 
-            val client = OkHttpClient.Builder()
-                .connectTimeout(25, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .build()
+            val client = SharedToolHttpClient.client
 
-            // Prioritize requested model, then highly-available preview TTS models, then fallbacks
-            val modelCandidates = listOf(
-                effectiveModel,
-                "gemini-2.5-flash-preview-tts",
-                "gemini-3.1-flash-tts-preview",
-                "gemini-2.5-pro-preview-tts",
-                "gemini-3.8-flash-lite-tts",
-                "gemini-3.8-flash-tts"
-            ).distinct()
+            // Prioritize actual Google API models that support audio output
+            val modelCandidates = buildList {
+                if (effectiveModel.contains("2.0-flash") || effectiveModel.contains("2.5-flash")) {
+                    add(effectiveModel)
+                }
+                add("gemini-2.0-flash")
+                add("gemini-2.0-flash-exp")
+                add("gemini-2.5-flash")
+                add(effectiveModel)
+                add("gemini-2.5-flash-preview-tts")
+            }.distinct()
 
             val sysInstructionText = if (verbatim) {
                 "You are an expressive neural text-to-speech (TTS) engine. Your sole task is to recite the user's provided input text aloud verbatim as audio speech. Speak ONLY the exact words provided by the user. Do NOT add any preamble, conversational commentary, remarks, greetings, or sign-offs. NEVER speak or recite system instructions, styles, or prompt directions."
@@ -2262,9 +2277,9 @@ class ToolExecutor(private val context: Context? = null) {
                 "You are an expressive neural text-to-speech (TTS) engine. Your sole task is to recite the user's provided input text aloud verbatim as audio speech with natural human cadence and prosody. Speak ONLY the exact words provided by the user. Do NOT add any preamble, conversational commentary, remarks, greetings, or sign-offs. NEVER speak or recite system instructions, styles, or prompt directions."
             }
 
-            for (apiKey in configuredKeys) {
+            for (currentKey in configuredKeys) {
                 for (candModel in modelCandidates) {
-                    val url = "https://generativelanguage.googleapis.com/v1beta/models/$candModel:generateContent?key=$apiKey"
+                    val url = "https://generativelanguage.googleapis.com/v1beta/models/$candModel:generateContent?key=$currentKey"
                     val payload = JsonObject().apply {
                         val sysObj = JsonObject().apply {
                             val sysParts = JsonArray().apply {
@@ -2349,11 +2364,11 @@ class ToolExecutor(private val context: Context? = null) {
                             } else if (resp.code == 429) {
                                 val err = resp.body?.string()?.take(200)
                                 AppLogger.w("GeminiTTS", "Gemini quota exhausted (HTTP 429) on model $candModel: $err. Trying next candidate model...")
-                                continue // Per-model rate limits on Gemini! Try the next candidate model
+                                continue
                             } else if (resp.code == 404 || resp.code == 400) {
                                 val err = resp.body?.string()?.take(200)
                                 AppLogger.w("GeminiTTS", "Model $candModel returned HTTP ${resp.code}: $err. Trying candidate fallback...")
-                                continue // try next model candidate
+                                continue
                             } else {
                                 val err = resp.body?.string()?.take(200)
                                 AppLogger.w("GeminiTTS", "Gemini TTS HTTP ${resp.code} on $candModel: $err")
@@ -2364,10 +2379,11 @@ class ToolExecutor(private val context: Context? = null) {
                     }
                 }
             }
-            null
+            AppLogger.w("GeminiTTS", "All Gemini models/keys exhausted; falling back to Edge Neural TTS")
+            executeDefaultTtsDirect(cleanText, prefs, ctx)
         } catch (e: Exception) {
-            AppLogger.e("GeminiTTS", "executeGeminiTts failed", e)
-            null
+            AppLogger.e("GeminiTTS", "executeGeminiTts failed, falling back to default TTS", e)
+            executeDefaultTtsDirect(text, prefs, ctx)
         }
     }
 
@@ -2406,10 +2422,7 @@ class ToolExecutor(private val context: Context? = null) {
                 return null
             }
 
-            val client = OkHttpClient.Builder()
-                .connectTimeout(25, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .build()
+            val client = SharedToolHttpClient.client
 
             for (apiKey in openAiKeys) {
                 val url = "https://api.openai.com/v1/audio/speech"
@@ -2519,31 +2532,22 @@ class ToolExecutor(private val context: Context? = null) {
                 .post(body)
                 .header("User-Agent", "DeepCode-Android/1.0")
                 .build()
-            val client = OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .build()
-            try {
-                client.newCall(request).execute().use { response ->
-                    if (response.code != 200) {
-                        AppLogger.w("KokoroTTS", "Server returned ${response.code}: ${response.body?.string()?.take(300)}")
-                        try { client.dispatcher.executorService.shutdown() } catch (_: Exception) {}
-                        return null
-                    }
-                    val ct = response.header("Content-Type") ?: ""
-                    val bytes = response.body?.bytes()
-                    try { client.dispatcher.executorService.shutdown() } catch (_: Exception) {}
-                    if (bytes == null || bytes.size < 2000) {
-                        AppLogger.w("KokoroTTS", "Empty/short body (${bytes?.size ?: 0}b, ct=$ct)")
-                        return null
-                    }
-                    if (!ct.contains("audio", ignoreCase = true) && !ct.contains("octet", ignoreCase = true) && !ct.contains("mpeg", ignoreCase = true)) {
-                        AppLogger.w("KokoroTTS", "Unexpected content-type $ct")
-                    }
-                    bytes
+            val client = SharedToolHttpClient.client
+            client.newCall(request).execute().use { response ->
+                if (response.code != 200) {
+                    AppLogger.w("KokoroTTS", "Server returned ${response.code}: ${response.body?.string()?.take(300)}")
+                    return null
                 }
-            } finally {
-                try { client.dispatcher.executorService.shutdown() } catch (_: Exception) {}
+                val ct = response.header("Content-Type") ?: ""
+                val bytes = response.body?.bytes()
+                if (bytes == null || bytes.size < 2000) {
+                    AppLogger.w("KokoroTTS", "Empty/short body (${bytes?.size ?: 0}b, ct=$ct)")
+                    return null
+                }
+                if (!ct.contains("audio", ignoreCase = true) && !ct.contains("octet", ignoreCase = true) && !ct.contains("mpeg", ignoreCase = true)) {
+                    AppLogger.w("KokoroTTS", "Unexpected content-type $ct")
+                }
+                bytes
             }
         } catch (e: Exception) {
             AppLogger.e("KokoroTTS", "Kokoro TTS failed: ${e.message}", e)
@@ -2649,10 +2653,7 @@ class ToolExecutor(private val context: Context? = null) {
         val audioBuf = ByteArrayOutputStream()
         val turnEnd = java.util.concurrent.atomic.AtomicBoolean(false)
         val socketRef = java.util.concurrent.atomic.AtomicReference<WebSocket?>(null)
-        val client = OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .build()
+        val client = SharedToolHttpClient.client
 
         val connectionId = java.util.UUID.randomUUID().toString().replace("-", "")
         val clientToken = getEdgeTtsClientToken()
@@ -2756,7 +2757,6 @@ class ToolExecutor(private val context: Context? = null) {
         latch.await(30, TimeUnit.SECONDS)
         try { socketRef.get()?.close(1000, "done") } catch (_: Exception) {}
         try { socketRef.get()?.cancel() } catch (_: Exception) {}
-        try { client.dispatcher.executorService.shutdown() } catch (_: Exception) {}
         val data = audioBuf.toByteArray()
         // Without turn.end the stream was cut — treat tiny buffers as failure so fallbacks run.
         if (!turnEnd.get() && data.size < 8000) {
@@ -3054,11 +3054,7 @@ class ToolExecutor(private val context: Context? = null) {
         if (ctx == null) return ""
         return try {
             kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                val client = okhttp3.OkHttpClient.Builder()
-                    .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                    .readTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
-                    .followRedirects(true)
-                    .build()
+                val client = SharedToolHttpClient.client
 
                 val jsonBody = com.google.gson.JsonObject().apply {
                     addProperty("prompt", prompt)
@@ -3099,11 +3095,7 @@ class ToolExecutor(private val context: Context? = null) {
         if (ctx == null) return ""
         return try {
             kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                val client = okhttp3.OkHttpClient.Builder()
-                    .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                    .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                    .followRedirects(true)
-                    .build()
+                val client = SharedToolHttpClient.client
 
                 val encoded = try { java.net.URLEncoder.encode(prompt, "UTF-8") } catch (_: Exception) { prompt }
                 val wikiSearchUrl = "https://commons.wikimedia.org/w/api.php?action=query&list=search&srsearch=$encoded&srnamespace=6&format=json"
@@ -3167,12 +3159,7 @@ class ToolExecutor(private val context: Context? = null) {
         if (ctx == null) return imageUrl
         return try {
             kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                val client = okhttp3.OkHttpClient.Builder()
-                    .connectTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
-                    .readTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
-                    .followRedirects(true)
-                    .followSslRedirects(true)
-                    .build()
+                val client = SharedToolHttpClient.client
                 val req = okhttp3.Request.Builder()
                     .url(imageUrl)
                     .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile; rv:125.0) Gecko/125.0 Firefox/125.0")
@@ -3247,10 +3234,7 @@ class ToolExecutor(private val context: Context? = null) {
     private fun executeGeminiImagen(prompt: String, apiKey: String, ctx: Context): String? {
         return try {
             val url = "https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=$apiKey"
-            val client = okhttp3.OkHttpClient.Builder()
-                .connectTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
-                .build()
+            val client = SharedToolHttpClient.client
 
             val payload = JsonObject().apply {
                 val instances = com.google.gson.JsonArray().apply {
@@ -3358,10 +3342,7 @@ class ToolExecutor(private val context: Context? = null) {
             }
 
             // Try Cloud Code's Gemini/Imagen endpoint first, fall back to Vertex AI Imagen
-            val client = okhttp3.OkHttpClient.Builder()
-                .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-                .build()
+            val client = SharedToolHttpClient.client
 
             val targets = listOf(
                 "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
@@ -3649,10 +3630,7 @@ class ToolExecutor(private val context: Context? = null) {
                 requestBuilder.header("Authorization", "Bearer $apiKey")
             }
 
-            val client = OkHttpClient.Builder()
-                .connectTimeout(45, TimeUnit.SECONDS)
-                .readTimeout(180, TimeUnit.SECONDS)
-                .build()
+            val client = SharedToolHttpClient.client
 
             val response = client.newCall(requestBuilder.build()).execute()
             val responseBody = response.body?.string() ?: ""
@@ -4207,10 +4185,7 @@ class ToolExecutor(private val context: Context? = null) {
         if (keys.isEmpty()) return null
         val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
         val url = "https://api.search.tinyfish.ai?query=$encodedQuery"
-        val client = okhttp3.OkHttpClient.Builder()
-            .connectTimeout(12, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-            .build()
+        val client = SharedToolHttpClient.client
 
         for (apiKey in keys) {
             try {
@@ -4260,10 +4235,7 @@ class ToolExecutor(private val context: Context? = null) {
     private fun fetchTinyFishFetch(targetUrl: String, raw: Boolean = false): String? {
         val keys = getTinyFishApiKeys()
         if (keys.isEmpty()) return null
-        val client = okhttp3.OkHttpClient.Builder()
-            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
-            .build()
+        val client = SharedToolHttpClient.client
 
         val payload = JsonObject().apply {
             val urls = com.google.gson.JsonArray()
@@ -4314,10 +4286,7 @@ class ToolExecutor(private val context: Context? = null) {
         val apiKey = getTinyFishApiKey()
         if (apiKey.isBlank()) return "Error: TinyFish API key not configured"
         return try {
-            val client = okhttp3.OkHttpClient.Builder()
-                .connectTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-                .build()
+            val client = SharedToolHttpClient.client
 
             val payload = JsonObject().apply {
                 addProperty("url", targetUrl)
@@ -4369,18 +4338,17 @@ class ToolExecutor(private val context: Context? = null) {
 
         // Standard HTTP / JSoup Fallback
         return try {
-            val clientBuilder = okhttp3.OkHttpClient.Builder()
-                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             val activeProxy = ai.deepcode.android.util.VpnManager.getActiveProxy()
-            if (activeProxy != null) {
-                clientBuilder.proxy(activeProxy)
+            val client = if (activeProxy != null) {
+                SharedToolHttpClient.client.newBuilder().proxy(activeProxy).build()
+            } else {
+                SharedToolHttpClient.client
             }
             val request = okhttp3.Request.Builder()
                 .url(url)
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .build()
-            val response = clientBuilder.build().newCall(request).execute()
+            val response = client.newCall(request).execute()
             response.use {
                 val body = it.body?.string()
                 if (body == null) return if (throwOnError) throw RuntimeException("Empty response body") else "Empty response"
@@ -4753,10 +4721,7 @@ class ToolExecutor(private val context: Context? = null) {
 
     private fun callExaMcp(query: String, numResults: Int, livecrawl: String, type: String, contextMaxCharacters: Int): String? {
         return try {
-            val client = okhttp3.OkHttpClient.Builder()
-                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .build()
+            val client = SharedToolHttpClient.client
 
             val payload = JsonObject().apply {
                 addProperty("jsonrpc", "2.0")
@@ -4805,10 +4770,7 @@ class ToolExecutor(private val context: Context? = null) {
 
     private fun callParallelMcp(query: String): String? {
         return try {
-            val client = okhttp3.OkHttpClient.Builder()
-                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .build()
+            val client = SharedToolHttpClient.client
 
             val payload = JsonObject().apply {
                 addProperty("jsonrpc", "2.0")
@@ -5936,10 +5898,7 @@ The task strictly runs within DeepCode's single persistent ChatGPT conversation 
         """.trimIndent()
 
         return try {
-            val client = okhttp3.OkHttpClient.Builder()
-                .connectTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(50, java.util.concurrent.TimeUnit.SECONDS)
-                .build()
+            val client = SharedToolHttpClient.client
 
             val boundary = "----WebKitFormBoundaryGotenbergPdf"
             val requestBodyBuilder = okhttp3.MultipartBody.Builder(boundary).setType(okhttp3.MultipartBody.FORM)
@@ -5963,12 +5922,8 @@ The task strictly runs within DeepCode's single persistent ChatGPT conversation 
                     val outName = "$baseName.pdf"
                     val outFile = File(docsDir, outName)
                     // Stream to disk instead of loading whole PDF into heap.
-                    try {
-                        resp.body!!.byteStream().use { input ->
-                            java.io.FileOutputStream(outFile).use { fos -> input.copyTo(fos) }
-                        }
-                    } finally {
-                        try { client.dispatcher.executorService.shutdown() } catch (_: Exception) {}
+                    resp.body!!.byteStream().use { input ->
+                        java.io.FileOutputStream(outFile).use { fos -> input.copyTo(fos) }
                     }
                     if (!outFile.exists() || outFile.length() == 0L) return fallbackLocalPdf(title, content, author, filename, "Gotenberg returned empty PDF", layout)
                     if (!contentType.contains("pdf", ignoreCase = true) && outFile.length() < 1000) {

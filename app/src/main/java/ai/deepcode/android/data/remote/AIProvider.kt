@@ -1242,7 +1242,8 @@ class GeminiProvider : AIProvider {
                         text = prompt,
                         model = targetModel,
                         prefs = prefs,
-                        ctx = ctx
+                        ctx = ctx,
+                        apiKey = finalKey
                     )
                     if (!audioResult.isNullOrBlank()) {
                         val tokenMarker = "Generated audio response:\n\n$audioResult"
