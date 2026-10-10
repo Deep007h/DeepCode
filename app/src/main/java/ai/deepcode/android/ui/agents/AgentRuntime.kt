@@ -207,7 +207,7 @@ class AgentRuntime(private val context: Context) {
     private fun isCompatibleProvider(name: String): Boolean = when {
         name.contains("Zen", ignoreCase = true) -> true
         name.contains("Groq", ignoreCase = true) -> true
-        name.contains("Cerebrus", ignoreCase = true) -> true
+        name.contains("Cerebrus", ignoreCase = true) || name.contains("Cerebras", ignoreCase = true) -> true
         name.contains("OpenRouter", ignoreCase = true) -> true
         name.contains("Omniroute", ignoreCase = true) -> true
         name.contains("OpenAI", ignoreCase = true) -> true
@@ -221,7 +221,7 @@ class AgentRuntime(private val context: Context) {
     private fun getCompatibleBaseUrl(name: String): String = when {
         name.contains("Zen", ignoreCase = true) -> "https://opencode.ai/zen/v1"
         name.contains("Groq", ignoreCase = true) -> "https://api.groq.com/openai/v1"
-        name.contains("Cerebrus", ignoreCase = true) -> "https://api.cerebras.ai/v1"
+        name.contains("Cerebrus", ignoreCase = true) || name.contains("Cerebras", ignoreCase = true) -> "https://api.cerebras.ai/v1"
         name.contains("OpenRouter", ignoreCase = true) -> "https://openrouter.ai/api/v1"
         name.contains("Omniroute", ignoreCase = true) -> "http://10.0.2.2:20128/v1"
         name.contains("OpenAI", ignoreCase = true) -> "https://api.openai.com/v1"
@@ -237,7 +237,7 @@ class AgentRuntime(private val context: Context) {
         name.contains("Zen", ignoreCase = true) -> prefs.getApiKey("zen")
         name.contains("Gemini", ignoreCase = true) -> prefs.getApiKey("gemini")
         name.contains("Groq", ignoreCase = true) -> prefs.getApiKey("groq")
-        name.contains("Cerebrus", ignoreCase = true) -> prefs.getApiKey("cerebrus")
+        name.contains("Cerebrus", ignoreCase = true) || name.contains("Cerebras", ignoreCase = true) -> prefs.getApiKey("cerebrus").ifEmpty { prefs.getApiKey("cerebras") }
         name.contains("OpenRouter", ignoreCase = true) -> prefs.getApiKey("openrouter")
         name.contains("Omniroute", ignoreCase = true) -> prefs.getApiKey("omniroute")
         name.contains("OpenAI", ignoreCase = true) -> prefs.getApiKey("openai")
@@ -314,19 +314,32 @@ class AgentRuntime(private val context: Context) {
             addProperty("max_tokens", 8192)
         }
 
+        val isZen = baseUrl.contains("opencode.ai/zen", ignoreCase = true)
+        if (isZen) {
+            ai.deepcode.android.data.remote.ZenModels.applyDecoyTools(requestBody, false)
+        }
+
         val bodyStr = requestBody.toString()
-        val token = apiKey.ifEmpty { "public" }
+        val token = if (isZen) apiKey.ifBlank { "zen-free" } else apiKey.ifEmpty { "public" }
 
         // Try each transport and return the first successful response
         for ((httpClient, label) in listOf(httpClient to "proxied", directClient to "direct")) {
             try {
-                val request = Request.Builder()
+                val reqBuilder = Request.Builder()
                     .url(url)
                     .addHeader("Content-Type", "application/json")
-                    .addHeader("X-OpenCode-Client", "android/1.0.0")
-                    .addHeader("Authorization", "Bearer $token")
-                    .post(bodyStr.toRequestBody("application/json".toMediaType()))
-                    .build()
+                if (isZen) {
+                    reqBuilder.addHeader("Authorization", "Bearer $token")
+                    reqBuilder.addHeader(ai.deepcode.android.data.remote.ZenModels.CLIENT_HEADER_NAME, ai.deepcode.android.data.remote.ZenModels.CLIENT_HEADER_VALUE)
+                    reqBuilder.addHeader(ai.deepcode.android.data.remote.ZenModels.PROJECT_HEADER_NAME, ai.deepcode.android.data.remote.ZenModels.PROJECT_HEADER_VALUE)
+                    reqBuilder.addHeader("User-Agent", ai.deepcode.android.data.remote.ZenModels.USER_AGENT)
+                    reqBuilder.addHeader(ai.deepcode.android.data.remote.ZenModels.HEADER_SESSION_ID, ai.deepcode.android.data.remote.ZenModels.getOrCreateSession())
+                    reqBuilder.addHeader(ai.deepcode.android.data.remote.ZenModels.HEADER_REQUEST_ID, ai.deepcode.android.data.remote.ZenModels.generateRequestId())
+                } else {
+                    reqBuilder.addHeader("Authorization", "Bearer $token")
+                    reqBuilder.addHeader("X-OpenCode-Client", "android/1.0.0")
+                }
+                val request = reqBuilder.post(bodyStr.toRequestBody("application/json".toMediaType())).build()
 
                 val response = httpClient.newCall(request).execute()
                 val respBody = response.body?.string() ?: ""
@@ -349,8 +362,17 @@ class AgentRuntime(private val context: Context) {
             conn.doOutput = true
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "application/json")
-            conn.setRequestProperty("Authorization", "Bearer $token")
-            conn.setRequestProperty("X-DeepCode-Client", "android/1.0.0")
+            if (isZen) {
+                conn.setRequestProperty("Authorization", "Bearer $token")
+                conn.setRequestProperty(ai.deepcode.android.data.remote.ZenModels.CLIENT_HEADER_NAME, ai.deepcode.android.data.remote.ZenModels.CLIENT_HEADER_VALUE)
+                conn.setRequestProperty(ai.deepcode.android.data.remote.ZenModels.PROJECT_HEADER_NAME, ai.deepcode.android.data.remote.ZenModels.PROJECT_HEADER_VALUE)
+                conn.setRequestProperty("User-Agent", ai.deepcode.android.data.remote.ZenModels.USER_AGENT)
+                conn.setRequestProperty(ai.deepcode.android.data.remote.ZenModels.HEADER_SESSION_ID, ai.deepcode.android.data.remote.ZenModels.getOrCreateSession())
+                conn.setRequestProperty(ai.deepcode.android.data.remote.ZenModels.HEADER_REQUEST_ID, ai.deepcode.android.data.remote.ZenModels.generateRequestId())
+            } else {
+                conn.setRequestProperty("Authorization", "Bearer $token")
+                conn.setRequestProperty("X-DeepCode-Client", "android/1.0.0")
+            }
             conn.connectTimeout = 15000
             conn.readTimeout = 30000
 
@@ -385,12 +407,24 @@ class AgentRuntime(private val context: Context) {
                 addProperty("temperature", 0.4)
                 addProperty("max_tokens", 8192)
             }
+            if (isZen) {
+                ai.deepcode.android.data.remote.ZenModels.applyDecoyTools(minimalPayload, false)
+            }
             val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
             conn.doOutput = true
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "application/json")
-            conn.setRequestProperty("Authorization", "Bearer $token")
-            conn.setRequestProperty("X-DeepCode-Client", "android/1.0.0")
+            if (isZen) {
+                conn.setRequestProperty("Authorization", "Bearer $token")
+                conn.setRequestProperty(ai.deepcode.android.data.remote.ZenModels.CLIENT_HEADER_NAME, ai.deepcode.android.data.remote.ZenModels.CLIENT_HEADER_VALUE)
+                conn.setRequestProperty(ai.deepcode.android.data.remote.ZenModels.PROJECT_HEADER_NAME, ai.deepcode.android.data.remote.ZenModels.PROJECT_HEADER_VALUE)
+                conn.setRequestProperty("User-Agent", ai.deepcode.android.data.remote.ZenModels.USER_AGENT)
+                conn.setRequestProperty(ai.deepcode.android.data.remote.ZenModels.HEADER_SESSION_ID, ai.deepcode.android.data.remote.ZenModels.getOrCreateSession())
+                conn.setRequestProperty(ai.deepcode.android.data.remote.ZenModels.HEADER_REQUEST_ID, ai.deepcode.android.data.remote.ZenModels.generateRequestId())
+            } else {
+                conn.setRequestProperty("Authorization", "Bearer $token")
+                conn.setRequestProperty("X-DeepCode-Client", "android/1.0.0")
+            }
             conn.connectTimeout = 15000
             conn.readTimeout = 30000
 

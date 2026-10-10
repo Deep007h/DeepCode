@@ -297,7 +297,7 @@ class HermesRuntimeBridge(
                 checkpoints.checkpointDir(projectId).deleteRecursively()
             }
 
-            if (exit == 0 || !userStopRequested) {
+            if (exit == 0 && !userStopRequested) {
                 emitCompletedOnce(sessionId)
                 finishForegroundRuntime(
                     completed = true,

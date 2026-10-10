@@ -210,6 +210,57 @@ fun Modifier.depthInputBar(
 }
 
 /**
+ * Apple-style liquid glass floating dock modifier:
+ * - Fluid translucent acrylic surface (frosted glassmorphic depth)
+ * - Refined specular top highlight gradient border
+ * - Diffused atmospheric elevation shadow
+ */
+fun Modifier.appleGlassDock(
+    shape: Shape = RoundedCornerShape(30.dp),
+    elevation: Dp = 8.dp,
+    isDark: Boolean = true
+): Modifier {
+    val gradient = if (isDark) {
+        listOf(Color(0xE61E1E28), Color(0xDE14141E))
+    } else {
+        listOf(Color(0xF2FFFFFF), Color(0xE8F5F5F8))
+    }
+
+    val borderBrush = if (isDark) {
+        Brush.verticalGradient(
+            listOf(
+                Color.White.copy(alpha = 0.28f),
+                Color.White.copy(alpha = 0.08f),
+                Color.White.copy(alpha = 0.02f)
+            )
+        )
+    } else {
+        Brush.verticalGradient(
+            listOf(
+                Color.White.copy(alpha = 0.90f),
+                Color(0x28000000)
+            )
+        )
+    }
+
+    return this
+        .shadow(
+            elevation = elevation,
+            shape = shape,
+            clip = false,
+            spotColor = if (isDark) Color(0x66000000) else Color(0x1F000000),
+            ambientColor = if (isDark) Color(0x33000000) else Color(0x0D000000)
+        )
+        .clip(shape)
+        .background(Brush.verticalGradient(gradient))
+        .border(
+            width = 1.dp,
+            brush = borderBrush,
+            shape = shape
+        )
+}
+
+/**
  * Standalone YouTube-style depth pill button.
  */
 @Composable

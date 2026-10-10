@@ -383,14 +383,27 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
                 addProperty("max_tokens", 8192)
             }
             try {
+                val isZen = baseUrl.contains("opencode.ai/zen", ignoreCase = true)
+                if (isZen) {
+                    ai.deepcode.android.data.remote.ZenModels.applyDecoyTools(requestBody, false)
+                }
                 val body = requestBody.toString().toRequestBody("application/json".toMediaType())
-                val request = okhttp3.Request.Builder()
+                val reqBuilder = okhttp3.Request.Builder()
                     .url(url)
-                    .header("Authorization", "Bearer ${apiKey.ifEmpty { "public" }}")
                     .header("Content-Type", "application/json")
-                    .header("X-OpenCode-Client", "android/1.0.0")
-                    .post(body)
-                    .build()
+                if (isZen) {
+                    val zenKey = if (apiKey.isNotBlank() && apiKey != "public") apiKey else "zen-free"
+                    reqBuilder.header("Authorization", "Bearer $zenKey")
+                    reqBuilder.header(ai.deepcode.android.data.remote.ZenModels.CLIENT_HEADER_NAME, ai.deepcode.android.data.remote.ZenModels.CLIENT_HEADER_VALUE)
+                    reqBuilder.header(ai.deepcode.android.data.remote.ZenModels.PROJECT_HEADER_NAME, ai.deepcode.android.data.remote.ZenModels.PROJECT_HEADER_VALUE)
+                    reqBuilder.header("User-Agent", ai.deepcode.android.data.remote.ZenModels.USER_AGENT)
+                    reqBuilder.header(ai.deepcode.android.data.remote.ZenModels.HEADER_SESSION_ID, ai.deepcode.android.data.remote.ZenModels.getOrCreateSession())
+                    reqBuilder.header(ai.deepcode.android.data.remote.ZenModels.HEADER_REQUEST_ID, ai.deepcode.android.data.remote.ZenModels.generateRequestId())
+                } else {
+                    reqBuilder.header("Authorization", "Bearer ${apiKey.ifEmpty { "public" }}")
+                    reqBuilder.header("X-OpenCode-Client", "android/1.0.0")
+                }
+                val request = reqBuilder.post(body).build()
                 val response = httpClient.newCall(request).execute()
                 if (!response.isSuccessful) {
                     AppLogger.e("Orchestrator", "LLM call failed for $baseUrl: ${response.code} ${response.message}")
@@ -432,7 +445,7 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
     private fun isCompatibleProvider(name: String): Boolean = when {
         name.contains("Zen", ignoreCase = true) -> true
         name.contains("Groq", ignoreCase = true) -> true
-        name.contains("Cerebrus", ignoreCase = true) -> true
+        name.contains("Cerebrus", ignoreCase = true) || name.contains("Cerebras", ignoreCase = true) -> true
         name.contains("OpenRouter", ignoreCase = true) -> true
         name.contains("OpenAI", ignoreCase = true) -> true
         name.contains("Mistral", ignoreCase = true) -> true
@@ -467,7 +480,7 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
     private fun getCompatibleBaseUrl(name: String): String = when {
         name.contains("Zen", ignoreCase = true) -> "https://opencode.ai/zen/v1"
         name.contains("Groq", ignoreCase = true) -> "https://api.groq.com/openai/v1"
-        name.contains("Cerebrus", ignoreCase = true) -> "https://api.cerebras.ai/v1"
+        name.contains("Cerebrus", ignoreCase = true) || name.contains("Cerebras", ignoreCase = true) -> "https://api.cerebras.ai/v1"
         name.contains("OpenRouter", ignoreCase = true) -> "https://openrouter.ai/api/v1"
         name.contains("Omniroute", ignoreCase = true) -> "http://10.0.2.2:20128/v1"
         name.contains("OpenAI", ignoreCase = true) -> "https://api.openai.com/v1"
@@ -482,7 +495,7 @@ Provide a brief actionable suggestion (2-3 sentences). Focus on:
     private fun getApiKeyForProvider(name: String): String = when {
         name.contains("Zen", ignoreCase = true) -> prefs.getApiKey("zen")
         name.contains("Groq", ignoreCase = true) -> prefs.getApiKey("groq")
-        name.contains("Cerebrus", ignoreCase = true) -> prefs.getApiKey("cerebrus")
+        name.contains("Cerebrus", ignoreCase = true) || name.contains("Cerebras", ignoreCase = true) -> prefs.getApiKey("cerebrus").ifEmpty { prefs.getApiKey("cerebras") }
         name.contains("OpenRouter", ignoreCase = true) -> prefs.getApiKey("openrouter")
         name.contains("Omniroute", ignoreCase = true) -> prefs.getApiKey("omniroute")
         name.contains("OpenAI", ignoreCase = true) -> prefs.getApiKey("openai")

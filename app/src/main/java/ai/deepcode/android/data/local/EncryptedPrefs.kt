@@ -87,6 +87,9 @@ class EncryptedPrefs private constructor(context: Context) {
     private val _workflowModeFlow = MutableStateFlow(getSetting("workflow_mode", WORKFLOW_DIRECT))
     val workflowModeFlow: StateFlow<String> = _workflowModeFlow
 
+    private val _dashboardStyleFlow = MutableStateFlow(getSetting("dashboard_style", DASHBOARD_STYLE_FLOATING))
+    val dashboardStyleFlow: StateFlow<String> = _dashboardStyleFlow
+
     init {
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
             _themeFlow.value = getSetting("theme", "system")
@@ -100,6 +103,7 @@ class EncryptedPrefs private constructor(context: Context) {
             _personaEnabledFlow.value = getSetting("persona_enabled", "false") == "true"
             _customPersonaFlow.value = getSetting("custom_persona", "")
             _workflowModeFlow.value = getSetting("workflow_mode", WORKFLOW_DIRECT)
+            _dashboardStyleFlow.value = getSetting("dashboard_style", DASHBOARD_STYLE_FLOATING)
         }
     }
 
@@ -201,6 +205,7 @@ class EncryptedPrefs private constructor(context: Context) {
             "persona_enabled" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_personaEnabledFlow, value == "true")
             "custom_persona" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_customPersonaFlow, value)
             "workflow_mode" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_workflowModeFlow, value)
+            "dashboard_style" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_dashboardStyleFlow, value)
             "root_mode" -> {
                 val b = value == "true"
                 sharedPrefs.edit().putBoolean("setting_bool_root_mode", b).apply()
@@ -211,6 +216,9 @@ class EncryptedPrefs private constructor(context: Context) {
 
     fun getWorkflowMode(): String = getSetting("workflow_mode", WORKFLOW_DIRECT)
     fun setWorkflowMode(mode: String) = saveSetting("workflow_mode", mode)
+
+    fun getDashboardStyle(): String = getSetting("dashboard_style", DASHBOARD_STYLE_FLOATING)
+    fun setDashboardStyle(style: String) = saveSetting("dashboard_style", style)
 
     fun getBooleanSetting(key: String, default: Boolean): Boolean {
         return sharedPrefs.getBoolean("setting_bool_$key", default)
@@ -241,6 +249,9 @@ const val WORKFLOW_DEEPSEEK_HARNESS = "deepseek-harness"
 const val WORKFLOW_CLAUDE_CODE = "claude-code"
 const val WORKFLOW_ANTIGRAVITY = "antigravity"
 const val WORKFLOW_HERMES = "hermes"
+
+const val DASHBOARD_STYLE_FLOATING = "floating"
+const val DASHBOARD_STYLE_FIXED = "fixed"
 
 private const val DEFAULT_CUSTOM_PERSONA = ""
 

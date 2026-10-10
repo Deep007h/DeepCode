@@ -37,6 +37,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ai.deepcode.android.data.local.DASHBOARD_STYLE_FIXED
+import ai.deepcode.android.data.local.DASHBOARD_STYLE_FLOATING
 import ai.deepcode.android.data.repository.DeepCodeRepository
 import ai.deepcode.android.ui.components.*
 import ai.deepcode.android.ui.theme.*
@@ -77,6 +79,7 @@ fun ThemesAndWallpapersScreen(
     var customWallpaperPath by remember { mutableStateOf(securePrefs.getSetting("chat_wallpaper_custom", "")) }
     var fontSize by remember { mutableStateOf(securePrefs.getSetting("font_size", "medium")) }
     var uiScale by remember { mutableStateOf(securePrefs.getSetting("ui_scale", "default")) }
+    var dashboardStyle by remember { mutableStateOf(securePrefs.getDashboardStyle()) }
     var refreshKey by remember { mutableIntStateOf(0) }
 
     val refreshRateMode by ai.deepcode.android.util.RefreshRateManager.currentMode.collectAsStateWithLifecycle()
@@ -191,6 +194,8 @@ fun ThemesAndWallpapersScreen(
                                 securePrefs.saveSetting("font_size", "medium")
                                 uiScale = "default"
                                 securePrefs.saveSetting("ui_scale", "default")
+                                dashboardStyle = DASHBOARD_STYLE_FLOATING
+                                securePrefs.setDashboardStyle(DASHBOARD_STYLE_FLOATING)
                                 Toast.makeText(context, "Preview reset to default", Toast.LENGTH_SHORT).show()
                             }
                             .padding(horizontal = 8.dp, vertical = 4.dp),
@@ -344,43 +349,104 @@ fun ThemesAndWallpapersScreen(
                             }
                         }
 
-                        // Mock input bar
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(42.dp)
-                                .clip(RoundedCornerShape(21.dp))
-                                .background(if (isDarkThemeActive) Color(0xFF1C1C24).copy(alpha = 0.9f) else Color(0xFFEBEBF0))
-                                .border(1.dp, AppBorder, RoundedCornerShape(21.dp))
-                                .padding(horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Ask anything...",
-                                color = AppMuted,
-                                fontSize = 12.sp,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Icon(
-                                imageVector = Icons.Default.Mic,
-                                contentDescription = "Voice",
-                                tint = AppMuted,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Box(
+                        // Dynamic Mock Input Bar (Apple Floating Island vs Fixed Dock)
+                        val isFloatingPreview = dashboardStyle == DASHBOARD_STYLE_FLOATING
+                        if (isFloatingPreview) {
+                            // Apple-style Floating Island Pill
+                            Row(
                                 modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    .background(currentAccent.primary),
-                                contentAlignment = Alignment.Center
+                                    .fillMaxWidth()
+                                    .height(44.dp)
+                                    .appleGlassDock(shape = RoundedCornerShape(26.dp), elevation = 6.dp, isDark = isDarkThemeActive)
+                                    .padding(horizontal = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "Send",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(13.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isDarkThemeActive) Color.White.copy(alpha = 0.12f) else Color.Black.copy(alpha = 0.08f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "+",
+                                        color = if (isDarkThemeActive) Color.White else Color.Black,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = "Ask anything...",
+                                    color = AppMuted,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.weight(1f)
                                 )
+                                Icon(
+                                    imageVector = Icons.Default.Mic,
+                                    contentDescription = "Voice",
+                                    tint = AppMuted,
+                                    modifier = Modifier.size(17.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(currentAccent.primary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = "Send",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                }
+                            }
+                        } else {
+                            // Classic Fixed Dock Preview
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp)
+                                    .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
+                                    .background(if (isDarkThemeActive) Color(0xFF14141C) else Color(0xFFE8E8EE))
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isDarkThemeActive) Color(0xFF272733) else Color(0xFFD6D6DC),
+                                        shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
+                                    )
+                                    .padding(horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Ask anything...",
+                                    color = AppMuted,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.Mic,
+                                    contentDescription = "Voice",
+                                    tint = AppMuted,
+                                    modifier = Modifier.size(17.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(26.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(currentAccent.primary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = "Send",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -878,7 +944,249 @@ fun ThemesAndWallpapersScreen(
             }
 
             // ═══════════════════════════════════════════════
-            // 6. DISPLAY REFRESH RATE (60Hz – 144Hz Variable)
+            // 6. DASHBOARD & INPUT BAR STYLE (FLOATING VS FIXED)
+            // ═══════════════════════════════════════════════
+            item {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Dashboard & Input Bar Style",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AppWhite
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(currentAccent.primary.copy(alpha = 0.16f))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = if (dashboardStyle == DASHBOARD_STYLE_FLOATING) "Apple Island" else "Fixed Dock",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = currentAccent.primary
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "Choose between an Apple-style floating translucent glass island or a classic flush fixed bottom dock.",
+                        color = AppMuted,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+
+                    Spacer(Modifier.height(2.dp))
+
+                    // 2 Style Option Cards with live previews
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Card 1: Apple Floating Island
+                        val isFloating = dashboardStyle == DASHBOARD_STYLE_FLOATING
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(if (isFloating) currentAccent.primary.copy(alpha = 0.12f) else AppCard)
+                                .border(
+                                    width = if (isFloating) 2.dp else 1.dp,
+                                    color = if (isFloating) currentAccent.primary else AppBorder,
+                                    shape = RoundedCornerShape(18.dp)
+                                )
+                                .bouncyClickable(provideHaptic = true) {
+                                    dashboardStyle = DASHBOARD_STYLE_FLOATING
+                                    securePrefs.setDashboardStyle(DASHBOARD_STYLE_FLOATING)
+                                    Toast.makeText(context, "Apple Floating Dashboard applied", Toast.LENGTH_SHORT).show()
+                                }
+                                .padding(12.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "🍎 Apple Floating",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isFloating) currentAccent.primary else AppWhite
+                                    )
+                                    if (isFloating) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = "Active",
+                                            tint = currentAccent.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+
+                                // Interactive mini-preview of floating island
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0xFF0C0C12))
+                                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(32.dp)
+                                            .appleGlassDock(shape = RoundedCornerShape(16.dp), elevation = 4.dp, isDark = true)
+                                            .padding(horizontal = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(16.dp)
+                                                .clip(CircleShape)
+                                                .background(Color.White.copy(alpha = 0.15f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("+", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                        Text(
+                                            text = "Ask anything...",
+                                            color = AppMuted,
+                                            fontSize = 9.sp
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .size(18.dp)
+                                                .clip(CircleShape)
+                                                .background(currentAccent.primary),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(9.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Text(
+                                    text = "Liquid translucent glass with depth & specular rim",
+                                    color = AppMuted,
+                                    fontSize = 10.sp,
+                                    lineHeight = 13.sp
+                                )
+                            }
+                        }
+
+                        // Card 2: Classic Fixed Dock
+                        val isFixed = dashboardStyle == DASHBOARD_STYLE_FIXED
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(if (isFixed) currentAccent.primary.copy(alpha = 0.12f) else AppCard)
+                                .border(
+                                    width = if (isFixed) 2.dp else 1.dp,
+                                    color = if (isFixed) currentAccent.primary else AppBorder,
+                                    shape = RoundedCornerShape(18.dp)
+                                )
+                                .bouncyClickable(provideHaptic = true) {
+                                    dashboardStyle = DASHBOARD_STYLE_FIXED
+                                    securePrefs.setDashboardStyle(DASHBOARD_STYLE_FIXED)
+                                    Toast.makeText(context, "Fixed Dock applied", Toast.LENGTH_SHORT).show()
+                                }
+                                .padding(12.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "⚓ Fixed Dock",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isFixed) currentAccent.primary else AppWhite
+                                    )
+                                    if (isFixed) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = "Active",
+                                            tint = currentAccent.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+
+                                // Interactive mini-preview of fixed dock
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0xFF0C0C12)),
+                                    contentAlignment = Alignment.BottomCenter
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(30.dp)
+                                            .background(Color(0xFF191922))
+                                            .border(width = 0.5.dp, color = AppBorder, shape = androidx.compose.ui.graphics.RectangleShape)
+                                            .padding(horizontal = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "Ask anything...",
+                                            color = AppMuted,
+                                            fontSize = 9.sp
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .size(18.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(currentAccent.primary),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(9.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Text(
+                                    text = "Flush edge-to-edge bar docked to bottom screen margin",
+                                    color = AppMuted,
+                                    fontSize = 10.sp,
+                                    lineHeight = 13.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ═══════════════════════════════════════════════
+            // 7. DISPLAY REFRESH RATE (60Hz – 144Hz Variable)
             // ═══════════════════════════════════════════════
             item {
                 Row(

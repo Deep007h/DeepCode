@@ -835,8 +835,8 @@ class RuntimeInstaller(private val context: Context) {
             |        headers["x-opencode-session"] = sid
             |        headers["x-opencode-request"] = rid
             |        headers["x-session-affinity"] = sid
-            |        if api_key and api_key != "zen-free":
-            |            headers["Authorization"] = f"Bearer {api_key}"
+            |        auth_key = api_key if (api_key and api_key != "zen-free") else "zen-free"
+            |        headers["Authorization"] = f"Bearer {auth_key}"
             |    elif provider == "openrouter":
             |        headers["User-Agent"] = "DeepCode-Hermes/$HERMES_VERSION"
             |        headers["HTTP-Referer"] = "https://deepcode.ai"
@@ -998,84 +998,76 @@ class RuntimeInstaller(private val context: Context) {
             |                print(json.dumps({"event": event_type, "text": text}), flush=True)
             |                has_streamed = True
             |    except Exception as stream_err:
-            |        if not has_streamed:
-            |            # Check if upstream returned 402/401/429 and we can fall over to OpenCode Zen
-            |            is_failover_candidate = False
-            |            if isinstance(stream_err, urllib.error.HTTPError):
-            |                if stream_err.code in (401, 402, 403, 429):
-            |                    is_failover_candidate = True
-            |            elif hasattr(stream_err, "code") and getattr(stream_err, "code") in (401, 402, 403, 429):
-            |                is_failover_candidate = True
+            |        pass
             |
-            |            if is_failover_candidate and provider != "opencode_zen":
-            |                print(f"[Thought] Provider {provider} returned error ({stream_err}). Auto-failing over to OpenCode Zen free tier...", flush=True)
-            |                provider = "opencode_zen"
-            |                base_url = "https://opencode.ai/zen/v1"
-            |                api_key = "zen-free"
-            |                model = "mimo-v2.5-free"
-            |                url = build_url(provider, base_url)
-            |                session_id = generate_session_id()
-            |                request_id = generate_request_id()
-            |                headers = build_headers(provider, api_key, session_id, request_id)
-            |                payload = build_payload(provider, model, prompt, stream=True)
+            |    if not has_streamed:
+            |        zen_candidates = [
+            |            ("https://opencode.ai/zen/v1/chat/completions", "mimo-v2.5-free"),
+            |            ("https://opencode.ai/zen/v1/chat/completions", "ling-3.0-flash-fin-free"),
+            |            ("https://opencode.ai/zen/go/v1/chat/completions", "mimo-v2.5-free"),
+            |            ("https://opencode.ai/zen/go/v1/chat/completions", "nemotron-3-ultra-free"),
+            |        ]
+            |
+            |        if provider != "opencode_zen":
+            |            print(f"[Thought] Primary provider ({provider}) returned error or credit exhaustion. Auto-failing over to OpenCode Zen free tier...", flush=True)
+            |            for z_url, z_model in zen_candidates:
+            |                z_sid = generate_session_id()
+            |                z_rid = generate_request_id()
+            |                z_headers = build_headers("opencode_zen", "zen-free", z_sid, z_rid)
+            |                z_payload = build_payload("opencode_zen", z_model, prompt, stream=True)
             |                try:
-            |                    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
-            |                    with execute_http_request(req, timeout=90) as response:
-            |                        for event_type, text in parse_openai_stream(response):
+            |                    z_req = urllib.request.Request(z_url, data=json.dumps(z_payload).encode("utf-8"), headers=z_headers, method="POST")
+            |                    with execute_http_request(z_req, timeout=45) as z_resp:
+            |                        for event_type, text in parse_openai_stream(z_resp):
             |                            print(json.dumps({"event": event_type, "text": text}), flush=True)
             |                            has_streamed = True
+            |                        if has_streamed:
+            |                            return
             |                except Exception:
             |                    pass
             |
-            |            if not has_streamed:
-            |                # Retry without streaming
-            |                payload["stream"] = False
-            |                if provider == "opencode_zen":
-            |                    request_id = generate_request_id()
-            |                    headers["x-opencode-request"] = request_id
-            |                try:
-            |                    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
-            |                    with execute_http_request(req, timeout=90) as response:
-            |                        res_data = json.loads(response.read().decode("utf-8"))
-            |                        if provider == "anthropic":
-            |                            content_blocks = res_data.get("content", [])
-            |                            content = "".join(b.get("text", "") for b in content_blocks if b.get("type") == "text")
-            |                        else:
-            |                            content = res_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            |                        if content:
-            |                            print(content, flush=True)
-            |                        else:
-            |                            print("Hermes Agent: Received empty response from model.", flush=True)
-            |                except urllib.error.HTTPError as http_err:
-            |                    err_body = ""
-            |                    try:
-            |                        err_body = http_err.read().decode("utf-8")
-            |                    except Exception:
-            |                        pass
-            |                    # If non-Zen failed with payment/auth, attempt one last Zen free call
-            |                    if provider != "opencode_zen" and (http_err.code in (401, 402, 403, 429) or "credit" in err_body.lower() or "payment" in err_body.lower()):
-            |                        print(f"[Thought] Retrying via OpenCode Zen free tier...", flush=True)
-            |                        try:
-            |                            z_sid = generate_session_id()
-            |                            z_rid = generate_request_id()
-            |                            z_headers = build_headers("opencode_zen", "zen-free", z_sid, z_rid)
-            |                            z_payload = build_payload("opencode_zen", "mimo-v2.5-free", prompt, stream=False)
-            |                            z_url = "https://opencode.ai/zen/v1/chat/completions"
-            |                            z_req = urllib.request.Request(z_url, data=json.dumps(z_payload).encode("utf-8"), headers=z_headers, method="POST")
-            |                            with execute_http_request(z_req, timeout=90) as z_resp:
-            |                                z_data = json.loads(z_resp.read().decode("utf-8"))
-            |                                z_content = z_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            |                                if z_content:
-            |                                    print(z_content, flush=True)
-            |                                    return
-            |                        except Exception:
-            |                            pass
-            |                    print(f"[Thought] Operating in local autonomous execution mode...", flush=True)
-            |                    detail = f"{http_err} ({err_body})" if err_body else str(http_err)
-            |                    print(f"**Hermes Agent (Offline Autonomous Mode)**\n\nCompleted inspection for prompt: *{prompt}*\n\nStatus: Runtime active in `/workspace`. Remote endpoint: {detail}", flush=True)
-            |                except Exception as e:
-            |                    print(f"[Thought] Operating in local autonomous execution mode...", flush=True)
-            |                    print(f"**Hermes Agent (Offline Autonomous Mode)**\n\nCompleted inspection for prompt: *{prompt}*\n\nStatus: Runtime active in `/workspace`. Remote endpoint: {e}", flush=True)
+            |        # If still not streamed, attempt non-streaming requests
+            |        payload["stream"] = False
+            |        if provider == "opencode_zen":
+            |            session_id = generate_session_id()
+            |            request_id = generate_request_id()
+            |            headers = build_headers(provider, api_key, session_id, request_id)
+            |        try:
+            |            req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+            |            with execute_http_request(req, timeout=60) as response:
+            |                res_data = json.loads(response.read().decode("utf-8"))
+            |                if provider == "anthropic":
+            |                    content_blocks = res_data.get("content", [])
+            |                    content = "".join(b.get("text", "") for b in content_blocks if b.get("type") == "text")
+            |                else:
+            |                    content = res_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            |                if content:
+            |                    print(content, flush=True)
+            |                    return
+            |        except Exception:
+            |            pass
+            |
+            |        # Last resort fallback: OpenCode Zen non-streaming candidates
+            |        for z_url, z_model in zen_candidates:
+            |            try:
+            |                z_sid = generate_session_id()
+            |                z_rid = generate_request_id()
+            |                z_headers = build_headers("opencode_zen", "zen-free", z_sid, z_rid)
+            |                z_payload = build_payload("opencode_zen", z_model, prompt, stream=False)
+            |                z_req = urllib.request.Request(z_url, data=json.dumps(z_payload).encode("utf-8"), headers=z_headers, method="POST")
+            |                with execute_http_request(z_req, timeout=45) as z_resp:
+            |                    z_data = json.loads(z_resp.read().decode("utf-8"))
+            |                    z_content = z_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            |                    if z_content:
+            |                        print(z_content, flush=True)
+            |                        return
+            |            except Exception:
+            |                pass
+            |
+            |        # If all remote endpoints fail, write error to stderr and exit 1
+            |        # so HermesRuntimeBridge catches non-zero exit and triggers Direct In-App Engine fallback!
+            |        sys.stderr.write(f"Hermes Agent Error: All remote model endpoints failed or exhausted credits. Engaging Direct Engine fallback.\n")
+            |        sys.exit(1)
             |
             |if __name__ == "__main__":
             |    main()
@@ -2427,7 +2419,7 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
         const val HERMES_GUEST_PATH = "/usr/local/bin/hermes"
         const val GITHUB_CLI_GUEST_PATH = "/root/.local/bin/gh"
         private const val AGY_VERSION = "1.1.27"
-        internal const val HERMES_VERSION = "0.5.1"
+        internal const val HERMES_VERSION = "0.5.2"
         private const val AGY_RELEASE_URL = "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.1.27-5211191891591168/linux-arm/cli_linux_arm64.tar.gz"
         private const val AGY_RELEASE_SHA512 = "ed45f6930785aa4b42f14e07ace1c9d91a94fb76e760f54acbd7d3d3951e1f957fd456a0dae2a3124dd9a3b689bf7afb7c9303a3e4ba95037fc10063424d9bf9"
         private const val GITHUB_CLI_VERSION = "2.100.0"
