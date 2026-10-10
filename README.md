@@ -12,16 +12,17 @@
 
 <br/>
 
-[![Latest Release](https://img.shields.io/badge/Release-v2.0-22c55e?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Deep007h/DeepCode/releases/tag/v2.0)
-[![Platform](https://img.shields.io/badge/Android-API%2026%2B%20(8.0--15)-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
+[![Latest Release](https://img.shields.io/badge/Release-v2.0.2-22c55e?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Deep007h/DeepCode/releases/tag/v2.0.2)
+[![Download APK](https://img.shields.io/badge/Download%20APK-v2.0.2%20(21%20MB)-F97316?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Deep007h/DeepCode/releases/download/v2.0.2/DeepCode-v2.0.2.apk)
+[![Platform](https://img.shields.io/badge/Android-API%2026%2B%20(8.0--16)-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0%2B-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/UI-Jetpack%20Compose%20M3-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
-[![Cross-Chat Memory](https://img.shields.io/badge/Memory-SQLite%20FTS4-F59E0B?style=for-the-badge&logo=sqlite&logoColor=white)](https://github.com/Deep007h/DeepCode)
+<a href="https://github.com/Deep007h/DeepCode"><img src="https://counterapi.com/counter.svg?key=DeepCode&color=F97316&style=for-the-badge&label=VIEWS&startNumber=185" alt="Views" /></a>
 [![License](https://img.shields.io/badge/License-MIT-gray?style=for-the-badge)](LICENSE)
 
 <p align="center">
   <a href="#-interface-preview"><b>Interface</b></a> •
-  <a href="#-whats-new-in-v20"><b>What's New</b></a> •
+  <a href="#-whats-new-in-v202"><b>What's New</b></a> •
   <a href="#-key-features"><b>Features</b></a> •
   <a href="#-cross-chat-long-term-memory"><b>Memory System</b></a> •
   <a href="#-ai-providers--model-matrix"><b>AI Providers</b></a> •
@@ -61,10 +62,33 @@ Whether you need to generate multi-file codebases, audit repositories, run multi
 
 ---
 
-## ⚡ What's New in v2.0
+## ⚡ What's New in v2.0.2
 
 <details open>
-<summary><b>✨ Highlights of Release 2.0 (Current)</b></summary>
+<summary><b>✨ Highlights of Release 2.0.2 (Current)</b></summary>
+<br/>
+
+- 🍎 **Apple-Style Floating Island Dashboard & Dock**:
+  - **Fluid Liquid Glassmorphism**: Built custom `Modifier.appleGlassDock` with frosted translucent acrylic backing, specular top refraction gradient rim (`highlightAlpha = 0.28f`), diffused elevation drop shadows, and 32dp continuous pill geometry.
+  - **Settings Toggle & Live Interactive Preview**: New "Dashboard & Input Bar Style" section in **Settings > Theme & Wallpapers** with selectable **Apple Floating Island** vs **Classic Fixed Dock** cards and instant real-time live preview.
+  - **Adaptive Keyboard Insets**: Floating dock tracks IME keyboard elevation smoothly with comfortable floating margins above system gesture navigation bars.
+
+- ⚡ **Hermes Runner v0.5.2 & Multi-Engine Resiliency**:
+  - **Critical Process Exit Handling**: Fixed exit condition in `HermesRuntimeBridge` (`if (exit == 0 && !userStopRequested)`) ensuring process errors and unhandled exceptions are no longer swallowed.
+  - **OpenCode Zen Multi-Endpoint Failover**: Added multi-endpoint failover (`zen/v1` and `zen/go/v1`) across free models (`mimo-v2.5-free`, `ling-3.0-flash-fin-free`, `nemotron-3-ultra-free`) with automatic `Authorization: Bearer <key or zen-free>`.
+  - **Automatic Fallback to Direct In-App Engine**: Runtime failures now cleanly emit `SessionFailed`, triggering an instant, non-crashing fallback to the Direct In-App Engine.
+
+- 🛡️ **OpenCode Zen Wire Protocol Headers & Decoy Tools**:
+  - Injected upstream verification headers (`x-opencode-client: cli`, `x-opencode-project: global`, canonical Bun runtime `User-Agent`, session and request IDs) in `OrchestratorEngine` and `AgentRuntime`.
+  - Added cloaked decoy tool definitions (`bash` / `read`) satisfying OpenCode Zen free-tier verification.
+
+- 🧠 **Cerebras Provider Support**:
+  - Added unified provider alias resolution supporting both `Cerebras` and `Cerebrus` across all execution engines.
+
+</details>
+
+<details>
+<summary><b>📜 Highlights of Release 2.0</b></summary>
 <br/>
 
 - 🪽 **Nous Research Hermes Agent Integration**:
