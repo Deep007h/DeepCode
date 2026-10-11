@@ -381,16 +381,26 @@ fun ThemesAndWallpapersScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     previewTabs.forEach { (label, icon, isSelected) ->
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            modifier = Modifier.padding(vertical = 2.dp)
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 10.dp, bottomEnd = 10.dp))
+                                                .background(if (isSelected) currentAccent.primary.copy(alpha = 0.24f) else Color.Transparent)
+                                                .border(
+                                                    width = if (isSelected) 0.8.dp else 0.dp,
+                                                    brush = Brush.verticalGradient(
+                                                        listOf(
+                                                            Color.White.copy(alpha = if (isSelected) 0.40f else 0f),
+                                                            Color.White.copy(alpha = if (isSelected) 0.08f else 0f)
+                                                        )
+                                                    ),
+                                                    shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
+                                                )
+                                                .padding(vertical = 3.dp),
+                                            contentAlignment = Alignment.Center
                                         ) {
-                                            Box(
-                                                contentAlignment = Alignment.Center,
-                                                modifier = Modifier
-                                                    .size(width = 38.dp, height = 24.dp)
-                                                    .clip(RoundedCornerShape(12.dp))
-                                                    .background(if (isSelected) currentAccent.primary.copy(alpha = 0.22f) else Color.Transparent)
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally
                                             ) {
                                                 Icon(
                                                     imageVector = icon,
@@ -398,13 +408,14 @@ fun ThemesAndWallpapersScreen(
                                                     tint = if (isSelected) currentAccent.primary else AppMuted,
                                                     modifier = Modifier.size(16.dp)
                                                 )
+                                                Spacer(modifier = Modifier.height(1.dp))
+                                                Text(
+                                                    text = label,
+                                                    fontSize = 8.5.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSelected) currentAccent.primary else AppMuted
+                                                )
                                             }
-                                            Text(
-                                                text = label,
-                                                fontSize = 8.5.sp,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (isSelected) currentAccent.primary else AppMuted
-                                            )
                                         }
                                     }
                                 }
@@ -1063,9 +1074,11 @@ fun ThemesAndWallpapersScreen(
                                         Icon(imageVector = Icons.Default.Home, contentDescription = null, tint = AppMuted, modifier = Modifier.size(13.dp))
                                         Box(
                                             modifier = Modifier
-                                                .size(width = 24.dp, height = 18.dp)
-                                                .clip(RoundedCornerShape(9.dp))
-                                                .background(currentAccent.primary.copy(alpha = 0.25f)),
+                                                .width(28.dp)
+                                                .height(26.dp)
+                                                .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 5.dp, bottomEnd = 5.dp))
+                                                .background(currentAccent.primary.copy(alpha = 0.25f))
+                                                .border(0.5.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 5.dp, bottomEnd = 5.dp)),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(imageVector = Icons.AutoMirrored.Filled.Chat, contentDescription = null, tint = currentAccent.primary, modifier = Modifier.size(12.dp))
@@ -1077,7 +1090,7 @@ fun ThemesAndWallpapersScreen(
                                 }
 
                                 Text(
-                                    text = "Liquid jiggle glass bubble with drag & spring release",
+                                    text = "Riceball glass bubble covering icon & tab with drag & spring release",
                                     color = AppMuted,
                                     fontSize = 10.sp,
                                     lineHeight = 13.sp

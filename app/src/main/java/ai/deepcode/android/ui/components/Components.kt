@@ -97,6 +97,7 @@ import ai.deepcode.android.ui.chat.StreamingActiveCursor
 import ai.deepcode.android.data.local.DASHBOARD_STYLE_FLOATING
 import ai.deepcode.android.data.local.DASHBOARD_STYLE_FIXED
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -507,9 +508,17 @@ fun IntegrationIcon(
     }
 }
 
-private const val JIGGLE_STRETCH = 0.22f
+private const val JIGGLE_STRETCH = 0.16f
 private const val JIGGLE_SQUASH = 0.50f
 private val JiggleSpring = spring<Float>(dampingRatio = 0.72f, stiffness = 320f)
+
+// 🍙 Riceball shape: tightly rounded at the top around the icon, softly rounded and broader at the bottom around the text
+private val RiceballShape = RoundedCornerShape(
+    topStart = 20.dp,
+    topEnd = 20.dp,
+    bottomStart = 15.dp,
+    bottomEnd = 15.dp
+)
 
 @Composable
 fun BottomNavBar(
@@ -614,13 +623,21 @@ private fun LiquidJiggleTabBar(
     val currentActiveTab by rememberUpdatedState(activeTab)
     val currentOnTabSelected by rememberUpdatedState(onTabSelected)
 
+    var isDragging by remember { mutableStateOf(false) }
+    var dragAnchorTab by remember { mutableIntStateOf(activeTab) }
+    var targetTab by remember { mutableIntStateOf(activeTab) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
     var rowSize by remember { mutableStateOf(IntSize.Zero) }
     var lastHapticTab by remember { mutableIntStateOf(activeTab) }
+    var isMeasured by remember { mutableStateOf(false) }
     val density = LocalDensity.current
 
     LaunchedEffect(activeTab) {
-        dragOffset = 0f
+        if (!isDragging) {
+            targetTab = activeTab
+            dragAnchorTab = activeTab
+            dragOffset = 0f
+        }
         lastHapticTab = activeTab
     }
 
@@ -630,25 +647,39 @@ private fun LiquidJiggleTabBar(
     val tabStepPx = tabWidthPx
 
     val pillTargetPx = if (tabStepPx > 0f) {
-        activeTab * tabStepPx + dragOffset
+        if (isDragging) {
+            dragAnchorTab * tabStepPx + dragOffset
+        } else {
+            targetTab * tabStepPx
+        }
     } else 0f
 
+    // Snap on first layout frame to prevent startup slide jitter, then spring for user actions
+    val animSpec = if (!isMeasured) snap() else JiggleSpring
     val animatedPillOffset by androidx.compose.animation.core.animateFloatAsState(
         targetValue = pillTargetPx,
-        animationSpec = JiggleSpring,
+        animationSpec = animSpec,
         label = "jigglePillOffset"
     )
 
-    // Liquid lag: 0 at rest, approaching 1 under drag or rapid spring travel
-    val lag = if (tabStepPx > 0f) {
-        (abs(pillTargetPx - animatedPillOffset) / tabStepPx).coerceIn(0f, 1f)
+    LaunchedEffect(tabStepPx) {
+        if (tabStepPx > 0f && !isMeasured) {
+            kotlinx.coroutines.delay(60)
+            isMeasured = true
+        }
+    }
+
+    // Liquid lag with deadzone: 0 at rest & within 6px of arrival (completely eliminates arrival vibration jitter)
+    val distance = abs(pillTargetPx - animatedPillOffset)
+    val lag = if (tabStepPx > 0f && distance > 6f) {
+        ((distance - 6f) / tabStepPx).coerceIn(0f, 1f)
     } else 0f
 
     Box(
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = Alignment.CenterStart
     ) {
-        // 💧 Liquid Jiggling Selection Capsule / Circular Bubble
+        // 🍙 Liquid Riceball Selection Capsule covering whole logo + tab
         if (tabWidthPx > 0f) {
             Box(
                 modifier = Modifier
@@ -656,7 +687,6 @@ private fun LiquidJiggleTabBar(
                     .height(with(density) { rowSize.height.toDp() })
                     .graphicsLayer {
                         translationX = animatedPillOffset
-                        // Stretch horizontally in the direction of motion, squash vertically
                         scaleX = 1f + lag * JIGGLE_STRETCH
                         scaleY = 1f - lag * JIGGLE_STRETCH * JIGGLE_SQUASH
                     },
@@ -664,19 +694,20 @@ private fun LiquidJiggleTabBar(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(width = 50.dp, height = 40.dp)
+                        .fillMaxSize()
+                        .padding(horizontal = 3.dp, vertical = 2.dp)
                         .shadow(
-                            elevation = 2.dp,
-                            shape = RoundedCornerShape(20.dp),
-                            spotColor = AppPrimary.copy(alpha = if (isDark) 0.45f else 0.20f),
-                            ambientColor = AppPrimary.copy(alpha = if (isDark) 0.20f else 0.08f)
+                            elevation = 3.dp,
+                            shape = RiceballShape,
+                            spotColor = AppPrimary.copy(alpha = if (isDark) 0.45f else 0.22f),
+                            ambientColor = AppPrimary.copy(alpha = if (isDark) 0.22f else 0.10f)
                         )
-                        .clip(RoundedCornerShape(20.dp))
+                        .clip(RiceballShape)
                         .background(
                             Brush.verticalGradient(
                                 listOf(
-                                    AppPrimary.copy(alpha = 0.28f),
-                                    AppPrimary.copy(alpha = 0.10f)
+                                    AppPrimary.copy(alpha = if (isDark) 0.32f else 0.22f),
+                                    AppPrimary.copy(alpha = if (isDark) 0.14f else 0.08f)
                                 )
                             )
                         )
@@ -684,11 +715,11 @@ private fun LiquidJiggleTabBar(
                             width = 1.dp,
                             brush = Brush.verticalGradient(
                                 listOf(
-                                    Color.White.copy(alpha = if (isDark) 0.35f else 0.85f),
-                                    Color.White.copy(alpha = if (isDark) 0.05f else 0.20f)
+                                    Color.White.copy(alpha = if (isDark) 0.40f else 0.85f),
+                                    Color.White.copy(alpha = if (isDark) 0.08f else 0.25f)
                                 )
                             ),
-                            shape = RoundedCornerShape(20.dp)
+                            shape = RiceballShape
                         )
                 )
             }
@@ -699,56 +730,68 @@ private fun LiquidJiggleTabBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .onSizeChanged { rowSize = it }
-                .pointerInput(tabCount, tabStepPx) {
-                    if (tabCount <= 0 || tabStepPx <= 0f) return@pointerInput
+                .pointerInput(tabCount) {
+                    if (tabCount <= 0) return@pointerInput
 
                     var totalDrag = 0f
                     detectHorizontalDragGestures(
                         onDragStart = {
                             totalDrag = 0f
-                        },
-                        onDragCancel = {
+                            isDragging = true
+                            dragAnchorTab = currentActiveTab
                             dragOffset = 0f
                         },
+                        onDragCancel = {
+                            isDragging = false
+                            dragOffset = 0f
+                            targetTab = currentActiveTab
+                        },
                         onDragEnd = {
-                            if (tabStepPx > 0f) {
-                                val ratio = totalDrag / tabStepPx
+                            val currentStepPx = if (rowSize.width > 0) rowSize.width.toFloat() / tabCount else 0f
+                            if (currentStepPx > 0f) {
+                                val ratio = totalDrag / currentStepPx
                                 val shift = when {
                                     ratio > 0.35f -> max(1, ratio.roundToInt())
                                     ratio < -0.35f -> min(-1, ratio.roundToInt())
                                     else -> 0
                                 }
-                                val newIndex = (currentActiveTab + shift).coerceIn(0, tabCount - 1)
+                                val newIndex = (dragAnchorTab + shift).coerceIn(0, tabCount - 1)
+                                targetTab = newIndex
                                 if (newIndex != currentActiveTab) {
                                     try {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     } catch (_: Exception) {}
                                     currentOnTabSelected(newIndex)
                                 }
+                            } else {
+                                targetTab = currentActiveTab
                             }
+                            isDragging = false
                             dragOffset = 0f
                         },
                         onHorizontalDrag = { _, delta ->
                             totalDrag += delta
-                            // HyperOS / iOS end-of-dock rubber-band resistance
-                            val rawPx = when {
-                                totalDrag > 0 && currentActiveTab == tabCount - 1 -> totalDrag * 0.25f
-                                totalDrag < 0 && currentActiveTab == 0 -> totalDrag * 0.25f
-                                else -> totalDrag
-                            }
-                            dragOffset = rawPx
+                            val currentStepPx = if (rowSize.width > 0) rowSize.width.toFloat() / tabCount else 0f
+                            if (currentStepPx > 0f) {
+                                val maxPx = (tabCount - 1) * currentStepPx
+                                val desiredPx = dragAnchorTab * currentStepPx + totalDrag
+                                val clampedPx = when {
+                                    desiredPx < 0f -> desiredPx * 0.25f
+                                    desiredPx > maxPx -> maxPx + (desiredPx - maxPx) * 0.25f
+                                    else -> desiredPx
+                                }
+                                dragOffset = clampedPx - dragAnchorTab * currentStepPx
 
-                            val approxTab = if (tabStepPx > 0f) {
-                                (currentActiveTab + dragOffset / tabStepPx)
+                                val approxTab = (clampedPx / currentStepPx)
                                     .coerceIn(0f, (tabCount - 1).toFloat())
                                     .roundToInt()
-                            } else currentActiveTab
 
-                            if (approxTab != lastHapticTab) {
-                                try {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                } catch (_: Exception) {}
-                                lastHapticTab = approxTab
+                                if (approxTab != lastHapticTab) {
+                                    try {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    } catch (_: Exception) {}
+                                    lastHapticTab = approxTab
+                                }
                             }
                         }
                     )
@@ -757,61 +800,79 @@ private fun LiquidJiggleTabBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             tabs.forEach { tab ->
-                val isActive = tab.index == activeTab
-                val animatedTint by androidx.compose.animation.animateColorAsState(
-                    targetValue = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                    animationSpec = androidx.compose.animation.core.tween(180),
-                    label = "navTint_${tab.index}"
+                LiquidTabItem(
+                    tab = tab,
+                    isActive = tab.index == activeTab,
+                    haptic = haptic,
+                    onTabSelected = onTabSelected,
+                    modifier = Modifier.weight(1f)
                 )
-                val scale = androidx.compose.animation.core.animateFloatAsState(
-                    targetValue = if (isActive) 1.08f else 1.0f,
-                    animationSpec = JiggleSpring,
-                    label = "navScale_${tab.index}"
-                )
-
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable(
-                            interactionSource = remember(tab.index) { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            if (!isActive) {
-                                try {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                } catch (_: Exception) {}
-                            }
-                            onTabSelected(tab.index)
-                        }
-                        .padding(vertical = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Box(
-                        modifier = Modifier.size(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = tab.icon,
-                            contentDescription = tab.label,
-                            tint = animatedTint,
-                            modifier = Modifier
-                                .size(20.dp)
-                                .graphicsLayer {
-                                    scaleX = scale.value
-                                    scaleY = scale.value
-                                }
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Text(
-                        text = tab.label,
-                        fontSize = 10.sp,
-                        fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                        color = animatedTint
-                    )
-                }
             }
         }
+    }
+}
+
+@Composable
+private fun LiquidTabItem(
+    tab: BottomNavTab,
+    isActive: Boolean,
+    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback,
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val animatedTint by androidx.compose.animation.animateColorAsState(
+        targetValue = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f),
+        animationSpec = androidx.compose.animation.core.tween(160),
+        label = "navTint_${tab.index}"
+    )
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isActive) 1.05f else 1.0f,
+        animationSpec = androidx.compose.animation.core.tween(160, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        label = "navScale_${tab.index}"
+    )
+
+    Column(
+        modifier = modifier
+            .clip(RiceballShape)
+            .clickable(
+                interactionSource = remember(tab.index) { MutableInteractionSource() },
+                indication = null
+            ) {
+                if (!isActive) {
+                    try {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    } catch (_: Exception) {}
+                }
+                onTabSelected(tab.index)
+            }
+            .padding(vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier.size(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = tab.icon,
+                contentDescription = tab.label,
+                tint = animatedTint,
+                modifier = Modifier
+                    .size(20.dp)
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    }
+            )
+        }
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = tab.label,
+            fontSize = 10.sp,
+            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+            color = animatedTint,
+            maxLines = 1
+        )
     }
 }
 
