@@ -406,6 +406,7 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
     val showTerminal by appState.showTerminal.collectAsStateWithLifecycle()
     val showWebPreview by appState.showWebPreview.collectAsStateWithLifecycle()
     val showLinuxSubsystem by appState.showLinuxSubsystem.collectAsStateWithLifecycle()
+    val dashboardStyle by repository.securePrefs.dashboardStyleFlow.collectAsStateWithLifecycle()
 
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -993,10 +994,11 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                         appState.setShowMemorySettings(false)
                         appState.setShowPlugins(false)
                         appState.selectTab(index)
-                    }
+                    },
+                    dashboardStyle = dashboardStyle
                 )
             },
-            containerColor = AppScreenBg
+            containerColor = Color.Transparent
         ) { padding ->
             val layoutDirection = LocalLayoutDirection.current
             val cachedBottomBarHeight = remember(padding) {

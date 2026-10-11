@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -349,103 +350,111 @@ fun ThemesAndWallpapersScreen(
                             }
                         }
 
-                        // Dynamic Mock Input Bar (Apple Floating Island vs Fixed Dock)
+                        // Dynamic Mock Bottom Dashboard (Apple Floating Island vs Fixed Dock)
                         val isFloatingPreview = dashboardStyle == DASHBOARD_STYLE_FLOATING
+                        val previewTabs = listOf(
+                            Triple("Dashboard", Icons.Default.Home, false),
+                            Triple("Chat", Icons.AutoMirrored.Filled.Chat, true),
+                            Triple("Automations", Icons.Default.Schedule, false),
+                            Triple("Connections", Icons.Default.Link, false),
+                            Triple("Settings", Icons.Default.Settings, false)
+                        )
+
                         if (isFloatingPreview) {
-                            // Apple-style Floating Island Pill
-                            Row(
+                            // Apple-style Floating Island Glass Dock
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(44.dp)
-                                    .appleGlassDock(shape = RoundedCornerShape(26.dp), elevation = 6.dp, isDark = isDarkThemeActive)
-                                    .padding(horizontal = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Box(
+                                Row(
                                     modifier = Modifier
-                                        .size(24.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isDarkThemeActive) Color.White.copy(alpha = 0.12f) else Color.Black.copy(alpha = 0.08f)),
-                                    contentAlignment = Alignment.Center
+                                        .fillMaxWidth()
+                                        .appleGlassDock(
+                                            shape = RoundedCornerShape(22.dp),
+                                            elevation = 6.dp,
+                                            isDark = isDarkThemeActive
+                                        )
+                                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceEvenly,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        text = "+",
-                                        color = if (isDarkThemeActive) Color.White else Color.Black,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = "Ask anything...",
-                                    color = AppMuted,
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.Mic,
-                                    contentDescription = "Voice",
-                                    tint = AppMuted,
-                                    modifier = Modifier.size(17.dp)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .size(28.dp)
-                                        .clip(CircleShape)
-                                        .background(currentAccent.primary),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Send,
-                                        contentDescription = "Send",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(13.dp)
-                                    )
+                                    previewTabs.forEach { (label, icon, isSelected) ->
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            modifier = Modifier.padding(vertical = 2.dp)
+                                        ) {
+                                            Box(
+                                                contentAlignment = Alignment.Center,
+                                                modifier = Modifier
+                                                    .size(width = 38.dp, height = 24.dp)
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(if (isSelected) currentAccent.primary.copy(alpha = 0.22f) else Color.Transparent)
+                                            ) {
+                                                Icon(
+                                                    imageVector = icon,
+                                                    contentDescription = label,
+                                                    tint = if (isSelected) currentAccent.primary else AppMuted,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                            Text(
+                                                text = label,
+                                                fontSize = 8.5.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) currentAccent.primary else AppMuted
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         } else {
-                            // Classic Fixed Dock Preview
-                            Row(
+                            // Classic Fixed Bottom Dock Preview
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(44.dp)
                                     .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
-                                    .background(if (isDarkThemeActive) Color(0xFF14141C) else Color(0xFFE8E8EE))
+                                    .background(if (isDarkThemeActive) Color(0xFF14141A) else Color(0xFFEAEAEE))
                                     .border(
-                                        width = 1.dp,
-                                        color = if (isDarkThemeActive) Color(0xFF272733) else Color(0xFFD6D6DC),
+                                        width = 0.5.dp,
+                                        color = if (isDarkThemeActive) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f),
                                         shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
                                     )
-                                    .padding(horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(vertical = 4.dp)
                             ) {
-                                Text(
-                                    text = "Ask anything...",
-                                    color = AppMuted,
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.Mic,
-                                    contentDescription = "Voice",
-                                    tint = AppMuted,
-                                    modifier = Modifier.size(17.dp)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .size(26.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(currentAccent.primary),
-                                    contentAlignment = Alignment.Center
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceEvenly,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Send,
-                                        contentDescription = "Send",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(12.dp)
-                                    )
+                                    previewTabs.forEach { (label, icon, isSelected) ->
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            modifier = Modifier.padding(vertical = 2.dp)
+                                        ) {
+                                            Box(
+                                                contentAlignment = Alignment.Center,
+                                                modifier = Modifier
+                                                    .size(width = 38.dp, height = 24.dp)
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(if (isSelected) currentAccent.primary.copy(alpha = 0.22f) else Color.Transparent)
+                                            ) {
+                                                Icon(
+                                                    imageVector = icon,
+                                                    contentDescription = label,
+                                                    tint = if (isSelected) currentAccent.primary else AppMuted,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                            Text(
+                                                text = label,
+                                                fontSize = 8.5.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) currentAccent.primary else AppMuted
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -957,7 +966,7 @@ fun ThemesAndWallpapersScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Dashboard & Input Bar Style",
+                            text = "Bottom Dashboard Style",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             color = AppWhite
@@ -1032,53 +1041,38 @@ fun ThemesAndWallpapersScreen(
                                     }
                                 }
 
-                                // Interactive mini-preview of floating island
+                                // Interactive mini-preview of floating island dock
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(48.dp)
                                         .clip(RoundedCornerShape(12.dp))
                                         .background(Color(0xFF0C0C12))
-                                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                                        .padding(horizontal = 4.dp, vertical = 6.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(32.dp)
-                                            .appleGlassDock(shape = RoundedCornerShape(16.dp), elevation = 4.dp, isDark = true)
-                                            .padding(horizontal = 8.dp),
+                                            .height(34.dp)
+                                            .appleGlassDock(shape = RoundedCornerShape(17.dp), elevation = 4.dp, isDark = true)
+                                            .padding(horizontal = 6.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                        horizontalArrangement = Arrangement.SpaceEvenly
                                     ) {
+                                        Icon(imageVector = Icons.Default.Home, contentDescription = null, tint = AppMuted, modifier = Modifier.size(13.dp))
                                         Box(
                                             modifier = Modifier
-                                                .size(16.dp)
-                                                .clip(CircleShape)
-                                                .background(Color.White.copy(alpha = 0.15f)),
+                                                .size(width = 24.dp, height = 18.dp)
+                                                .clip(RoundedCornerShape(9.dp))
+                                                .background(currentAccent.primary.copy(alpha = 0.25f)),
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            Text("+", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            Icon(imageVector = Icons.AutoMirrored.Filled.Chat, contentDescription = null, tint = currentAccent.primary, modifier = Modifier.size(12.dp))
                                         }
-                                        Text(
-                                            text = "Ask anything...",
-                                            color = AppMuted,
-                                            fontSize = 9.sp
-                                        )
-                                        Box(
-                                            modifier = Modifier
-                                                .size(18.dp)
-                                                .clip(CircleShape)
-                                                .background(currentAccent.primary),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.AutoMirrored.Filled.Send,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(9.dp)
-                                            )
-                                        }
+                                        Icon(imageVector = Icons.Default.Schedule, contentDescription = null, tint = AppMuted, modifier = Modifier.size(13.dp))
+                                        Icon(imageVector = Icons.Default.Link, contentDescription = null, tint = AppMuted, modifier = Modifier.size(13.dp))
+                                        Icon(imageVector = Icons.Default.Settings, contentDescription = null, tint = AppMuted, modifier = Modifier.size(13.dp))
                                     }
                                 }
 
@@ -1146,30 +1140,24 @@ fun ThemesAndWallpapersScreen(
                                             .fillMaxWidth()
                                             .height(30.dp)
                                             .background(Color(0xFF191922))
-                                            .border(width = 0.5.dp, color = AppBorder, shape = androidx.compose.ui.graphics.RectangleShape)
-                                            .padding(horizontal = 8.dp),
+                                            .border(width = 0.5.dp, color = Color.White.copy(alpha = 0.10f), shape = androidx.compose.ui.graphics.RectangleShape)
+                                            .padding(horizontal = 6.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                        horizontalArrangement = Arrangement.SpaceEvenly
                                     ) {
-                                        Text(
-                                            text = "Ask anything...",
-                                            color = AppMuted,
-                                            fontSize = 9.sp
-                                        )
+                                        Icon(imageVector = Icons.Default.Home, contentDescription = null, tint = AppMuted, modifier = Modifier.size(13.dp))
                                         Box(
                                             modifier = Modifier
-                                                .size(18.dp)
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(currentAccent.primary),
+                                                .size(width = 24.dp, height = 18.dp)
+                                                .clip(RoundedCornerShape(9.dp))
+                                                .background(currentAccent.primary.copy(alpha = 0.25f)),
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.AutoMirrored.Filled.Send,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(9.dp)
-                                            )
+                                            Icon(imageVector = Icons.AutoMirrored.Filled.Chat, contentDescription = null, tint = currentAccent.primary, modifier = Modifier.size(12.dp))
                                         }
+                                        Icon(imageVector = Icons.Default.Schedule, contentDescription = null, tint = AppMuted, modifier = Modifier.size(13.dp))
+                                        Icon(imageVector = Icons.Default.Link, contentDescription = null, tint = AppMuted, modifier = Modifier.size(13.dp))
+                                        Icon(imageVector = Icons.Default.Settings, contentDescription = null, tint = AppMuted, modifier = Modifier.size(13.dp))
                                     }
                                 }
 

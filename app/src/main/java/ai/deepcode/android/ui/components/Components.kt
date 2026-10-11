@@ -94,6 +94,8 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import ai.deepcode.android.ui.theme.*
 import ai.deepcode.android.ui.chat.StreamingActiveCursor
+import ai.deepcode.android.data.local.DASHBOARD_STYLE_FLOATING
+import ai.deepcode.android.data.local.DASHBOARD_STYLE_FIXED
 
 fun Modifier.gridBackground(
     gridSize: Dp = 22.dp,
@@ -498,7 +500,8 @@ fun IntegrationIcon(
 @Composable
 fun BottomNavBar(
     activeTab: Int,
-    onTabSelected: (Int) -> Unit
+    onTabSelected: (Int) -> Unit,
+    dashboardStyle: String = DASHBOARD_STYLE_FLOATING
 ) {
     val haptic = LocalHapticFeedback.current
     val isDark = isDarkThemeActive
@@ -512,107 +515,167 @@ fun BottomNavBar(
         )
     }
 
-    val navBg = if (isDark) {
-        Brush.verticalGradient(listOf(Color(0xFF141418), Color(0xFF0D0D10)))
-    } else {
-        Brush.verticalGradient(listOf(Color(0xFFFCFCFD), Color(0xFFF3F3F6)))
-    }
-    val topBorderColor = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
-
-    Surface(
-        color = Color.Transparent,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(topBorderColor))
+    if (dashboardStyle == DASHBOARD_STYLE_FLOATING) {
+        // 🍎 Apple-style Floating Glass Island Dock
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(start = 14.dp, end = 14.dp, bottom = 10.dp, top = 2.dp),
+            contentAlignment = Alignment.Center
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(navBg)
-                    .padding(bottom = 12.dp),
+                    .appleGlassDock(
+                        shape = RoundedCornerShape(28.dp),
+                        elevation = 8.dp,
+                        isDark = isDark
+                    )
+                    .padding(horizontal = 4.dp, vertical = 5.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 tabs.forEach { tab ->
-                    val isActive = tab.index == activeTab
-                    val animatedTint by androidx.compose.animation.animateColorAsState(
-                        targetValue = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                        animationSpec = androidx.compose.animation.core.tween(180),
-                        label = "navTint_${tab.index}"
+                    BottomNavItem(
+                        tab = tab,
+                        isActive = tab.index == activeTab,
+                        isDark = isDark,
+                        haptic = haptic,
+                        onTabSelected = onTabSelected
                     )
-                    val scale = androidx.compose.animation.core.animateFloatAsState(
-                        targetValue = if (isActive) 1.08f else 1.0f,
-                        animationSpec = androidx.compose.animation.core.spring(
-                            dampingRatio = 0.75f,
-                            stiffness = 350f
-                        ),
-                        label = "navScale_${tab.index}"
-                    )
-                    val pillAlpha = androidx.compose.animation.core.animateFloatAsState(
-                        targetValue = if (isActive) 1f else 0f,
-                        animationSpec = androidx.compose.animation.core.tween(180),
-                        label = "navPill_${tab.index}"
-                    )
+                }
+            }
+        }
+    } else {
+        // ⚓ Classic Fixed Edge-to-Edge Dock
+        val navBg = if (isDark) {
+            Brush.verticalGradient(listOf(Color(0xFF141418), Color(0xFF0D0D10)))
+        } else {
+            Brush.verticalGradient(listOf(Color(0xFFFCFCFD), Color(0xFFF3F3F6)))
+        }
+        val topBorderColor = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
 
-                    Column(
-                        modifier = Modifier
-                            .clickable(
-                                interactionSource = remember(tab.index) { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                if (!isActive) {
-                                    try {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    } catch (_: Exception) {}
-                                }
-                                onTabSelected(tab.index)
-                            }
-                            .padding(vertical = 8.dp)
-                            .widthIn(min = 72.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Box(
-                                modifier = Modifier
-                                    .size(width = 46.dp, height = 28.dp)
-                                    .graphicsLayer { alpha = pillAlpha.value }
-                                    .depthPill(
-                                        shape = RoundedCornerShape(14.dp),
-                                        elevation = 1.dp,
-                                        customGradient = listOf(
-                                            AppPrimary.copy(alpha = 0.22f),
-                                            AppPrimary.copy(alpha = 0.08f)
-                                        ),
-                                        highlightAlpha = 0.25f,
-                                        isDark = isDark
-                                    )
-                            )
-
-                            Icon(
-                                imageVector = tab.icon,
-                                contentDescription = tab.label,
-                                tint = animatedTint,
-                                modifier = Modifier
-                                    .size(20.dp)
-                                    .graphicsLayer {
-                                        scaleX = scale.value
-                                        scaleY = scale.value
-                                    }
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = tab.label,
-                            fontSize = 10.sp,
-                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                            color = animatedTint
+        Surface(
+            color = Color.Transparent,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(0.5.dp)
+                        .background(topBorderColor)
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(navBg)
+                        .padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    tabs.forEach { tab ->
+                        BottomNavItem(
+                            tab = tab,
+                            isActive = tab.index == activeTab,
+                            isDark = isDark,
+                            haptic = haptic,
+                            onTabSelected = onTabSelected
                         )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun BottomNavItem(
+    tab: BottomNavTab,
+    isActive: Boolean,
+    isDark: Boolean,
+    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback,
+    onTabSelected: (Int) -> Unit
+) {
+    val animatedTint by androidx.compose.animation.animateColorAsState(
+        targetValue = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+        animationSpec = androidx.compose.animation.core.tween(180),
+        label = "navTint_${tab.index}"
+    )
+    val scale = androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isActive) 1.08f else 1.0f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = 0.75f,
+            stiffness = 350f
+        ),
+        label = "navScale_${tab.index}"
+    )
+    val pillAlpha = androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isActive) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(180),
+        label = "navPill_${tab.index}"
+    )
+
+    Column(
+        modifier = Modifier
+            .clickable(
+                interactionSource = remember(tab.index) { MutableInteractionSource() },
+                indication = null
+            ) {
+                if (!isActive) {
+                    try {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    } catch (_: Exception) {}
+                }
+                onTabSelected(tab.index)
+            }
+            .padding(vertical = 4.dp)
+            .widthIn(min = 56.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .size(width = 46.dp, height = 28.dp)
+                    .graphicsLayer { alpha = pillAlpha.value }
+                    .depthPill(
+                        shape = RoundedCornerShape(14.dp),
+                        elevation = 1.dp,
+                        customGradient = listOf(
+                            AppPrimary.copy(alpha = 0.22f),
+                            AppPrimary.copy(alpha = 0.08f)
+                        ),
+                        highlightAlpha = 0.25f,
+                        isDark = isDark
+                    )
+            )
+
+            Icon(
+                imageVector = tab.icon,
+                contentDescription = tab.label,
+                tint = animatedTint,
+                modifier = Modifier
+                    .size(20.dp)
+                    .graphicsLayer {
+                        scaleX = scale.value
+                        scaleY = scale.value
+                    }
+            )
+        }
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(
+            text = tab.label,
+            fontSize = 10.sp,
+            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+            color = animatedTint
+        )
     }
 }
 
