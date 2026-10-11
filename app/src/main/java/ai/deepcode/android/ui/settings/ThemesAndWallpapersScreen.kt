@@ -987,7 +987,7 @@ fun ThemesAndWallpapersScreen(
                     }
 
                     Text(
-                        text = "Choose between an Apple-style floating translucent glass island or a classic flush fixed bottom dock.",
+                        text = "Choose between an Apple-style floating translucent glass island with liquid jiggle gesture navigation or a classic flush fixed dock.",
                         color = AppMuted,
                         fontSize = 12.sp,
                         lineHeight = 16.sp
@@ -1077,7 +1077,7 @@ fun ThemesAndWallpapersScreen(
                                 }
 
                                 Text(
-                                    text = "Liquid translucent glass with depth & specular rim",
+                                    text = "Liquid jiggle glass bubble with drag & spring release",
                                     color = AppMuted,
                                     fontSize = 10.sp,
                                     lineHeight = 13.sp
