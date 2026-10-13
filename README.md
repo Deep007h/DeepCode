@@ -4,10 +4,10 @@
 
 # DeepCode
 
-### Autonomous AI Agent, Code Engine & Automation Studio for Android
+### Autonomous AI Agent, Rootless Linux Subsystem & Automation Studio for Android
 
 <a href="https://git.io/typing-svg">
-  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=19&duration=3200&pause=1000&color=F97316&center=true&vCenter=true&width=720&lines=Autonomous+AI+Coding+Agent+Native+to+Android;Cross-Chat+Long-Term+Memory+(In-App+%2B+Telegram+Bridge);Antigravity+%E2%80%A2+Gemini+3.8+%26+3.5+%E2%80%A2+Zen+AI+(Muse+1.3)+%E2%80%A2+TokenHarbor;Ollama+Cloud+%E2%80%A2+ChatGPT+Integration+(Images+%26+Docs)+%E2%80%A2+Claude+Fable;Sora+Editor+%E2%80%A2+Root+Terminal+%E2%80%A2+Exact+AlarmManager+Automations" alt="DeepCode Typing Animation" />
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=19&duration=3200&pause=1000&color=F97316&center=true&vCenter=true&width=760&lines=Autonomous+AI+Coding+Agents+Native+to+Android;Rootless+Ubuntu+PRoot+Linux+Subsystem+(ARM64);DeepSeek+Harness+%E2%80%A2+Claude+Code+%E2%80%A2+Hermes+Agent+%E2%80%A2+Antigravity;OpenCode+Zen+Gateway+(Free+Tier)+%E2%80%A2+Gemini+3.8+%E2%80%A2+TokenHarbor;Apple+Floating+Island+Dock+%E2%80%A2+Dual+Terminal+%E2%80%A2+Live+Web+Preview" alt="DeepCode Typing Animation" />
 </a>
 
 <br/>
@@ -15,20 +15,24 @@
 [![Latest Release](https://img.shields.io/badge/Release-v2.0.2-22c55e?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Deep007h/DeepCode/releases/tag/v2.0.2)
 [![Download APK](https://img.shields.io/badge/Download%20APK-v2.0.2%20(21%20MB)-F97316?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Deep007h/DeepCode/releases/download/v2.0.2/DeepCode-v2.0.2.apk)
 [![Platform](https://img.shields.io/badge/Android-API%2026%2B%20(8.0--16)-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
+[![Architecture](https://img.shields.io/badge/Arch-arm64--v8a-blueviolet?style=for-the-badge&logo=arm&logoColor=white)](https://developer.android.com/ndk)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0%2B-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/UI-Jetpack%20Compose%20M3-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support%20Project-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/deep007h)
 <a href="https://github.com/Deep007h/DeepCode"><img src="https://counterapi.com/counter.svg?key=DeepCode&color=F97316&style=for-the-badge&label=VIEWS&startNumber=185" alt="Views" /></a>
 [![License](https://img.shields.io/badge/License-MIT-gray?style=for-the-badge)](LICENSE)
 
 <p align="center">
   <a href="#-interface-preview"><b>Interface</b></a> •
   <a href="#-whats-new-in-v202"><b>What's New</b></a> •
+  <a href="#-autonomous-workflow-engines"><b>Workflow Engines</b></a> •
   <a href="#-key-features"><b>Features</b></a> •
-  <a href="#-cross-chat-long-term-memory"><b>Memory System</b></a> •
+  <a href="#-linux-subsystem--runtimes"><b>Linux Subsystem</b></a> •
+  <a href="#-cross-chat-long-term-memory"><b>Memory</b></a> •
   <a href="#-ai-providers--model-matrix"><b>AI Providers</b></a> •
   <a href="#-agent-tools"><b>Tools</b></a> •
-  <a href="#-background-automations"><b>Automations</b></a> •
-  <a href="#-installation"><b>Installation</b></a>
+  <a href="#-installation"><b>Installation</b></a> •
+  <a href="#-support--buy-me-a-coffee"><b>Support</b></a>
 </p>
 
 </div>
@@ -56,9 +60,9 @@
 
 ## 🚀 Overview
 
-**DeepCode** transforms your Android smartphone or tablet into a full-fledged, autonomous AI development environment. By pairing flagship cloud models (**Google Antigravity**, **OpenCode Zen AI**, **Google Gemini**, **TokenHarbor AI**, **Groq LPU**, **Ollama Cloud**, **OpenAI**, **Anthropic**, **GMI Cloud**) with an integrated **Cross-Chat Long-Term Memory System**, **Telegram Bridge**, **Dual Terminal Shell**, **Sora Code Editor**, and **Automated PDF Studio**, DeepCode delivers desktop-grade agentic capabilities directly in the palm of your hand.
+**DeepCode** transforms your Android smartphone or tablet into an autonomous, desktop-grade AI software development environment. By coupling rootless Linux userspace execution (**Ubuntu 20.04 LTS via PRoot ARM64**) and autonomous agent harnesses (**DeepSeek Harness**, **Claude Code**, **Nous Research Hermes Agent**, **Google Antigravity**) with 70+ flagship AI models (**OpenCode Zen**, **Google Antigravity Gemini 3.8**, **TokenHarbor AI**, **Groq LPU**, **Ollama Cloud**, **OpenAI**, **Anthropic**), DeepCode brings true agentic autonomy directly to mobile.
 
-Whether you need to generate multi-file codebases, audit repositories, run multi-turn shell commands with root elevation, compile publication-grade PDFs, or schedule recurring autonomous background tasks that wake up your phone on exact intervals, DeepCode executes without compromise.
+Whether you need to generate multi-file codebases, execute Python/Node.js/C++ toolchains inside Linux, audit repositories, run multi-turn shell commands, compile publication-grade PDFs, or run exact background automations that wake your device on exact schedules, DeepCode executes without requiring root access.
 
 ---
 
@@ -69,21 +73,23 @@ Whether you need to generate multi-file codebases, audit repositories, run multi
 <br/>
 
 - 🍎 **Apple-Style Floating Island Dashboard & Dock**:
-  - **Fluid Liquid Glassmorphism**: Built custom `Modifier.appleGlassDock` with frosted translucent acrylic backing, specular top refraction gradient rim (`highlightAlpha = 0.28f`), diffused elevation drop shadows, and 32dp continuous pill geometry.
-  - **Settings Toggle & Live Interactive Preview**: New "Dashboard & Input Bar Style" section in **Settings > Theme & Wallpapers** with selectable **Apple Floating Island** vs **Classic Fixed Dock** cards and instant real-time live preview.
+  - **Fluid Liquid Glassmorphism**: Custom `Modifier.appleGlassDock` with frosted translucent acrylic backing, specular refraction gradient rim (`highlightAlpha = 0.28f`), elevation drop shadow, and 32dp continuous pill geometry.
+  - **Riceball Fluid Navigation**: Jitter-free sliding selection indicator covering both icon and text tab with continuous spring-interpolated transitions.
+  - **Interactive Live Preview**: Instant visual preview card in **Settings > Themes & Wallpapers** for comparing Floating Island and Classic Dock styles.
   - **Adaptive Keyboard Insets**: Floating dock tracks IME keyboard elevation smoothly with comfortable floating margins above system gesture navigation bars.
 
-- ⚡ **Hermes Runner v0.5.2 & Multi-Engine Resiliency**:
-  - **Critical Process Exit Handling**: Fixed exit condition in `HermesRuntimeBridge` (`if (exit == 0 && !userStopRequested)`) ensuring process errors and unhandled exceptions are no longer swallowed.
-  - **OpenCode Zen Multi-Endpoint Failover**: Added multi-endpoint failover (`zen/v1` and `zen/go/v1`) across free models (`mimo-v2.5-free`, `ling-3.0-flash-fin-free`, `nemotron-3-ultra-free`) with automatic `Authorization: Bearer <key or zen-free>`.
-  - **Automatic Fallback to Direct In-App Engine**: Runtime failures now cleanly emit `SessionFailed`, triggering an instant, non-crashing fallback to the Direct In-App Engine.
+- ⚡ **DeepSeek Harness & OpenCode Zen Wire Protocol Integration**:
+  - **LocalFormatGateway Proxy**: On-device loopback proxy that transparently translates OpenAI `/chat/completions` and Anthropic `/messages` calls for autonomous CLI harnesses (`dsh`, `claude`).
+  - **Verification Headers**: Automatically injects upstream Bun runtime `User-Agent`, `x-opencode-client: cli`, `x-opencode-project: global`, session affinity, and cloaked decoy tool definitions (`bash`, `read`) satisfying OpenCode Zen free-tier verification.
+  - **Keyless Free Tier Execution**: Runs OpenCode Zen free models (`mimo-v2.5-free`, `deepseek-v4-flash-free`) out of the box without requiring manual API keys.
+  - **Resilient Fallback**: If an autonomous harness encounters an environment issue, DeepCode automatically falls back to the Direct In-App Engine so queries are never left unanswered.
 
-- 🛡️ **OpenCode Zen Wire Protocol Headers & Decoy Tools**:
-  - Injected upstream verification headers (`x-opencode-client: cli`, `x-opencode-project: global`, canonical Bun runtime `User-Agent`, session and request IDs) in `OrchestratorEngine` and `AgentRuntime`.
-  - Added cloaked decoy tool definitions (`bash` / `read`) satisfying OpenCode Zen free-tier verification.
+- 🪽 **Nous Research Hermes Runner v0.5.2 & Multi-Engine Resiliency**:
+  - **Critical Process Exit Handling**: Fixed exit condition in `HermesRuntimeBridge` ensuring process errors and unhandled exceptions are caught cleanly.
+  - **Multi-Endpoint Failover**: Added multi-endpoint failover (`zen/v1` and `zen/go/v1`) across free models (`mimo-v2.5-free`, `ling-3.0-flash-fin-free`, `nemotron-3-ultra-free`).
 
-- 🧠 **Cerebras Provider Support**:
-  - Added unified provider alias resolution supporting both `Cerebras` and `Cerebrus` across all execution engines.
+- 🧠 **Cerebras & Extended Provider Support**:
+  - Unified provider alias resolution supporting both `Cerebras` and `Cerebrus` across all execution engines.
 
 </details>
 
@@ -92,133 +98,92 @@ Whether you need to generate multi-file codebases, audit repositories, run multi
 <br/>
 
 - 🪽 **Nous Research Hermes Agent Integration**:
-  - **Rootless Ubuntu PRoot Agent**: Autonomous coding agent running directly inside the rootless Ubuntu 20.04 LTS PRoot subsystem (`AgentKind.HERMES`).
-  - **Automatic Toolchain Bootstrap**: Automatically sets up `/usr/local/bin/hermes` and Python runner `/usr/local/lib/hermes/hermes_runner.py` inside userspace.
-  - **Multi-Provider Tool Execution**: Connects to OpenRouter, DeepSeek, OpenAI, Anthropic, or OpenCode Zen with environment-injected API keys and autonomous `--yolo` execution loop.
-  - **Persistent Memory & Workspace Checkpoints**: Reads and writes files, tracks change history with `WorkspaceCheckpoints`, and retains instructions across turns.
-  - **Dedicated Progressive Thinking Steps**: Customized 6-phase progressive thinking steps in `ChatMotionComponents` with an Emerald Green accent badge (`🪽 Hermes Agent · PRoot`).
-  - **Seamless Non-Crashing Fallback**: Gracefully falls back to the Direct In-App Engine if PRoot is uninstalled.
+  - Autonomous coding agent running directly inside rootless Ubuntu 20.04 LTS PRoot subsystem (`AgentKind.HERMES`).
+  - Automatic toolchain bootstrap (`/usr/local/bin/hermes` and Python runner).
+  - Multi-provider tool execution (OpenRouter, DeepSeek, OpenAI, Anthropic, OpenCode Zen) with autonomous `--yolo` execution loop.
+  - Dedicated 6-phase progressive thinking steps in chat with Emerald Green accent badge.
 
-- ⚡ **Autonomous Harness Agent Latency & Reliability Optimizations**:
-  - **Direct Subshell Invocation**: Streamlined execution across DeepSeek Harness, Claude Code, Antigravity, and Hermes, eliminating nested subshell hops and reducing launch latency by ~40%.
-  - **Low-Latency Streaming Buffers**: Tuned stream readers (`char[1024]` with immediate `Dispatchers.Main` propagation) for responsive real-time streaming output in the terminal and chat views.
-  - **Robust Process Lifecycles**: Hardened SIGINT / SIGTERM handling, graceful reader/writer stream teardown, and process group destruction to eliminate orphan PRoot processes and memory leaks.
-  - **Isolated Per-Agent Configuration**: Prevented configuration crosstalk between simultaneous agent runs with dedicated environment variable maps and working directories.
+- ⚡ **Autonomous Harness Agent Latency & Reliability**:
+  - Direct subshell invocation eliminating nested subshell hops and reducing launch latency by ~40%.
+  - Low-latency streaming buffers (`char[1024]` with immediate UI propagation) for responsive real-time token streaming.
+  - Hardened SIGINT / SIGTERM handling and process group cleanup to eliminate orphan PRoot processes.
 
 - 🎨 **ChatScreen Tactile Design System Overhaul**:
-  - **Convex Specular Bevel Highlights**: All buttons and pills upgraded with `Modifier.depthPill(...)` featuring subtle specular highlights (`highlightAlpha = 0.35f`), convex vertical gradients, and rounded/circle geometries.
-  - **Spring-Based Haptics (`bouncyClickable`)**: Responsive Apple/YouTube-style spring scale depression on touch down with native tactile haptic feedback.
-  - **Surface Container Depth**: Replaced flat borders with `Modifier.depthCard(...)` for option cards and configuration containers.
-  - **Overhauled Screens**:
-    - **Linux Subsystem & Runtimes** (`LinuxSubsystemScreen.kt`): Circular TopBar depth pills, interactive workflow pills with active border glow, API provider depth chips, and full-width gradient action buttons.
-    - **Setup Onboarding Wizard** (`SetupWizardScreen.kt`): Circular TopBar back pill, step navigation pills, avatar picker with spring haptics, custom role depth pills, accent swatches, and subsystem installation buttons.
-    - **Terminal Console Studio** (`TerminalScreen.kt`): Circular back & clear depth pills, subsystem mode selector depth pills ("Ubuntu PRoot", "Root su", "Shell sh"), virtual key buttons (CTRL, ALT, TAB, ESC, etc.), and rounded depth input bar with circular action send button.
-    - **Voice / Speech Model Settings** (`VoiceModelSettingsScreen.kt`): Circular TopBar back pill, emotion preset depth chips ("🌟 Excited", "💖 Empathy", "🎭 Dramatic", "💼 Pro"), and tactile voice preview action button.
+  - Convex specular bevel highlights (`Modifier.depthPill`, `highlightAlpha = 0.35f`).
+  - Spring-based haptics (`bouncyClickable`) with native touch feedback.
+  - Overhauled Setup Wizard, Linux Subsystem, Terminal Console, and Voice Studio.
 
 - 🧠 **Dynamic 2-Second Thinking Engine (`AnimatedThinkingCard`)**:
-  - **Fluid Engineering Steps**: Replaced static "Thinking..." placeholder with a dynamic, context-aware engineering phase sequence cycling every 2 seconds (`delay(2000L)` with vertical slide + fade `AnimatedContent`).
-  - **Tailored Progressions**: Step trajectories tailored per agent harness (DeepSeek Harness, Claude Code, Antigravity, Hermes, Direct Engine).
-  - **Live Visualizer & Status**: Uppercase micro-header, pulsing live status dot, and fluid wave visualizer.
+  - Fluid engineering progression cycling context-aware steps every 2 seconds.
+  - Tailored trajectories per agent harness (DeepSeek Harness, Claude Code, Antigravity, Hermes, Direct Engine).
 
-- 🛡️ **Android 14 FGS Crash Prevention & Hardening**:
-  - Resolved `ForegroundServiceStartNotAllowedException` and `MissingForegroundServiceTypeException` on Android 14+ (API 34) across `RuntimeExecutionService` and `RuntimeSetupService` by specifying `ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE`.
-  - Added robust lifecycle error handling and automatic, non-crashing fallback to Direct In-App Engine.
-
-- 🏷️ **Engine Verification & Attribution Badges**:
-  - In-app chat badges indicating whether a response was generated by an autonomous PRoot agent harness (`⚡ DeepSeek Harness · PRoot`, `✳️ Claude Code · PRoot`, `🚀 Antigravity · PRoot`, `🪽 Hermes Agent · PRoot`) or the built-in direct LLM engine (`🤖 Direct Engine`).
-  - Persistent storage in Room SQLite via `Message.toolResultsJson`.
-
-- 🔤 **Typography & Readability Overhaul**:
-  - Increased font size by +2sp across reply preview headers (`11.5sp` -> `13.5sp`), preview bars (`12sp` -> `14sp`), and markdown body text, lists, and quotes (`15sp / 23sp` -> `17sp / 25sp`) for superior readability on mobile displays.
-
-</details>
-
-<details>
-<summary><b>📜 Highlights of Release 1.5</b></summary>
-<br/>
-
-- 💻 **PC-Environment Direct Root Execution**: Autonomous AI root operations with frictionless tool calling, arbitrary-size file writes, and universal root elevation.
-- ⚡ **Dynamic Tool Calling Optimization**: Dynamic schema filtering reduces time-to-first-token by ~95% on reasoning models.
-- 💬 **Swipe-to-Reply & Quote Threading**: Telegram-style swipe-to-reply gesture with interactive quoted reply previews.
-
-</details>
-
-<details>
-<summary><b>📜 Highlights of Release 1.3</b></summary>
-<br/>
-
-- 🧠 **Cross-Chat Long-Term Memory**: Bi-directional memory sync between In-App Chat and Telegram Bot with SQLite FTS4 fast retrieval.
-- 🎨 **Fluid Motion Polish**: Spring-interpolated input bar and synchronous bottom navigation bar.
-- 🚀 **Animated Splash Screen**: Smooth pulsing brand launch screen.
-- ⚡ **TokenHarbor AI Provider**: Free-tier model catalog and optimized streaming latency.
-
-</details>
-
-<details>
-<summary><b>📜 Highlights of Release 1.2</b></summary>
-<br/>
-
-- ⚡ **Multi-Provider & Multi-Key Ring Expansion**:
-  - Full support for **70+ AI providers** (Nebius AI, AIML API, Scaleway, Lambda Labs, Friendli AI, MiniMax, Qwen, Baichuan, Yi, and more).
-  - Storage ID normalization and multi-slot API key rotation (slots 1..6) with instant HTTP 429 / quota failover.
-- 💬 **Instant Chat Responsiveness & Smooth Motion**:
-  - Zero-latency optimistic in-memory message rendering before SQLite persistence.
-  - Natural top-to-bottom scroll physics with precise `isNearBottom` viewport detection and jitter-free streaming follow (~7 fps).
-- 🛡️ **Session Health & Error Isolation**:
-  - Transient API connection drops and rate-limit errors are automatically filtered out of compacted conversation history to prevent poisoned context windows.
-  - Comprehensive HTTP status code mapping (401 Unauthorized, 402 Credits/Quota, 429 Rate Limits, 403 Forbidden).
-- 🎙️ **Microsoft Edge Neural Voice Synthesis**:
-  - Dynamic client token generation and robust audio synthesis fallback for voice interactions.
-- 📱 **Sora Editor & Dashboard Metrics Polish**:
-  - Resolved asynchronous file loading race conditions in `EditorScreen.kt`.
-  - Authoritative message sync counts and conditional reasoning chart slices.
-- 🤖 **Telegram Bridge Upgrades**:
-  - Proactive key validation before chat runs and dynamic model-to-provider inference across both static and OpenAI catalog models.
-
-</details>
-
-<details>
-<summary><b>📜 Highlights of Release 1.1</b></summary>
-<br/>
-
-- 🌐 **ChatGPT Integration for Image and Docs Creation**: Connect your ChatGPT account in **Connections** for zero-API-cost inference, persistent single-session context preservation, high-precision document generation, and inline **DALL-E 3** image rendering.
-- ⏰ **Rock-Solid Background Automations**:
-  - Exact wakeups powered by Android's `AlarmManager.setExactAndAllowWhileIdle()` and `WAKE_LOCK`.
-  - **Dedicated Persistent Threads**: Every scheduled automation task executes inside its own dedicated chat session—never creating duplicate chats on subsequent runs.
-  - **Auto-Trigger on App Death**: Fully resilient to process kills and system reboots (`BOOT_COMPLETED`), maintaining scheduled execution reliably.
-  - **Interactive Task Editor**: Modify schedules, prompt instructions, repetition intervals, and predefined workflows on the fly.
-- 🌌 **Next-Gen Antigravity Provider**: Built-in support for Google's latest **Gemini 3.8 Flash**, **Gemini 3.8 Flash Cyber**, **Gemini 3.5 Flash** (High/Medium/Low), **Gemini 3.1 Pro** (High/Low), and **Claude Sonnet 5 / Opus 4.6**.
-- 🌟 **Zen AI Muse Spark 1.3 & Gemini 3.8**: Added **Muse Spark 1.3 Free** (`muse-spark-1.3-contributor-free`, 1M context) alongside **Gemini 3.8 Flash**, **Claude Fable 5.1**, and **GPT-6 Astra**.
-- ☁️ **Ollama Cloud Integration**: Transitioned from local daemon reliance to official high-throughput **Ollama Cloud** (`https://ollama.com/v1`) with Gemma 4 31B, GLM 4.7, GPT-OSS 120B, and Qwen 3 Coder 480B.
+- 🏷️ **Engine Attribution Badges**:
+  - Clear chat indicators showing whether an answer was generated by an autonomous PRoot harness (`⚡ DeepSeek Harness`, `✳️ Claude Code`, `🚀 Antigravity`, `🪽 Hermes Agent`) or the built-in direct engine (`🤖 Direct Engine`).
 
 </details>
 
 ---
 
+## 🔀 Autonomous Workflow Engines
+
+DeepCode gives you complete control over how AI models reason and execute tools on your device:
+
+```mermaid
+flowchart TD
+    User([User Request / Prompt]) --> Router{Workflow Selector}
+    
+    Router -->|Mode 1: Instant| Direct[🤖 Direct In-App Engine\n• 70+ Cloud LLMs\n• Dynamic Tool-Calling\n• Zero-Latency SSE Stream]
+    Router -->|Mode 2: Autonomous CLI| DSH[⚡ DeepSeek Harness\n• PRoot Linux Userspace\n• C++ JNI Process Bridge\n• OpenCode Zen / DeepSeek API]
+    Router -->|Mode 3: Autonomous CLI| Claude[✳️ Claude Code\n• Anthropic Terminal Agent\n• Multi-File Edits & Diffs\n• LocalFormatGateway Proxy]
+    Router -->|Mode 4: Autonomous CLI| Hermes[🪽 Hermes Agent\n• Nous Research Agent\n• Autonomous --yolo Loop\n• Python Toolchain]
+    Router -->|Mode 5: Autonomous CLI| AGY[🚀 Antigravity Agent\n• Google Antigravity Toolchain\n• Gemini 3.8 / Claude Sonnet 5]
+    
+    DSH --> Subsystem[(Private Linux Subsystem\nUbuntu 20.04 LTS ARM64)]
+    Claude --> Subsystem
+    Hermes --> Subsystem
+    AGY --> Subsystem
+    
+    Subsystem --> Out([Output Stream & File Checkpoints])
+    Direct --> Out
+```
+
+| Engine | Execution Context | Best For | Root Required? |
+|:---|:---|:---|:---:|
+| **Direct In-App Engine** | Native Android Runtime | Rapid Q&A, code snippets, PDF generation, memory retrieval, live web search | ❌ No |
+| **DeepSeek Harness (`dsh`)** | Ubuntu PRoot Linux | Autonomous CLI tool loops, deep repository refactors, multi-file codebases | ❌ No |
+| **Nous Hermes Agent (`hermes`)** | Ubuntu PRoot Linux | Multi-turn research & planning, automated scripting, `--yolo` autonomous tasks | ❌ No |
+| **Claude Code (`claude`)** | Ubuntu PRoot Linux | Complex multi-file architectural refactors, git patches, terminal commands | ❌ No |
+| **Google Antigravity (`agy`)** | Ubuntu PRoot Linux | Google Antigravity CLI workflows, Gemini 3.8 agentic tool execution | ❌ No |
+
+---
+
+## 🐧 Linux Subsystem & Runtimes
+
+DeepCode features a complete, self-contained userspace **Linux Subsystem** powered by **PRoot ARM64** that runs on standard, non-rooted Android devices:
+
+- **Rootless Ubuntu 20.04 LTS**: Boots a full Linux userspace directly within the app's private sandbox without modifying system partitions or tripping SafetyNet/Play Integrity.
+- **Native C++ JNI Bridge**: High-performance process launcher (`libpocketspawn.so`, `libproot.so`, `libtalloc.so`) providing POSIX process spawning, standard I/O multiplexing, and clean signal termination.
+- **Built-In Developer Toolchains**: Run Python 3, Node.js, Git, Bash, and C/C++ compilation directly on your phone.
+- **LocalFormatGateway**: Integrated HTTP/SSE reverse proxy providing seamless translation between OpenAI `/chat/completions`, Anthropic `/messages`, and OpenCode Zen wire protocols.
+- **Dual Terminal Studio**: Interactive terminal emulator supporting:
+  - 🐧 **Ubuntu PRoot**: Rootless Linux development environment.
+  - ⚡ **Root `su` Shell**: Elevated root shell (via libsu for rooted devices).
+  - 📱 **Android `sh`**: Standard non-root Android shell sandbox.
+  - ⌨️ Dedicated mobile programmer touch bar (Ctrl, Alt, Tab, Esc, Pipes, Directional Keys).
+
+---
+
 ## 🌟 Key Features
 
-```
-  ┌────────────────────────────────────────────────────────────────────────┐
-  │                           DEEPCODE ENGINE                              │
-  ├──────────────────┬──────────────────┬──────────────────┬───────────────┤
-  │   AI Providers   │  Cross-Chat Mem  │ Execution Shell  │  Automations  │
-  ├──────────────────┼──────────────────┼──────────────────┼───────────────┤
-  │ • Antigravity    │ • Unified Store  │ • Standard sh    │ • AlarmManager│
-  │ • Zen AI (Muse)  │ • Telegram Sync  │ • Root su Shell  │ • Exact Wake  │
-  │ • TokenHarbor AI │ • SQLite FTS4    │ • Background PIDs│ • Thread-Safe │
-  │ • Groq LPU       │ • Auto-Extract   │ • Grep & Search  │ • Survives OS │
-  │ • Ollama Cloud   │ • Topic Badging  │ • Sandbox Bypass │   Reboots     │
-  └──────────────────┴──────────────────┴──────────────────┴───────────────┘
-```
-
 - 🤖 **Streaming Agentic Loop**: Multi-turn SSE streaming with dynamic tool-calling, chain-of-thought display, and syntax-highlighted code diffs.
-- 🧠 **Cross-Chat Long-Term Memory**: Automatically captures and recalls project context, open pull requests, and preferences across In-App chats and Telegram bot conversations.
-- 🔄 **Multi-Key Ring Auto-Rotation**: Store up to **6 API keys per provider** with silent, zero-delay failover when encountering HTTP 429 rate limits or quota caps.
-- 💻 **Dual-Mode Terminal Console**: Full interactive terminal emulator supporting standard non-root shell and elevated root (`su` via libsu) execution.
-- 📝 **Integrated Sora Editor**: Fast text and code editing engine with line numbers, undo/redo stacks, search-and-replace, and indentation control.
-- 📄 **Native PDF Studio**: Generate beautiful, publication-ready PDF documents across 6 specialized presets (`classic`, `modern-minimal`, `corporate-report`, `academic-paper`, `invoice-receipt`, `resume-cv`).
-- 🎙️ **Voice & Microsoft Edge TTS**: Speech-to-text input paired with edge-synthesized, neural voice audio responses.
-- 🔒 **Hardware-Isolated Security**: All API keys, bearer tokens, and OAuth credentials encrypted via **AES-256-GCM** backed by the hardware **Android Keystore**.
+- 🧠 **Cross-Chat Long-Term Memory**: Captures and recalls project context, pull requests, and personal preferences across In-App chats and the Telegram Bot using SQLite FTS4.
+- 🔄 **Multi-Key Ring Auto-Rotation**: Store up to **6 API keys per provider** with silent, millisecond failover when hitting HTTP 429 rate limits or quota caps.
+- 🌐 **Interactive Web Preview**: Built-in HTTP development server and live browser view for previewing web apps, HTML, CSS, and JavaScript directly inside DeepCode.
+- 📝 **Integrated Sora Editor**: Fast text and code editor with syntax coloring, line numbers, search-and-replace, and undo/redo stacks.
+- 📄 **Native PDF Studio**: Generate beautiful, publication-ready PDF documents across 6 specialized design templates (`classic`, `modern-minimal`, `corporate-report`, `academic-paper`, `invoice-receipt`, `resume-cv`).
+- 🎙️ **Voice Studio & Neural Audio**: Real-time speech input coupled with Microsoft Edge neural TTS and Google Gemini Audio models with emotion tags (`[excited]`, `[empathetic]`, `[dramatic]`, `[professional]`).
+- ⏰ **Background Automations**: Exact wakeups via Android's `AlarmManager.setExactAndAllowWhileIdle()` and `WAKE_LOCK`, executing tasks in dedicated persistent threads that survive device reboots.
+- 🔒 **Hardware-Isolated Security**: All API keys, tokens, and OAuth credentials encrypted via **AES-256-GCM** backed by the hardware **Android Keystore**.
 
 ---
 
@@ -238,137 +203,59 @@ graph TD
     F -->|Context-Aware Answers| H[Telegram Bot Response]
 ```
 
-### How Cross-Chat Memory Works:
-1. **Continuous Passive Harvesting**: When you conclude a turn in In-App Chat or Telegram, a lightweight non-blocking background coroutine evaluates whether the exchange contains durable context (e.g. "I am testing new providers", "Working on PR #15", "Refactoring database migrations").
-2. **Deterministic Noise Filtering**: Ephemeral banter, short single-word responses, and greetings are automatically pruned.
-3. **SQLite FTS4 Retrieval**: When a query is entered, the app matches keywords using SQLite full-text search alongside recently indexed active memory chunks, merging them seamlessly into the agent's system prompt.
-4. **Full Privacy Control**: Head over to **Settings → Cross-Chat Memory** to toggle memory sources on/off, inspect stored memories, search records, or delete specific items.
+1. **Continuous Passive Harvesting**: Lightweight background coroutines analyze completed conversation turns to index durable project knowledge.
+2. **Deterministic Noise Filtering**: Ephemeral banter, short answers, and greetings are automatically pruned.
+3. **SQLite FTS4 Retrieval**: Instant keyword matching combines full-text search with active memories, feeding relevant context directly into the agent's prompt.
+4. **Full Privacy Control**: Manage, search, export, or wipe memories in **Settings → Cross-Chat Memory**.
 
 ---
 
 ## 🧠 AI Providers & Model Matrix
 
-DeepCode offers seamless routing across over 20 top-tier AI providers. Configure your keys in **Settings → API Keys**.
+DeepCode provides unified routing across 20+ leading AI providers. Configure your keys in **Settings → API Keys**:
 
 | Provider | Access Type | Highlighted Models | Context | Tier |
 |:---|:---|:---|:---|:---|
-| **Google Antigravity** | **Google OAuth 2.0 / Bearer (`ya29.`)** | `gemini-3.8-flash` (Gemini 3.8 Flash Workhorse)<br/>`gemini-3.8-flash-cyber`<br/>`gemini-3-flash-agent` (Gemini 3.5 Flash High)<br/>`gemini-3.5-flash-medium` / `gemini-3.5-flash-low`<br/>`gemini-3-pro-preview` (Gemini 3.1 Pro)<br/>`gemini-3.1-pro-high` / `gemini-3.1-pro-low`<br/>`gemini-3.1-flash-lite`<br/>`gemini-2.5-pro` / `gemini-2.5-flash`<br/>`claude-sonnet-5` (Thinking)<br/>`claude-opus-4-6-thinking`<br/>`gpt-oss-120b-medium` | 1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>200k Tokens<br/>200k Tokens<br/>128k Tokens | **Free**<br/>Paid<br/>**Free**<br/>**Free**<br/>Paid<br/>Paid<br/>**Free**<br/>**Free**<br/>Paid<br/>Paid<br/>Paid |
-| **OpenCode Zen AI** | **API Key / Bearer Auth**<br/>`https://opencode.ai/zen/v1` | `deepseek-v4-flash-free`<br/>`muse-spark-1.3-contributor-free` (Muse Spark 1.3)<br/>`muse-spark-1.2-contributor-free`<br/>`mimo-v2.5-free`<br/>`nemotron-3.5-lightning-free`<br/>`nemotron-3-ultra-free`<br/>`gemini-3.8-flash`<br/>`claude-fable-5.1`<br/>`claude-sonnet-5`<br/>`gpt-6-astra` / `gpt-5.6-sol`<br/>`deepseek-v4-pro` | 1M Tokens<br/>1M Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>1M Tokens<br/>1M Tokens<br/>200k Tokens<br/>128k Tokens<br/>1M Tokens | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
-| **TokenHarbor AI** | **API Key / Bearer Auth**<br/>`https://tokenharbor.ai/v1` | `deepseek-v4.1-flash:free`<br/>`deepseek-v3:free`<br/>`deepseek-r1:free`<br/>`meta-llama-3.3-70b-instruct:free`<br/>`gemini-2.5-flash:free`<br/>`gpt-4o-mini:free`<br/>`mistral-small-3.1:free` | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>1M Tokens<br/>128k Tokens<br/>128k Tokens | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free** |
+| **OpenCode Zen AI** | **Free Gateway / API Key**<br/>`https://opencode.ai/zen/v1` | `deepseek-v4-flash-free`<br/>`mimo-v2.5-free`<br/>`muse-spark-1.3-contributor-free`<br/>`nemotron-3-ultra-free`<br/>`ling-3.0-flash-fin-free`<br/>`gemini-3.8-flash`<br/>`claude-fable-5.1`<br/>`claude-sonnet-5`<br/>`gpt-6-astra` | 1M Tokens<br/>128k Tokens<br/>1M Tokens<br/>128k Tokens<br/>128k Tokens<br/>1M Tokens<br/>1M Tokens<br/>200k Tokens<br/>128k Tokens | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
+| **Google Antigravity** | **Google OAuth 2.0 / Bearer (`ya29.`)** | `gemini-3.8-flash`<br/>`gemini-3.8-flash-cyber`<br/>`gemini-3-flash-agent`<br/>`gemini-3-pro-preview`<br/>`claude-sonnet-5` (Thinking)<br/>`claude-opus-4-6-thinking`<br/>`gpt-oss-120b-medium` | 1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>200k Tokens<br/>200k Tokens<br/>128k Tokens | **Free**<br/>Paid<br/>**Free**<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
+| **TokenHarbor AI** | **API Key / Bearer Auth**<br/>`https://tokenharbor.ai/v1` | `deepseek-v4.1-flash:free`<br/>`deepseek-v3:free`<br/>`deepseek-r1:free`<br/>`meta-llama-3.3-70b-instruct:free`<br/>`gemini-2.5-flash:free`<br/>`gpt-4o-mini:free` | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>1M Tokens<br/>128k Tokens | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free** |
 | **Ollama Cloud** | **API Key / Bearer Auth**<br/>`https://ollama.com/v1` | `qwen3-coder:480b`<br/>`gpt-oss:120b`<br/>`gemma4` (31B)<br/>`glm-4.7`<br/>`minimax-m3`<br/>`nemotron-3-super` (120B) | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>1M Tokens<br/>128k Tokens | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free** |
-| **Google Gemini** | **Google AI Studio Key** | `gemini-3.8-flash` (Gemini 3.8 Flash)<br/>`gemini-2.0-flash`<br/>`gemini-2.0-flash-lite`<br/>`gemini-2.0-pro-exp-02-05`<br/>`gemini-1.5-pro`<br/>`imagen-3.0-generate-002` | 1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>2M Tokens<br/>2M Tokens<br/>Image Gen | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>Paid<br/>**Free** |
-| **Groq Cloud** | **Groq API Key (LPU)** | `llama-3.3-70b-versatile`<br/>`llama-3.1-8b-instant`<br/>`deepseek-r1-distill-llama-70b`<br/>`openai/gpt-oss-120b`<br/>`groq/compound` (Agentic) | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free** |
-| **ChatGPT Integration** | **Browser Session Bridge** | `chatgpt-web` (Persistent Session)<br/>`dall-e-3` (Image & Document Generation) | Dynamic<br/>1024x1024 | **Free**<br/>**Free** |
-| **OpenAI API** | **OpenAI API Key** | `gpt-6-astra` (Flagship Sept 2026)<br/>`gpt-5.6-sol`<br/>`gpt-4o`<br/>`gpt-4o-mini`<br/>`o3-mini`<br/>`o1` / `dall-e-3` | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>200k Tokens<br/>200k Tokens | Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
-| **Anthropic** | **Anthropic API Key** | `claude-fable-5.1` (Adaptive Thinking)<br/>`claude-opus-5`<br/>`claude-sonnet-5`<br/>`claude-3-7-sonnet-latest` (Hybrid)<br/>`claude-4.5-sonnet` / `claude-4.5-opus` | 1M Tokens<br/>200k Tokens<br/>200k Tokens<br/>200k Tokens<br/>200k Tokens | Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
-| **Hermes Agent** | **Nous Research Autonomous CLI**<br/>`hermes` via Ubuntu PRoot | `hermes-3-llama-3.1-405b`<br/>`hermes-3-llama-3.1-70b`<br/>Multi-Provider Tool Execution (OpenRouter, DeepSeek, OpenAI, Zen) | Up to 128k Tokens | **Free** / Paid |
-| **DeepSeek Harness** | **Autonomous DSH CLI**<br/>`dsh` via Ubuntu PRoot | `deepseek-chat` / `deepseek-coder`<br/>Multi-provider CLI toolchain execution | 128k Tokens | **Free** / Paid |
-| **Claude Code CLI** | **Anthropic Terminal CLI**<br/>`claude` via Ubuntu PRoot | `claude-3-7-sonnet`<br/>`claude-3-5-sonnet`<br/>Autonomous tool turns & diffs | 200k Tokens | Paid |
-| **OpenRouter / Cerebras / Mistral** | **Respective API Keys** | Llama 3.3 70B, DeepSeek R1, Hermes 3 405B, Codestral, Mixtral 8x22B | Up to 128k | Free / Paid |
+| **Google Gemini** | **Google AI Studio Key** | `gemini-3.8-flash`<br/>`gemini-2.0-flash`<br/>`gemini-2.0-flash-lite`<br/>`gemini-2.0-pro-exp-02-05`<br/>`imagen-3.0-generate-002` | 1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>2M Tokens<br/>Image Gen | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free** |
+| **Groq Cloud** | **Groq API Key (LPU)** | `llama-3.3-70b-versatile`<br/>`llama-3.1-8b-instant`<br/>`deepseek-r1-distill-llama-70b`<br/>`openai/gpt-oss-120b` | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens | **Free**<br/>**Free**<br/>**Free**<br/>**Free** |
+| **DeepSeek Harness** | **Autonomous DSH CLI**<br/>`dsh` via Ubuntu PRoot | `deepseek-chat`<br/>`deepseek-coder`<br/>Multi-Provider CLI Execution | 128k Tokens | **Free** / Paid |
+| **Nous Hermes Agent** | **Nous Research Autonomous CLI**<br/>`hermes` via Ubuntu PRoot | `hermes-3-llama-3.1-405b`<br/>`hermes-3-llama-3.1-70b` | 128k Tokens | **Free** / Paid |
+| **Claude Code CLI** | **Anthropic Terminal CLI**<br/>`claude` via Ubuntu PRoot | `claude-3-7-sonnet`<br/>`claude-3-5-sonnet` | 200k Tokens | Paid |
+| **OpenAI API** | **OpenAI API Key** | `gpt-6-astra`<br/>`gpt-5.6-sol`<br/>`gpt-4o`<br/>`gpt-4o-mini`<br/>`o3-mini`<br/>`dall-e-3` | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>200k Tokens<br/>Image Gen | Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
+| **Anthropic** | **Anthropic API Key** | `claude-fable-5.1`<br/>`claude-opus-5`<br/>`claude-sonnet-5`<br/>`claude-3-7-sonnet-latest` | 1M Tokens<br/>200k Tokens<br/>200k Tokens<br/>200k Tokens | Paid<br/>Paid<br/>Paid<br/>Paid |
+| **Cerebras / Mistral** | **Respective API Keys** | Llama 3.3 70B, DeepSeek R1, Codestral, Mixtral 8x22B | Up to 128k Tokens | Free / Paid |
 
 ---
 
 ## 🛠️ Agent Tools
 
-The autonomous agent loop is equipped with native tools executed in real-time on Android:
+The autonomous agent loop executes native tools directly on Android:
 
-| Tool Signature | Purpose | Capability |
+| Tool | Purpose | Description |
 |:---|:---|:---|
-| `create_pdf` | Document Generation | Compiles formatted PDFs using 6 clean design templates |
-| `web_search` | Live Search | Queries live search engines and feeds markdown summaries back to LLM |
-| `web_fetch` | Content Scraping | Fetches clean, stripped article text and documentation from any HTTP/HTTPS URL |
+| `create_pdf` | Document Generation | Compiles formatted PDFs using 6 design templates |
+| `web_search` | Live Search | Queries web search engines and returns markdown summaries |
+| `web_fetch` | Content Scraping | Fetches clean, stripped article text and documentation from any URL |
 | `read_file` / `write_file` | File System I/O | Reads and writes files with atomic directory creation and UTF-8 handling |
-| `list_directory` / `grep_search` | Codebase Exploration | Fast recursive tree traversal and regex-based multi-file pattern searching |
-| `execute_command` | Shell Execution | Spawns background process in sandbox or `su` root with stdout/stderr capture |
+| `list_directory` / `grep_search` | Codebase Exploration | Recursive directory exploration and regex-based multi-file search |
+| `execute_command` | Shell Execution | Runs shell commands in PRoot Linux, root `su`, or Android sandbox with stdout/stderr capture |
 | `edge_tts` | Speech Synthesis | Generates high-fidelity neural audio playback via WebSocket pipeline |
-| `qr_generate` | QR Utility | Encodes texts, URLs, and payloads into high-resolution PNG QR images |
+| `qr_generate` | Utility | Encodes text, URLs, or payloads into high-resolution PNG QR images |
 | `zip_create` / `zip_extract` | Archive Management | Bundles workspaces or extracts compressed archives seamlessly |
-| `csv_to_json` / `csv_create` | Structured Data | Parses and transforms delimited tabular datasets on the fly |
-
----
-
-## ⏰ Background Automations Engine
-
-DeepCode includes an enterprise-grade automated execution engine designed for uninterrupted background operation:
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant System as Android OS / AlarmManager
-    participant Receiver as TaskAlarmReceiver
-    participant Runner as AiBridgeRunner (Foreground Service)
-    participant Engine as AgentEngine
-    participant Provider as AI Provider (Antigravity / Zen / Groq)
-    participant DB as Room Database (Dedicated Chat Session)
-
-    System->>Receiver: Alarm fires (Exact & Allow While Idle)
-    Receiver->>Runner: Start Foreground Service + WakeLock
-    Runner->>Engine: Run task (TaskId, Single Dedicated Chat ID)
-    Engine->>DB: Fetch or create single dedicated chat thread
-    Engine->>Provider: Stream completion & execute agent tools
-    Provider-->>Engine: Tool results & final response
-    Engine->>DB: Persist messages to the same dedicated thread
-    Runner->>System: Schedule next interval & release WakeLock
-```
-
-### Key Automation Safeguards:
-1. **Single Dedicated Chat Session**: Every task creates exactly one chat session on its initial run and persistently reuses that exact session for all future executions. Your conversation history stays organized and clean.
-2. **Device Reboot & App Death Resilience**: Registered `BOOT_COMPLETED` receivers reschedule all active tasks instantly when your phone restarts. If the app is swiped from Recents, the `AlarmManager` wake alarm boots the background bridge automatically.
-3. **Full In-App Task Editing**: Tap any automation in the **Automations** tab to edit prompt instructions, trigger times, repeating intervals, or delete obsolete tasks.
-
----
-
-## 🔄 Multi-Key Ring Auto-Rotation
-
-Never let a rate limit interrupt an autonomous coding session:
-- **Up to 6 Keys Per Provider**: Store primary and fallback keys in hardware-backed encrypted storage.
-- **Silent HTTP 429 Recovery**: If Key #1 encounters a rate limit or quota depletion, DeepCode automatically falls back to Key #2, Key #3, etc., within milliseconds.
-- **Adaptive Cooldown Management**: Keys placed in cooldown automatically reactivate after 15 seconds, cycling smoothly through the key ring.
-
----
-
-## 🏗️ Architecture & Tech Stack
-
-```
-DeepCode/
-├── app/src/main/java/ai/deepcode/android/
-│   ├── agent/             # AgentEngine, ToolExecutor, PluginEngine
-│   ├── data/
-│   │   ├── local/         # Room DB (ChatSession, Message, AutomationTask), MemoryStore
-│   │   ├── remote/        # 20+ Providers, ZenModels, TokenHarbor, Antigravity
-│   │   └── repository/    # AgentRepository, AutomationRepository, MemoryRepository
-│   ├── service/
-│   │   ├── automations/   # TaskAlarmReceiver, BootReceiver, TaskScheduler
-│   │   ├── tools/         # Native implementations (Pdf, Web, Terminal, EdgeTTS)
-│   │   └── AiBridgeRunner.kt # Foreground background execution runner
-│   ├── ui/
-│   │   ├── automations/   # AutomationsScreen, TaskEditSheet, ScheduleDialog
-│   │   ├── chat/          # ChatScreen, ChatViewModel, AiBubble, SoraEditorView
-│   │   ├── connections/   # ConnectionsScreen, ChatGPTBridge, TelegramBridge
-│   │   ├── dashboard/     # DashboardScreen, Project Cards, Quick Stats
-│   │   └── settings/      # MemorySettingsScreen, ApiKeysScreen, Themes, Logs
-│   └── DeepCodeApp.kt     # Application lifecycle & dependency container
-```
-
-| Layer | Component | Details |
-|:---|:---|:---|
-| **Language** | Kotlin 2.0+ | Coroutines, StateFlow, Channels |
-| **UI** | Jetpack Compose | Material Design 3, Dynamic Color, Edge-to-Edge |
-| **Architecture** | MVVM + Clean Architecture | Repository pattern, decoupled service layer |
-| **Database** | Room SQLite + FTS4 | Full-text memory search, encrypted migrations |
-| **Networking** | OkHttp 4.12 + Retrofit | HTTP/2 connection pooling, SSE streaming |
-| **Editor** | Sora Editor | Custom color schemes, line rendering |
-| **Security** | Android Keystore | AES-256-GCM hardware-backed cryptography |
-| **Root Engine** | libsu | TopJohnWu libsu for secure superuser shells |
+| `csv_to_json` / `csv_create` | Structured Data | Parses and transforms delimited tabular datasets |
 
 ---
 
 ## 📦 Installation
 
-### Option 1: Direct APK (Recommended)
-1. Download the latest **`DeepCode-v2.0.apk`** from [GitHub Releases](https://github.com/Deep007h/DeepCode/releases/tag/v2.0).
+### Option 1: Direct APK Download (Recommended)
+1. Download the latest **`DeepCode-v2.0.2.apk`** from [GitHub Releases](https://github.com/Deep007h/DeepCode/releases/tag/v2.0.2).
 2. Allow installation from unknown sources in Android Settings.
-3. Open DeepCode and configure your preferred provider in **Settings → API Keys**.
+3. Open DeepCode and configure your preferred provider or choose a free-tier engine during the Onboarding Setup Wizard.
 
 ### Option 2: Build From Source
 ```bash
@@ -376,12 +263,35 @@ DeepCode/
 git clone https://github.com/Deep007h/DeepCode.git
 cd DeepCode
 
-# 2. Compile Debug APK with Gradle
+# 2. Compile Debug APK with Gradle (JDK 17)
 ./gradlew assembleDebug
 
-# 3. Install on Android device via ADB
+# 3. Deploy to connected Android device via ADB
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+---
+
+## ☕ Support & Buy Me a Coffee
+
+If **DeepCode** saves you development time, powers your mobile coding workflows, or helps you run autonomous agents on Android, consider supporting ongoing open-source development!
+
+<div align="center">
+
+<a href="https://buymeacoffee.com/deep007h" target="_blank">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="220" style="border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.35);" />
+</a>
+
+<br/><br/>
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-deep007h-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/deep007h)
+[![GitHub Sponsor](https://img.shields.io/badge/Sponsor-Deep007h-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/Deep007h)
+
+<p align="center">
+  <sub>Your support helps fund continuous updates, PRoot runtime bundles, and new autonomous agent bridges!</sub>
+</p>
+
+</div>
 
 ---
 
@@ -389,7 +299,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 - **On-Device Storage**: Code files, terminal history, memory chunks, and chat conversations remain strictly stored on your device.
 - **Hardware Encryption**: Sensitive credentials are encrypted with AES-256-GCM keys managed by the Android Keystore.
-- **Root Protection**: Root commands require explicit superuser elevation dialog approval through your device's root manager (Magisk / KernelSU / APatch).
+- **Root Protection**: Root operations require explicit superuser approval through your device's root manager (Magisk / KernelSU / APatch).
 
 ---
 
