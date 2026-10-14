@@ -155,22 +155,34 @@ DeepCode features a complete, self-contained userspace **Linux Subsystem** power
 
 ## 🧠 AI Providers & Model Matrix
 
-DeepCode provides unified routing across 20+ leading AI providers. Configure your keys in **Settings → API Keys**:
+DeepCode provides unified routing and multi-key auto-rotation across **70+ AI providers and gateways**. Configure and manage your keys in **Settings → API Keys**:
 
-| Provider | Access Type | Highlighted Models | Context | Tier |
-|:---|:---|:---|:---|:---|
-| **OpenCode Zen AI** | **Free Gateway / API Key**<br/>`https://opencode.ai/zen/v1` | `deepseek-v4-flash-free`<br/>`mimo-v2.5-free`<br/>`muse-spark-1.3-contributor-free`<br/>`nemotron-3-ultra-free`<br/>`ling-3.0-flash-fin-free`<br/>`gemini-3.8-flash`<br/>`claude-fable-5.1`<br/>`claude-sonnet-5`<br/>`gpt-6-astra` | 1M Tokens<br/>128k Tokens<br/>1M Tokens<br/>128k Tokens<br/>128k Tokens<br/>1M Tokens<br/>1M Tokens<br/>200k Tokens<br/>128k Tokens | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
-| **Google Antigravity** | **Google OAuth 2.0 / Bearer (`ya29.`)** | `gemini-3.8-flash`<br/>`gemini-3.8-flash-cyber`<br/>`gemini-3-flash-agent`<br/>`gemini-3-pro-preview`<br/>`claude-sonnet-5` (Thinking)<br/>`claude-opus-4-6-thinking`<br/>`gpt-oss-120b-medium` | 1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>200k Tokens<br/>200k Tokens<br/>128k Tokens | **Free**<br/>Paid<br/>**Free**<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
-| **TokenHarbor AI** | **API Key / Bearer Auth**<br/>`https://tokenharbor.ai/v1` | `deepseek-v4.1-flash:free`<br/>`deepseek-v3:free`<br/>`deepseek-r1:free`<br/>`meta-llama-3.3-70b-instruct:free`<br/>`gemini-2.5-flash:free`<br/>`gpt-4o-mini:free` | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>1M Tokens<br/>128k Tokens | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free** |
-| **Ollama Cloud** | **API Key / Bearer Auth**<br/>`https://ollama.com/v1` | `qwen3-coder:480b`<br/>`gpt-oss:120b`<br/>`gemma4` (31B)<br/>`glm-4.7`<br/>`minimax-m3`<br/>`nemotron-3-super` (120B) | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>1M Tokens<br/>128k Tokens | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free** |
-| **Google Gemini** | **Google AI Studio Key** | `gemini-3.8-flash`<br/>`gemini-2.0-flash`<br/>`gemini-2.0-flash-lite`<br/>`gemini-2.0-pro-exp-02-05`<br/>`imagen-3.0-generate-002` | 1M Tokens<br/>1M Tokens<br/>1M Tokens<br/>2M Tokens<br/>Image Gen | **Free**<br/>**Free**<br/>**Free**<br/>**Free**<br/>**Free** |
-| **Groq Cloud** | **Groq API Key (LPU)** | `llama-3.3-70b-versatile`<br/>`llama-3.1-8b-instant`<br/>`deepseek-r1-distill-llama-70b`<br/>`openai/gpt-oss-120b` | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens | **Free**<br/>**Free**<br/>**Free**<br/>**Free** |
-| **DeepSeek Harness** | **Autonomous DSH CLI**<br/>`dsh` via Ubuntu PRoot | `deepseek-chat`<br/>`deepseek-coder`<br/>Multi-Provider CLI Execution | 128k Tokens | **Free** / Paid |
-| **Nous Hermes Agent** | **Nous Research Autonomous CLI**<br/>`hermes` via Ubuntu PRoot | `hermes-3-llama-3.1-405b`<br/>`hermes-3-llama-3.1-70b` | 128k Tokens | **Free** / Paid |
-| **Claude Code CLI** | **Anthropic Terminal CLI**<br/>`claude` via Ubuntu PRoot | `claude-3-7-sonnet`<br/>`claude-3-5-sonnet` | 200k Tokens | Paid |
-| **OpenAI API** | **OpenAI API Key** | `gpt-6-astra`<br/>`gpt-5.6-sol`<br/>`gpt-4o`<br/>`gpt-4o-mini`<br/>`o3-mini`<br/>`dall-e-3` | 128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>128k Tokens<br/>200k Tokens<br/>Image Gen | Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid<br/>Paid |
-| **Anthropic** | **Anthropic API Key** | `claude-fable-5.1`<br/>`claude-opus-5`<br/>`claude-sonnet-5`<br/>`claude-3-7-sonnet-latest` | 1M Tokens<br/>200k Tokens<br/>200k Tokens<br/>200k Tokens | Paid<br/>Paid<br/>Paid<br/>Paid |
-| **Cerebras / Mistral** | **Respective API Keys** | Llama 3.3 70B, DeepSeek R1, Codestral, Mixtral 8x22B | Up to 128k Tokens | Free / Paid |
+### ⚡ Direct & Popular Providers
+
+| Provider | Access & Authentication | Default Endpoint | Free Tier Available? |
+|:---|:---|:---|:---:|
+| **OpenCode Zen AI** | Free Gateway / Optional API Key | `https://opencode.ai/zen/v1` | ✅ Yes (Zero Config) |
+| **Google Antigravity** | Google OAuth 2.0 (`ya29.`) Bearer | Cloud OAuth Gateway | ✅ Yes |
+| **Google Gemini** | Google AI Studio Key | `https://generativelanguage.googleapis.com` | ✅ Yes |
+| **Groq Cloud** | Groq LPU API Key | `https://api.groq.com/openai/v1` | ✅ Yes |
+| **DeepSeek** | DeepSeek API Key | `https://api.deepseek.com` | Paid / Low Cost |
+| **Anthropic** | Anthropic API Key | `https://api.anthropic.com` | Paid |
+| **OpenAI** | OpenAI API Key | `https://api.openai.com/v1` | Paid |
+| **OpenRouter** | OpenRouter API Key | `https://openrouter.ai/api/v1` | Free & Paid |
+| **Mistral AI** | Mistral API Key | `https://api.mistral.ai/v1` | Free & Paid |
+| **Cerebras** | Cerebras API Key | `https://api.cerebras.ai/v1` | ✅ Yes |
+| **Ollama Cloud** | Ollama Bearer Key | `https://ollama.com/v1` | ✅ Yes |
+| **TokenHarbor AI** | TokenHarbor API Key | `https://tokenharbor.ai/v1` | ✅ Yes |
+| **Cohere** | Cohere API Key | `https://api.cohere.com/v2` | Free & Paid |
+| **Atria** | Atria Gateway Key | `https://api.atria.ai/v1` | ✅ Yes |
+| **TinyFish** | Search & Fetch API Key | Web Tooling Gateway | Free & Paid |
+
+### 🌐 Supported OpenAI-Compatible Providers & Gateways
+
+DeepCode seamlessly connects to any standard OpenAI-compatible API endpoint with custom base URLs, custom headers, and multi-key rotation:
+
+> **Cloud & High-Speed Inference**: AIML API • Together AI • DeepInfra • Fireworks AI • NVIDIA NIM • Nebius AI • SambaNova • Hyperbolic • Synthetic • Friendli AI • Featherless AI • Liquid AI • SiliconFlow • Novita AI • Scaleway • Perplexity • Monster API • ModelScope • SenseNova • Lambda AI • Kluster AI • Galadriel • Qianfan • Meta Llama • Nous Research • Alibaba • AI21 Labs • HuggingFace • Free AI API Key • Public AI • Venice AI • TokenRouter • Requesty • DigitalOcean • HCNSec • OpenAdapter • AgentRouter • GMI Cloud • Baseten • Heroku • MariTalk • BlueSminds • Snowflake • Databricks • Reka AI • Modal • Chutes • Factory AI • X5 Lab • Kenari • Pioneer • SumoPod • Wafer • DIT • Morph AI • NanoGPT • ZAI • Inclusion AI • LlamaGate • Inference.net • LLM7 • Charm Hyper • Nube • SparkDesk • API AirForce • Hack Club • Tencent • Coze • Yi • Baichuan • Qwen • MiniMax • Moonshot (Kimi) • StepFun • DouBao • Bailian Coding • VolcEngine • Baidu • GigaChat • Custom Self-Hosted Endpoints
+
 
 ---
 
