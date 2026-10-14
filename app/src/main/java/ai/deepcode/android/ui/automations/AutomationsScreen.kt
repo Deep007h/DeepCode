@@ -931,35 +931,6 @@ fun AutomationsScreen(
             }
         }
     }
-
-    // Floating Action Button - Always easily accessible when scrolling
-    ExtendedFloatingActionButton(
-        onClick = { openCreateRuleSheet() },
-        containerColor = Color(0xFFF59E0B),
-        contentColor = Color.Black,
-        shape = RoundedCornerShape(20.dp),
-        elevation = FloatingActionButtonDefaults.elevation(
-            defaultElevation = 6.dp,
-            pressedElevation = 2.dp
-        ),
-        modifier = Modifier
-            .align(Alignment.BottomEnd)
-            .padding(bottom = 16.dp, end = 16.dp)
-    ) {
-        Icon(
-            imageVector = Icons.Default.Add,
-            contentDescription = "Add Rule",
-            modifier = Modifier.size(18.dp),
-            tint = Color.Black
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = "Add Rule",
-            fontWeight = FontWeight.Bold,
-            fontSize = 13.5.sp,
-            color = Color.Black
-        )
-    }
 }
 
     if (showAddRuleBottomSheet) {
