@@ -1000,19 +1000,24 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
             },
             containerColor = Color.Transparent
         ) { padding ->
-            val layoutDirection = LocalLayoutDirection.current
-            val cachedBottomBarHeight = remember(padding) {
+            val cachedBottomBarHeight = remember(padding, dashboardStyle) {
                 val b = padding.calculateBottomPadding()
-                if (b > 0.dp) b else 72.dp
+                val minFloating = 88.dp
+                val minFixed = 68.dp
+                if (b > 0.dp) {
+                    if (dashboardStyle == ai.deepcode.android.data.local.DASHBOARD_STYLE_FLOATING) maxOf(b, minFloating) else maxOf(b, minFixed)
+                } else {
+                    if (dashboardStyle == ai.deepcode.android.data.local.DASHBOARD_STYLE_FLOATING) minFloating else minFixed
+                }
             }
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(AppScreenBg)
                     .padding(
-                        start = padding.calculateStartPadding(layoutDirection),
+                        start = padding.calculateStartPadding(androidx.compose.ui.platform.LocalLayoutDirection.current),
                         top = padding.calculateTopPadding(),
-                        end = padding.calculateEndPadding(layoutDirection),
+                        end = padding.calculateEndPadding(androidx.compose.ui.platform.LocalLayoutDirection.current),
                         bottom = 0.dp
                     )
             ) {

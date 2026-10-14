@@ -23,8 +23,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontFamily
@@ -2460,45 +2462,133 @@ private fun WebBadge() {
 
 @Composable
 private fun ProviderIcon(id: String, name: String) {
-    val initials = when (id.lowercase()) {
-        "groq" -> "GR"
-        "gmi" -> "GM"
-        "openai" -> "OA"
-        "anthropic" -> "AN"
-        "gemini" -> "GM"
-        "mistral" -> "MI"
-        "deepseek" -> "DS"
-        "cerebras" -> "CB"
-        "openrouter" -> "OR"
-        "together" -> "TG"
-        "fireworks" -> "FW"
-        "deepinfra" -> "DI"
-        "nvidia" -> "NV"
-        "perplexity" -> "PP"
-        "cohere" -> "CO"
-        "xai" -> "XA"
-        "sambanova" -> "SN"
-        "hyperbolic" -> "HB"
-        "atria" -> "AT"
-        "github-models", "github" -> "GH"
-        "zen", "zenmux", "zenmux-free", "opencode", "opencode-zen" -> "ZN"
-        else -> name.take(2).uppercase()
+    val idLower = remember(id) { id.lowercase().trim() }
+
+    val brandGradient = remember(idLower) {
+        when {
+            idLower.contains("openai") || idLower == "chatgpt" -> listOf(Color(0xFF10A37F), Color(0xFF0B6D55))
+            idLower.contains("anthropic") || idLower.contains("claude") -> listOf(Color(0xFFD97706), Color(0xFF9A3412))
+            idLower.contains("gemini") || idLower == "antigravity" || idLower.contains("gemini-business") -> listOf(Color(0xFF4285F4), Color(0xFF9333EA))
+            idLower.contains("zen") || idLower.contains("opencode") -> listOf(Color(0xFFF59E0B), Color(0xFFDC2626))
+            idLower == "groq" -> listOf(Color(0xFFF97316), Color(0xFFC2410C))
+            idLower == "xai" || idLower.contains("grok") -> listOf(Color(0xFF27272A), Color(0xFF09090B))
+            idLower.contains("deepseek") -> listOf(Color(0xFF0284C7), Color(0xFF0369A1))
+            idLower.contains("mistral") || idLower == "codestral" -> listOf(Color(0xFFFF5722), Color(0xFFC83803))
+            idLower.contains("cerebras") -> listOf(Color(0xFFD946EF), Color(0xFF7E22CE))
+            idLower.contains("openrouter") -> listOf(Color(0xFF6366F1), Color(0xFF4338CA))
+            idLower.contains("together") -> listOf(Color(0xFF3B82F6), Color(0xFF1D4ED8))
+            idLower.contains("fireworks") -> listOf(Color(0xFFEC4899), Color(0xFF9D174D))
+            idLower.contains("deepinfra") -> listOf(Color(0xFF8B5CF6), Color(0xFF5B21B6))
+            idLower.contains("nvidia") -> listOf(Color(0xFF76B900), Color(0xFF3B6100))
+            idLower.contains("perplexity") -> listOf(Color(0xFF0891B2), Color(0xFF0E7490))
+            idLower.contains("cohere") -> listOf(Color(0xFF059669), Color(0xFF065F46))
+            idLower.contains("sambanova") -> listOf(Color(0xFFF43F5E), Color(0xFFBE123C))
+            idLower.contains("hyperbolic") -> listOf(Color(0xFF8B5CF6), Color(0xFF6D28D9))
+            idLower.contains("github") -> listOf(Color(0xFF24292E), Color(0xFF0F1419))
+            idLower.contains("ollama") -> listOf(Color(0xFF475569), Color(0xFF1E293B))
+            idLower.contains("pollinations") -> listOf(Color(0xFF10B981), Color(0xFF047857))
+            idLower.contains("qwen") || idLower.contains("alibaba") -> listOf(Color(0xFFFF6A00), Color(0xFFC2410C))
+            idLower.contains("huggingface") -> listOf(Color(0xFFFBBF24), Color(0xFFD97706))
+            idLower in listOf("cursor", "windsurf", "kiro", "codex", "trae", "zed-hosted") -> listOf(Color(0xFF3B82F6), Color(0xFF1E40AF))
+            idLower == "tinyfish" -> listOf(Color(0xFF06B6D4), Color(0xFF0E7490))
+            idLower == "tokenharbor" -> listOf(Color(0xFF14B8A6), Color(0xFF0F766E))
+            idLower.contains("nebius") -> listOf(Color(0xFF6366F1), Color(0xFF3730A3))
+            idLower.contains("synthetic") -> listOf(Color(0xFFA855F7), Color(0xFF7E22CE))
+            idLower.contains("scaleway") -> listOf(Color(0xFF4F46E5), Color(0xFF312E81))
+            idLower.contains("novita") -> listOf(Color(0xFF06B6D4), Color(0xFF0891B2))
+            idLower.contains("snowflake") -> listOf(Color(0xFF38BDF8), Color(0xFF0284C7))
+            idLower.contains("databricks") -> listOf(Color(0xFFEF4444), Color(0xFFB91C1C))
+            else -> listOf(Color(0xFF3F3F46), Color(0xFF27272A))
+        }
+    }
+
+    val vectorIcon: ImageVector? = remember(idLower) {
+        when {
+            idLower.contains("openai") || idLower == "chatgpt" -> Icons.Default.AutoAwesome
+            idLower.contains("anthropic") || idLower.contains("claude") -> Icons.Default.Flare
+            idLower.contains("gemini") || idLower == "antigravity" || idLower.contains("gemini-business") -> Icons.Default.AutoAwesome
+            idLower.contains("zen") || idLower.contains("opencode") -> Icons.Default.ElectricBolt
+            idLower == "groq" -> Icons.Default.Bolt
+            idLower == "xai" || idLower.contains("grok") -> Icons.Default.Terminal
+            idLower.contains("deepseek") -> Icons.Default.Waves
+            idLower.contains("mistral") || idLower == "codestral" -> Icons.Default.LocalFireDepartment
+            idLower.contains("cerebras") -> Icons.Default.Memory
+            idLower.contains("openrouter") -> Icons.Default.AltRoute
+            idLower.contains("together") -> Icons.Default.Hub
+            idLower.contains("fireworks") -> Icons.Default.Brightness7
+            idLower.contains("deepinfra") -> Icons.Default.Layers
+            idLower.contains("nvidia") -> Icons.Default.Speed
+            idLower.contains("perplexity") -> Icons.Default.Search
+            idLower.contains("cohere") -> Icons.Default.AllInclusive
+            idLower.contains("sambanova") -> Icons.Default.FlashOn
+            idLower.contains("hyperbolic") -> Icons.Default.AutoMode
+            idLower.contains("github") -> Icons.Default.Code
+            idLower.contains("ollama") -> Icons.Default.Cloud
+            idLower.contains("pollinations") -> Icons.Default.Eco
+            idLower.contains("qwen") || idLower.contains("alibaba") -> Icons.Default.Public
+            idLower.contains("huggingface") -> Icons.Default.SentimentSatisfied
+            idLower in listOf("cursor", "windsurf", "kiro", "codex", "trae", "zed-hosted") -> Icons.Default.Terminal
+            idLower == "tinyfish" -> Icons.Default.TravelExplore
+            idLower == "tokenharbor" -> Icons.Default.Anchor
+            idLower in listOf("snowflake", "databricks") -> Icons.Default.Storage
+            idLower in listOf("modal", "chutes") -> Icons.Default.CloudQueue
+            idLower == "wandb" -> Icons.Default.Insights
+            idLower in listOf("aimlapi", "novita", "scaleway", "friendliai", "synthetic") -> Icons.Default.Api
+            else -> null
+        }
+    }
+
+    val initials = remember(idLower, name) {
+        when {
+            idLower == "groq" -> "GR"
+            idLower == "openai" -> "OA"
+            idLower == "anthropic" -> "AN"
+            idLower == "gemini" -> "GM"
+            idLower == "mistral" -> "MI"
+            idLower == "deepseek" -> "DS"
+            idLower == "cerebras" -> "CB"
+            idLower == "openrouter" -> "OR"
+            idLower.contains("zen") || idLower.contains("opencode") -> "ZN"
+            else -> {
+                val words = name.split(" ", "-", "_").filter { it.isNotBlank() }
+                if (words.size >= 2) "${words[0].first().uppercase()}${words[1].first().uppercase()}"
+                else name.take(2).uppercase()
+            }
+        }
     }
 
     Box(
         modifier = Modifier
             .size(42.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (isDarkThemeActive) Color(0xFF202024) else Color(0xFFEFF0F4))
-            .border(1.dp, if (isDarkThemeActive) Color(0xFF2E2E34) else AppBorder, RoundedCornerShape(10.dp)),
+            .shadow(
+                elevation = 3.dp,
+                shape = RoundedCornerShape(12.dp),
+                spotColor = brandGradient.first().copy(alpha = 0.45f)
+            )
+            .clip(RoundedCornerShape(12.dp))
+            .background(Brush.linearGradient(brandGradient))
+            .border(
+                width = 0.8.dp,
+                color = Color.White.copy(alpha = 0.22f),
+                shape = RoundedCornerShape(12.dp)
+            ),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = initials,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFFF59E0B),
-            fontFamily = FontFamily.Monospace
-        )
+        if (vectorIcon != null) {
+            Icon(
+                imageVector = vectorIcon,
+                contentDescription = name,
+                tint = Color.White,
+                modifier = Modifier.size(22.dp)
+            )
+        } else {
+            Text(
+                text = initials,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                fontFamily = FontFamily.Monospace
+            )
+        }
     }
 }

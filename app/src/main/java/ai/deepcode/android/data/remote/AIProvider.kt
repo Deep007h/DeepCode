@@ -360,41 +360,25 @@ class AIProviderFactory {
 
 
 class KeepAliveSocketFactory(private val delegate: javax.net.SocketFactory = javax.net.SocketFactory.getDefault()) : javax.net.SocketFactory() {
-    override fun createSocket(): java.net.Socket {
-        val socket = delegate.createSocket()
+    private fun configureSocket(socket: java.net.Socket): java.net.Socket {
         socket.keepAlive = true
+        socket.tcpNoDelay = true
         return socket
     }
 
-    override fun createSocket(host: String?, port: Int): java.net.Socket {
-        val socket = delegate.createSocket(host, port)
-        socket.keepAlive = true
-        return socket
-    }
-
-    override fun createSocket(host: String?, port: Int, localHost: java.net.InetAddress?, localPort: Int): java.net.Socket {
-        val socket = delegate.createSocket(host, port, localHost, localPort)
-        socket.keepAlive = true
-        return socket
-    }
-
-    override fun createSocket(host: java.net.InetAddress?, port: Int): java.net.Socket {
-        val socket = delegate.createSocket(host, port)
-        socket.keepAlive = true
-        return socket
-    }
-
-    override fun createSocket(address: java.net.InetAddress?, port: Int, localAddress: java.net.InetAddress?, localPort: Int): java.net.Socket {
-        val socket = delegate.createSocket(address, port, localAddress, localPort)
-        socket.keepAlive = true
-        return socket
-    }
+    override fun createSocket(): java.net.Socket = configureSocket(delegate.createSocket())
+    override fun createSocket(host: String?, port: Int): java.net.Socket = configureSocket(delegate.createSocket(host, port))
+    override fun createSocket(host: String?, port: Int, localHost: java.net.InetAddress?, localPort: Int): java.net.Socket =
+        configureSocket(delegate.createSocket(host, port, localHost, localPort))
+    override fun createSocket(host: java.net.InetAddress?, port: Int): java.net.Socket = configureSocket(delegate.createSocket(host, port))
+    override fun createSocket(address: java.net.InetAddress?, port: Int, localAddress: java.net.InetAddress?, localPort: Int): java.net.Socket =
+        configureSocket(delegate.createSocket(address, port, localAddress, localPort))
 }
 private val client = OkHttpClient.Builder()
     .socketFactory(KeepAliveSocketFactory())
     .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
     .connectionPool(okhttp3.ConnectionPool(16, 5, TimeUnit.MINUTES))
-    .connectTimeout(20, TimeUnit.SECONDS)
+    .connectTimeout(12, TimeUnit.SECONDS)
     .readTimeout(90, TimeUnit.SECONDS)
     .writeTimeout(60, TimeUnit.SECONDS)
     .proxySelector(object : java.net.ProxySelector() {
@@ -476,7 +460,7 @@ class ZenProvider : AIProvider {
                 .socketFactory(KeepAliveSocketFactory())
                 .connectionPool(okhttp3.ConnectionPool(8, 5, TimeUnit.MINUTES))
                 .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
-                .connectTimeout(15, TimeUnit.SECONDS)
+                .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(90, TimeUnit.SECONDS)
                 .writeTimeout(30, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)

@@ -93,7 +93,7 @@ fun DashboardScreen(
             .background(AppScreenBg)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp)
+        contentPadding = PaddingValues(top = 8.dp, bottom = 104.dp)
     ) {
         // ── TOP BAR WITH DAILY GREETING & STATUS ───────────────────────────────────
         item {

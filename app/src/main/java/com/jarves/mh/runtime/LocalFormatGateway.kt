@@ -32,6 +32,7 @@ internal class LocalFormatGateway(
     private fun acceptLoop() {
         while (running.get()) {
             runCatching { server.accept() }.getOrNull()?.let { socket ->
+                runCatching { socket.tcpNoDelay = true }
                 Thread({ socket.use(::handle) }, "mh-format-request").apply { isDaemon = true; start() }
             }
         }
@@ -122,7 +123,7 @@ internal class LocalFormatGateway(
             val endpoint = if (base.endsWith("/chat/completions")) base else "$base/chat/completions"
             val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
-                connectTimeout = 25_000
+                connectTimeout = 12_000
                 readTimeout = 180_000
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
@@ -158,7 +159,7 @@ internal class LocalFormatGateway(
                 val streamHeaders = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n"
                 output.write(streamHeaders.toByteArray())
                 output.flush()
-                val buf = ByteArray(8192)
+                val buf = ByteArray(1024)
                 var r: Int
                 while (stream.read(buf).also { r = it } != -1) {
                     output.write(buf, 0, r)

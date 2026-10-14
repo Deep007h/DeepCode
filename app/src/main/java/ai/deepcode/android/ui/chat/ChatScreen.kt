@@ -1237,31 +1237,14 @@ fun ChatScreen(
 
         val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
         // Hardware-accelerated 120Hz tracking: when IME is visible, follow system insets directly (zero spring lag).
-        // When IME is hidden, position comfortably above the navigation bar.
-        val currentBottomPadding = if (imeBottom > bottomBarHeight) imeBottom else bottomBarHeight
-        val dashboardStyle by repository.securePrefs.dashboardStyleFlow.collectAsStateWithLifecycle()
-        val isFloatingDashboard = dashboardStyle != ai.deepcode.android.data.local.DASHBOARD_STYLE_FIXED
+        val currentBottomPadding = if (imeBottom > bottomBarHeight) imeBottom else (bottomBarHeight + 6.dp)
 
         Column(
-            modifier = if (isFloatingDashboard) {
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp)
-                    .padding(top = 4.dp)
-                    .padding(bottom = currentBottomPadding)
-            } else {
-                Modifier
-                    .fillMaxWidth()
-                    .background(if (isDarkThemeActive) Color(0xFF101015) else Color(0xFFF7F7FA))
-                    .border(
-                        width = 1.dp,
-                        color = if (isDarkThemeActive) Color(0xFF22222C) else Color(0xFFE2E2E8),
-                        shape = androidx.compose.ui.graphics.RectangleShape
-                    )
-                    .padding(horizontal = 4.dp)
-                    .padding(top = 4.dp)
-                    .padding(bottom = currentBottomPadding)
-            }
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp)
+                .padding(top = 4.dp)
+                .padding(bottom = currentBottomPadding)
         ) {
             if (attachedFiles.isNotEmpty()) {
                 Row(
@@ -1322,31 +1305,21 @@ fun ChatScreen(
                 }
             }
 
-            // Bottom Input Bar (Apple Floating Island vs Fixed Bottom Dock)
+            // Bottom Input Bar (Permanently Floating Apple Glass Dock)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = if (isFloatingDashboard) 6.dp else 4.dp, vertical = if (isFloatingDashboard) 6.dp else 4.dp),
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Input capsule pill with Apple liquid glass depth or fixed dock styling
+                // Input capsule pill with Apple liquid glass depth
                 Row(
-                    modifier = if (isFloatingDashboard) {
-                        Modifier
-                            .weight(1f)
-                            .heightIn(min = 52.dp)
-                            .appleGlassDock(shape = RoundedCornerShape(32.dp), elevation = 7.dp, isDark = isDarkThemeActive)
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                    } else {
-                        Modifier
-                            .weight(1f)
-                            .heightIn(min = 50.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(if (isDarkThemeActive) Color(0xFF1B1B24) else Color(0xFFFFFFFF))
-                            .border(1.dp, if (isDarkThemeActive) Color(0xFF2B2B3A) else Color(0xFFDFDFE5), RoundedCornerShape(18.dp))
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 52.dp)
+                        .appleGlassDock(shape = RoundedCornerShape(32.dp), elevation = 7.dp, isDark = isDarkThemeActive)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(

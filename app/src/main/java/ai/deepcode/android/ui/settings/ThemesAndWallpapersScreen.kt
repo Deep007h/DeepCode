@@ -29,6 +29,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -361,7 +362,7 @@ fun ThemesAndWallpapersScreen(
                         )
 
                         if (isFloatingPreview) {
-                            // Apple-style Floating Island Glass Dock
+                            // Apple-style Floating Stadium Capsule Dock Preview
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -371,12 +372,11 @@ fun ThemesAndWallpapersScreen(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .appleGlassDock(
-                                            shape = RoundedCornerShape(22.dp),
-                                            elevation = 6.dp,
-                                            isDark = isDarkThemeActive
-                                        )
-                                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                                        .shadow(elevation = 6.dp, shape = CircleShape, spotColor = Color.Black.copy(alpha = 0.4f))
+                                        .clip(CircleShape)
+                                        .background(if (isDarkThemeActive) Color(0xF0141417) else Color(0xF2F5F5F8))
+                                        .border(0.8.dp, Color.White.copy(alpha = if (isDarkThemeActive) 0.12f else 0.4f), CircleShape)
+                                        .padding(horizontal = 4.dp, vertical = 3.dp),
                                     horizontalArrangement = Arrangement.SpaceEvenly,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -384,17 +384,12 @@ fun ThemesAndWallpapersScreen(
                                         Box(
                                             modifier = Modifier
                                                 .weight(1f)
-                                                .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 10.dp, bottomEnd = 10.dp))
-                                                .background(if (isSelected) currentAccent.primary.copy(alpha = 0.24f) else Color.Transparent)
+                                                .clip(RoundedCornerShape(percent = 50))
+                                                .background(if (isSelected) (if (isDarkThemeActive) Color(0xFF2C2C32) else Color(0xFFDFDFE5)) else Color.Transparent)
                                                 .border(
-                                                    width = if (isSelected) 0.8.dp else 0.dp,
-                                                    brush = Brush.verticalGradient(
-                                                        listOf(
-                                                            Color.White.copy(alpha = if (isSelected) 0.40f else 0f),
-                                                            Color.White.copy(alpha = if (isSelected) 0.08f else 0f)
-                                                        )
-                                                    ),
-                                                    shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
+                                                    width = if (isSelected) 0.5.dp else 0.dp,
+                                                    color = if (isSelected) Color.White.copy(alpha = 0.15f) else Color.Transparent,
+                                                    shape = RoundedCornerShape(percent = 50)
                                                 )
                                                 .padding(vertical = 3.dp),
                                             contentAlignment = Alignment.Center
@@ -405,15 +400,15 @@ fun ThemesAndWallpapersScreen(
                                                 Icon(
                                                     imageVector = icon,
                                                     contentDescription = label,
-                                                    tint = if (isSelected) currentAccent.primary else AppMuted,
-                                                    modifier = Modifier.size(16.dp)
+                                                    tint = if (isSelected) Color.White else AppMuted,
+                                                    modifier = Modifier.size(15.dp)
                                                 )
                                                 Spacer(modifier = Modifier.height(1.dp))
                                                 Text(
                                                     text = label,
                                                     fontSize = 8.5.sp,
                                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (isSelected) currentAccent.primary else AppMuted
+                                                    color = if (isSelected) Color.White else AppMuted
                                                 )
                                             }
                                         }
@@ -1066,8 +1061,11 @@ fun ThemesAndWallpapersScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(34.dp)
-                                            .appleGlassDock(shape = RoundedCornerShape(17.dp), elevation = 4.dp, isDark = true)
-                                            .padding(horizontal = 6.dp),
+                                            .shadow(4.dp, CircleShape)
+                                            .clip(CircleShape)
+                                            .background(Color(0xF0141417))
+                                            .border(0.6.dp, Color.White.copy(alpha = 0.15f), CircleShape)
+                                            .padding(horizontal = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceEvenly
                                     ) {
@@ -1076,12 +1074,12 @@ fun ThemesAndWallpapersScreen(
                                             modifier = Modifier
                                                 .width(28.dp)
                                                 .height(26.dp)
-                                                .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 5.dp, bottomEnd = 5.dp))
-                                                .background(currentAccent.primary.copy(alpha = 0.25f))
-                                                .border(0.5.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 5.dp, bottomEnd = 5.dp)),
+                                                .clip(RoundedCornerShape(percent = 50))
+                                                .background(Color(0xFF2C2C32))
+                                                .border(0.5.dp, Color.White.copy(alpha = 0.20f), RoundedCornerShape(percent = 50)),
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            Icon(imageVector = Icons.AutoMirrored.Filled.Chat, contentDescription = null, tint = currentAccent.primary, modifier = Modifier.size(12.dp))
+                                            Icon(imageVector = Icons.AutoMirrored.Filled.Chat, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
                                         }
                                         Icon(imageVector = Icons.Default.Schedule, contentDescription = null, tint = AppMuted, modifier = Modifier.size(13.dp))
                                         Icon(imageVector = Icons.Default.Link, contentDescription = null, tint = AppMuted, modifier = Modifier.size(13.dp))
@@ -1090,7 +1088,7 @@ fun ThemesAndWallpapersScreen(
                                 }
 
                                 Text(
-                                    text = "Riceball glass bubble covering icon & tab with drag & spring release",
+                                    text = "Stadium capsule dock with centered capsule tab highlight & fluid spring slide",
                                     color = AppMuted,
                                     fontSize = 10.sp,
                                     lineHeight = 13.sp

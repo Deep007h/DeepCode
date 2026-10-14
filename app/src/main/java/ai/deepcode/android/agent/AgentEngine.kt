@@ -69,7 +69,8 @@ class AgentEngine(private val context: Context) {
     private val tokenUsageRepo = ai.deepcode.android.data.repository.TokenUsageRepository(database.tokenUsageDao(), database.tokenEventDao())
     private val gson = Gson()
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
+        .socketFactory(ai.deepcode.android.data.remote.KeepAliveSocketFactory())
+        .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .proxySelector(object : java.net.ProxySelector() {
             override fun select(uri: java.net.URI?): List<java.net.Proxy> {

@@ -399,26 +399,12 @@ fun ConnectionsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Initials Icon with Brand Color
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .depthPill(
-                                    shape = RoundedCornerShape(12.dp),
-                                    elevation = 1.5.dp,
-                                    isDark = isDarkThemeActive,
-                                    customGradient = listOf(getBrandColor(connection.appId).copy(alpha = 0.25f), getBrandColor(connection.appId).copy(alpha = 0.10f)),
-                                    customBorderColor = getBrandColor(connection.appId).copy(alpha = 0.4f)
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = getBrandInitials(connection.appId),
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = getBrandColor(connection.appId)
-                            )
-                        }
+                        // Brand Icon
+                        IntegrationIcon(
+                            appId = connection.appId,
+                            appName = connection.displayName,
+                            size = 44.dp
+                        )
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
@@ -513,26 +499,12 @@ fun ConnectionsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
                 ) {
-                    // Circle Brand initials
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .depthPill(
-                                shape = RoundedCornerShape(12.dp),
-                                elevation = 1.5.dp,
-                                isDark = isDarkThemeActive,
-                                customGradient = listOf(brandColor.copy(alpha = 0.25f), brandColor.copy(alpha = 0.10f)),
-                                customBorderColor = brandColor.copy(alpha = 0.4f)
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = initials,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = brandColor
-                        )
-                    }
+                    // Brand Icon
+                    IntegrationIcon(
+                        appId = item.appId,
+                        appName = item.appName,
+                        size = 44.dp
+                    )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.padding(end = 8.dp)) {
                         Text(
@@ -826,20 +798,11 @@ fun ConnectionsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFF10A37F).copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "GPT",
-                                    color = Color(0xFF10A37F),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp
-                                )
-                            }
+                            IntegrationIcon(
+                                appId = "chatgpt",
+                                appName = "ChatGPT",
+                                size = 40.dp
+                            )
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
