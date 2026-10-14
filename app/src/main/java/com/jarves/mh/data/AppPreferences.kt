@@ -89,7 +89,12 @@ class AppPreferences(private val context: Context) {
     private fun agentConversationKey(agent: AgentKind, projectId: String, chatId: String): String {
         // Antigravity v2 sessions are created with an explicit CLI project so
         // old default-project conversations cannot redirect writes to scratch.
-        val version = if (agent == AgentKind.ANTIGRAVITY) "v2_" else if (agent == AgentKind.HERMES) "hermes_" else ""
+        val version = when (agent) {
+            AgentKind.ANTIGRAVITY -> "v2_"
+            AgentKind.HERMES -> "hermes_"
+            AgentKind.OPENCODE -> "opencode_"
+            else -> ""
+        }
         return "agent_conversation_${version}${agent.stableId}_${projectId}_$chatId"
     }
 
@@ -180,10 +185,10 @@ class AppPreferences(private val context: Context) {
         val kind = when {
             agent == null -> storedKind ?: ProviderKind.ANTHROPIC
             agent == AgentKind.DEEPSEEK_HARNESS && (!hasAgentProfile || legacyClaudeDefaultInDeepSeek) -> ProviderKind.DEEPSEEK
-            agent == AgentKind.HERMES && !hasAgentProfile -> ProviderKind.OPENCODE_ZEN
+            (agent == AgentKind.HERMES || agent == AgentKind.OPENCODE) && !hasAgentProfile -> ProviderKind.OPENCODE_ZEN
             storedKind != null && storedKind in providersForAgent(agent) -> storedKind
             agent == AgentKind.DEEPSEEK_HARNESS -> ProviderKind.DEEPSEEK
-            agent == AgentKind.HERMES -> ProviderKind.OPENCODE_ZEN
+            agent == AgentKind.HERMES || agent == AgentKind.OPENCODE -> ProviderKind.OPENCODE_ZEN
             else -> ProviderKind.ANTHROPIC
         }
         val useStoredValues = storedKind == kind

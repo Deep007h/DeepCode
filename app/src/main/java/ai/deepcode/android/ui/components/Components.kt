@@ -552,10 +552,10 @@ fun IntegrationIcon(
     }
 }
 
-// 💊 Stadium capsule shapes matching the reference Apple/Spotify floating design
+// 🍙 Riceball squircle shape and fluid iOS/HyperOS jiggle spring
 val StadiumCapsuleShape = CircleShape
-val TabCapsuleShape = RoundedCornerShape(percent = 50)
-private val CapsuleSpring = spring<Float>(dampingRatio = 0.82f, stiffness = 420f)
+val TabCapsuleShape = RoundedCornerShape(20.dp)
+private val CapsuleSpring = spring<Float>(dampingRatio = 0.68f, stiffness = 380f)
 
 @Composable
 fun BottomNavBar(
@@ -696,67 +696,127 @@ private fun CapsuleTabBar(
     onTabSelected: (Int) -> Unit
 ) {
     val tabCount = tabs.size
-    var rowSize by remember { mutableStateOf(IntSize.Zero) }
-    var isMeasured by remember { mutableStateOf(false) }
     val density = LocalDensity.current
+    val currentActiveTab by rememberUpdatedState(activeTab)
 
-    val tabWidthPx = if (rowSize.width > 0 && tabCount > 0) {
-        rowSize.width.toFloat() / tabCount
-    } else 0f
-
-    val showPill = tabWidthPx > 0f && activeTab in 0 until tabCount
-    val targetOffsetPx = if (showPill) activeTab * tabWidthPx else 0f
-
-    LaunchedEffect(tabWidthPx) {
-        if (tabWidthPx > 0f && !isMeasured) {
-            isMeasured = true
-        }
-    }
-
-    val animatedPillOffset by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = targetOffsetPx,
-        animationSpec = if (!isMeasured) snap() else CapsuleSpring,
-        label = "capsulePillOffset"
-    )
-
-    Box(
+    BoxWithConstraints(
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = Alignment.CenterStart
     ) {
-        // 💊 Sliding Capsule Selection Highlight (wraps icon + label with clean rounded edges)
-        if (showPill) {
-            Box(
-                modifier = Modifier
-                    .width(with(density) { tabWidthPx.toDp() })
-                    .height(with(density) { rowSize.height.toDp() })
-                    .graphicsLayer {
-                        translationX = animatedPillOffset
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                        .clip(TabCapsuleShape)
-                        .background(if (isDark) Color(0x553C3C46) else Color(0x28000000))
-                        .border(
-                            width = 0.5.dp,
-                            color = if (isDark) Color.White.copy(alpha = 0.20f) else Color.Black.copy(alpha = 0.08f),
-                            shape = TabCapsuleShape
-                        )
-                )
-            }
-        }
+        val totalWidthPx = constraints.maxWidth.toFloat()
+        val tabWidthPx = if (tabCount > 0) totalWidthPx / tabCount else 0f
+        val showPill = tabWidthPx > 0f && activeTab in 0 until tabCount
 
-        // 📱 Interactive Tab Row
-        Row(
+        var isDragging by remember { mutableStateOf(false) }
+        var dragAccumulatedX by remember { mutableFloatStateOf(0f) }
+        var dragStartTab by remember { mutableIntStateOf(activeTab) }
+        var lastHapticTab by remember { mutableIntStateOf(activeTab) }
+
+        val rawTargetOffsetPx = if (showPill) {
+            if (isDragging) {
+                (dragStartTab * tabWidthPx + dragAccumulatedX).coerceIn(-tabWidthPx * 0.15f, (tabCount - 1 + 0.15f) * tabWidthPx)
+            } else {
+                activeTab * tabWidthPx
+            }
+        } else 0f
+
+        val animatedPillOffset by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = rawTargetOffsetPx,
+            animationSpec = if (isDragging) spring(dampingRatio = 0.98f, stiffness = 1200f) else CapsuleSpring,
+            label = "capsulePillOffset"
+        )
+
+        val squishX by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (isDragging) 1.08f else 1.0f,
+            animationSpec = spring(dampingRatio = 0.65f, stiffness = 380f),
+            label = "capsuleSquishX"
+        )
+        val squishY by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (isDragging) 0.92f else 1.0f,
+            animationSpec = spring(dampingRatio = 0.65f, stiffness = 380f),
+            label = "capsuleSquishY"
+        )
+
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .onSizeChanged { rowSize = it },
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
+                .pointerInput(tabCount) {
+                    if (tabCount <= 0) return@pointerInput
+                    detectHorizontalDragGestures(
+                        onDragStart = {
+                            isDragging = true
+                            dragStartTab = currentActiveTab
+                            dragAccumulatedX = 0f
+                            lastHapticTab = currentActiveTab
+                            try {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            } catch (_: Exception) {}
+                        },
+                        onHorizontalDrag = { _, dragAmount ->
+                            dragAccumulatedX += dragAmount
+                            val currentPos = dragStartTab * tabWidthPx + dragAccumulatedX
+                            val hovered = (currentPos / tabWidthPx).roundToInt().coerceIn(0, tabCount - 1)
+                            if (hovered != lastHapticTab) {
+                                lastHapticTab = hovered
+                                try {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                } catch (_: Exception) {}
+                            }
+                        },
+                        onDragEnd = {
+                            val currentPos = dragStartTab * tabWidthPx + dragAccumulatedX
+                            val finalTarget = (currentPos / tabWidthPx).roundToInt().coerceIn(0, tabCount - 1)
+                            isDragging = false
+                            dragAccumulatedX = 0f
+                            if (finalTarget != currentActiveTab) {
+                                onTabSelected(finalTarget)
+                                try {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                } catch (_: Exception) {}
+                            }
+                        },
+                        onDragCancel = {
+                            isDragging = false
+                            dragAccumulatedX = 0f
+                        }
+                    )
+                },
+            contentAlignment = Alignment.CenterStart
         ) {
+            // 🍙 Sliding Riceball Capsule Selection Highlight
+            if (showPill) {
+                Box(
+                    modifier = Modifier
+                        .width(with(density) { tabWidthPx.toDp() })
+                        .height(48.dp)
+                        .graphicsLayer {
+                            translationX = animatedPillOffset
+                            scaleX = squishX
+                            scaleY = squishY
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 3.dp, vertical = 2.dp)
+                            .clip(TabCapsuleShape)
+                            .background(if (isDark) Color(0x553C3C46) else Color(0x28000000))
+                            .border(
+                                width = 0.5.dp,
+                                color = if (isDark) Color.White.copy(alpha = 0.20f) else Color.Black.copy(alpha = 0.08f),
+                                shape = TabCapsuleShape
+                            )
+                    )
+                }
+            }
+
+            // 📱 Interactive Tab Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
             tabs.forEach { tab ->
                 val isActive = tab.index == activeTab
                 val iconTint by androidx.compose.animation.animateColorAsState(
@@ -819,6 +879,7 @@ private fun CapsuleTabBar(
             }
         }
     }
+}
 }
 
 private data class BottomNavTab(val label: String, val icon: ImageVector, val index: Int)

@@ -98,8 +98,16 @@ class AutomationScheduler(private val context: Context) {
             }
             AppLogger.i("AutomationScheduler", "Exact alarm set for $automationId at $triggerAtMillis")
         } catch (e: SecurityException) {
-            AppLogger.w("AutomationScheduler", "setExact not allowed, using setWindow: ${e.message}")
-            alarmManager.setWindow(AlarmManager.RTC_WAKEUP, triggerAtMillis, 5000, pendingIntent)
+            AppLogger.w("AutomationScheduler", "setExact not allowed, falling back: ${e.message}")
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+                } else {
+                    alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+                }
+            } catch (e2: Exception) {
+                AppLogger.w("AutomationScheduler", "AlarmManager fallback failed: ${e2.message}")
+            }
         }
     }
 

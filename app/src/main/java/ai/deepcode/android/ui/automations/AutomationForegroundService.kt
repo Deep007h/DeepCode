@@ -111,25 +111,21 @@ class AutomationForegroundService : Service() {
             true
         }
 
-        if (hasNotificationPermission && areNotificationsEnabled) {
-            try {
-                val notification = createNotification(this, automationName)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    startForeground(
-                        NOTIFICATION_ID,
-                        notification,
-                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                    )
-                } else {
-                    startForeground(NOTIFICATION_ID, notification)
-                }
-            } catch (e: Exception) {
-                AppLogger.e("AutomationForegroundService", "Failed to start foreground service", e)
+        try {
+            val notification = createNotification(this, automationName)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
             }
-        } else {
-            AppLogger.w("AutomationForegroundService", "Notification permission not granted. Running in background.")
+        } catch (e: Exception) {
+            AppLogger.e("AutomationForegroundService", "Failed to start foreground service", e)
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

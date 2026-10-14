@@ -2979,7 +2979,9 @@ class TelegramBridgeService : Service() {
         return if (formatted.length <= 1024) {
             Pair(formatted, null)
         } else {
-            Pair(formatted.take(1020) + "...", clean)
+            val plain = TelegramFormatter.stripHtml(clean)
+            val safePlain = TelegramFormatter.escapeHtml(plain.take(1020)) + "..."
+            Pair(safePlain, clean)
         }
     }
 

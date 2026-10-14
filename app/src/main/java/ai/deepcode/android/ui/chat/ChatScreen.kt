@@ -1630,6 +1630,7 @@ private fun TopBar(
         ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE -> Triple("✳️", "Claude", "Claude Code")
         ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY -> Triple("🚀", "AGY", "Antigravity")
         ai.deepcode.android.data.local.WORKFLOW_HERMES -> Triple("🪽", "Hermes", "Hermes Agent")
+        ai.deepcode.android.data.local.WORKFLOW_OPENCODE -> Triple("💻", "OpenCode", "OpenCode CLI")
         else -> Triple("🤖", "Direct", "Direct Engine")
     }
 
@@ -2820,6 +2821,7 @@ private fun StreamingItem(
             ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE -> "✳️ Claude Code · PRoot"
             ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY -> "🚀 Antigravity · PRoot"
             ai.deepcode.android.data.local.WORKFLOW_HERMES -> "🪽 Hermes Agent · PRoot"
+            ai.deepcode.android.data.local.WORKFLOW_OPENCODE -> "💻 OpenCode CLI · PRoot"
             else -> "🤖 Direct Engine · ${activeModel.name}"
         }
     }
@@ -4636,6 +4638,14 @@ fun AgentSelectionOverlay(
             subtitle = "Nous Research autonomous agent · OpenCode Zen free tier",
             badge = "Nous · Zen Free",
             accentColor = Color(0xFF059669)
+        ),
+        AgentOption(
+            id = ai.deepcode.android.data.local.WORKFLOW_OPENCODE,
+            icon = "💻",
+            title = "OpenCode CLI",
+            subtitle = "Autonomous AI coding agent · PRoot Linux terminal tools",
+            badge = "OpenCode · Zen Free",
+            accentColor = Color(0xFF0EA5E9)
         )
     )
 
@@ -5938,6 +5948,7 @@ class ChatViewModel(val repository: DeepCodeRepository) : ViewModel() {
             ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE -> com.jarves.mh.model.AgentKind.CLAUDE_CODE
             ai.deepcode.android.data.local.WORKFLOW_ANTIGRAVITY -> com.jarves.mh.model.AgentKind.ANTIGRAVITY
             ai.deepcode.android.data.local.WORKFLOW_HERMES -> com.jarves.mh.model.AgentKind.HERMES
+            ai.deepcode.android.data.local.WORKFLOW_OPENCODE -> com.jarves.mh.model.AgentKind.OPENCODE
             else -> com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS
         }
         _streamingEngineBadge.value = "${agentKind.title} · PRoot"
@@ -6072,6 +6083,22 @@ class ChatViewModel(val repository: DeepCodeRepository) : ViewModel() {
                     }
                 }
             }
+            com.jarves.mh.model.AgentKind.OPENCODE -> {
+                com.jarves.mh.runtime.OpencodeRuntimeBridge(context) { prof ->
+                    if (prof.kind == com.jarves.mh.model.ProviderKind.OPENCODE_ZEN) {
+                        vault.getSecret("OPENCODE_ZEN")
+                            ?: listOf("zen", "opencode-zen", "opencode", "zenmux").firstNotNullOfOrNull { k ->
+                                vault.getSecret(k) ?: repository.securePrefs.getApiKey(k).takeIf { it.isNotBlank() }
+                            }
+                            ?: "zen-free"
+                    } else {
+                        vault.getSecret(prof.kind.name)
+                            ?: repository.securePrefs.getApiKey(prof.kind.name.lowercase())
+                            ?: repository.securePrefs.getApiKey(prof.kind.title.lowercase())
+                            ?: ""
+                    }
+                }
+            }
         }
 
         _mediaProcessingType.value = "tool"
@@ -6146,8 +6173,15 @@ class ChatViewModel(val repository: DeepCodeRepository) : ViewModel() {
                         val fullOutput = _streamedText.value.trim()
                         if (fullOutput.isNotBlank()) {
                             appendAssistantMessage(fullOutput, sessionId, agentBadge = "${agentKind.title} · PRoot")
-                        } else if (!hadWorkflowTools) {
-                            appendAssistantMessage("${agentKind.title} finished.", sessionId, agentBadge = "${agentKind.title} · PRoot")
+                        } else if (hadWorkflowTools) {
+                            appendAssistantMessage("All actions completed successfully.", sessionId, agentBadge = "${agentKind.title} · PRoot")
+                        } else {
+                            // Agent finished without producing text - engage Direct In-App Engine immediately
+                            _streamingEngineBadge.value = "Fallback: Direct Engine · ${_activeModel.value.name}"
+                            viewModelScope.launch(Dispatchers.IO) {
+                                executeDirectInAppEngine(text, sessionId, userMsg)
+                            }
+                            return@collect
                         }
                         _isStreaming.value = false
                         _streamingMessageId.value = ""

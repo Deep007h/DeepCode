@@ -249,6 +249,7 @@ const val WORKFLOW_DEEPSEEK_HARNESS = "deepseek-harness"
 const val WORKFLOW_CLAUDE_CODE = "claude-code"
 const val WORKFLOW_ANTIGRAVITY = "antigravity"
 const val WORKFLOW_HERMES = "hermes"
+const val WORKFLOW_OPENCODE = "opencode"
 
 const val DASHBOARD_STYLE_FLOATING = "floating"
 const val DASHBOARD_STYLE_FIXED = "fixed"

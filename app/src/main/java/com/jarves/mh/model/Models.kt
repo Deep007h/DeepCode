@@ -78,6 +78,12 @@ enum class AgentKind(
         "Nous Research autonomous agent · self-improving skills",
         "35.2 MB",
     ),
+    OPENCODE(
+        "opencode",
+        "OpenCode CLI",
+        "Autonomous AI coding agent · PRoot Linux terminal tools",
+        "28.4 MB",
+    ),
     ;
 
     companion object {
@@ -152,6 +158,7 @@ fun providersForAgent(agent: AgentKind): List<ProviderKind> = when (agent) {
     AgentKind.CLAUDE_CODE -> ProviderKind.entries.filterNot { it == ProviderKind.OPENCODE_ZEN }
     AgentKind.ANTIGRAVITY -> emptyList()
     AgentKind.HERMES -> ProviderKind.entries.filter { it in HERMES_PROVIDERS }
+    AgentKind.OPENCODE -> ProviderKind.entries.filter { it in HERMES_PROVIDERS }
 }
 
 data class ProviderProfile(

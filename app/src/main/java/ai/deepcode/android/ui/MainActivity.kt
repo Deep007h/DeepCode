@@ -987,31 +987,10 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                         bottom = 0.dp
                     )
             ) {
-                androidx.compose.animation.AnimatedContent(
+                androidx.compose.animation.Crossfade(
                     targetState = selectedTab,
-                    transitionSpec = {
-                        val direction = if (targetState > initialState) 1 else -1
-                        (androidx.compose.animation.slideInHorizontally(
-                            animationSpec = androidx.compose.animation.core.tween(
-                                durationMillis = 150,
-                                easing = androidx.compose.animation.core.FastOutSlowInEasing
-                            ),
-                            initialOffsetX = { (it * 0.05f * direction).toInt() }
-                        ) + androidx.compose.animation.fadeIn(
-                            animationSpec = androidx.compose.animation.core.tween(130)
-                        )).togetherWith(
-                            androidx.compose.animation.slideOutHorizontally(
-                                animationSpec = androidx.compose.animation.core.tween(
-                                    durationMillis = 120,
-                                    easing = androidx.compose.animation.core.FastOutSlowInEasing
-                                ),
-                                targetOffsetX = { (-it * 0.05f * direction).toInt() }
-                            ) + androidx.compose.animation.fadeOut(
-                                animationSpec = androidx.compose.animation.core.tween(100)
-                            )
-                        ).using(androidx.compose.animation.SizeTransform(clip = false))
-                    },
-                    label = "mainTabTransition",
+                    animationSpec = androidx.compose.animation.core.tween(140, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                    label = "mainTabCrossfade",
                     modifier = Modifier.fillMaxSize().background(AppScreenBg)
                 ) { tab ->
                     when (tab) {

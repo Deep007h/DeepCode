@@ -56,6 +56,7 @@ import ai.deepcode.android.data.local.WORKFLOW_CLAUDE_CODE
 import ai.deepcode.android.data.local.WORKFLOW_DEEPSEEK_HARNESS
 import ai.deepcode.android.data.local.WORKFLOW_DIRECT
 import ai.deepcode.android.data.local.WORKFLOW_HERMES
+import ai.deepcode.android.data.local.WORKFLOW_OPENCODE
 import ai.deepcode.android.service.tools.ToolExecutor
 import ai.deepcode.android.ui.theme.*
 import com.jarves.mh.data.ApiKeyVault
@@ -711,6 +712,15 @@ private fun StepWorkflow(
         icon = Icons.Default.Psychology,
         isSelected = selectedMode == WORKFLOW_HERMES,
         onClick = { onSelectMode(WORKFLOW_HERMES) }
+    )
+
+    WorkflowOptionCard(
+        title = "OpenCode CLI",
+        badge = "OpenCode · Autonomous Agent",
+        desc = "Autonomous AI coding agent with direct Linux terminal access, running bash commands, editing files, and fixing bugs out of the box with zero setup.",
+        icon = Icons.Default.Terminal,
+        isSelected = selectedMode == WORKFLOW_OPENCODE,
+        onClick = { onSelectMode(WORKFLOW_OPENCODE) }
     )
 }
 
@@ -1384,6 +1394,7 @@ private fun StepSubsystemReview(
                                             WORKFLOW_DEEPSEEK_HARNESS -> AgentKind.DEEPSEEK_HARNESS
                                             WORKFLOW_CLAUDE_CODE -> AgentKind.CLAUDE_CODE
                                             WORKFLOW_HERMES -> AgentKind.HERMES
+                                            WORKFLOW_OPENCODE -> AgentKind.OPENCODE
                                             else -> AgentKind.ANTIGRAVITY
                                         }
                                         installer.ensureInstalled(
@@ -1437,6 +1448,7 @@ private fun StepSubsystemReview(
                 WORKFLOW_CLAUDE_CODE -> "Claude Code CLI"
                 WORKFLOW_ANTIGRAVITY -> "Google Antigravity CLI"
                 WORKFLOW_HERMES -> "Hermes Agent (Nous Research PRoot)"
+                WORKFLOW_OPENCODE -> "OpenCode CLI (Autonomous Linux Agent)"
                 else -> "Direct In-App Engine (Native Android)"
             })
             ReviewRow("Voice / TTS Engine", ttsEngine)

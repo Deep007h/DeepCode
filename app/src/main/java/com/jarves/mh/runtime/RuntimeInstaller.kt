@@ -69,6 +69,7 @@ class RuntimeInstaller(private val context: Context) {
     private val dshMarker = File(rootfs, ".pocket-dsh-version")
     private val agyMarker = File(rootfs, ".pocket-agy-version")
     private val hermesMarker = File(rootfs, ".pocket-hermes-version")
+    private val opencodeMarker = File(rootfs, ".pocket-opencode-version")
     private val githubCliMarker = File(rootfs, ".pocket-github-cli-version")
     private val dshAndroidCompatibilityMarker = File(rootfs, ".pocket-dsh-android-compat-version")
     private val macosMetadataRepairMarker = File(rootfs, ".pocket-macos-metadata-repair")
@@ -215,6 +216,7 @@ class RuntimeInstaller(private val context: Context) {
             com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS -> ensureDshInstalled(proot, 0.985f, onProgress)
             com.jarves.mh.model.AgentKind.ANTIGRAVITY -> ensureAgyInstalled(proot, 0.985f, onProgress)
             com.jarves.mh.model.AgentKind.HERMES -> ensureHermesInstalled(proot, 0.985f, onProgress)
+            com.jarves.mh.model.AgentKind.OPENCODE -> ensureOpencodeInstalled(proot, 0.985f, onProgress)
         }
         onProgress(RuntimeInstallProgress("Setup complete", 1f))
         return InstalledRuntime(proot, rootfs)
@@ -235,6 +237,7 @@ class RuntimeInstaller(private val context: Context) {
             com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS -> ensureDshInstalled(runtime.proot, 0.05f, onProgress)
             com.jarves.mh.model.AgentKind.ANTIGRAVITY -> ensureAgyInstalled(runtime.proot, 0.05f, onProgress)
             com.jarves.mh.model.AgentKind.HERMES -> ensureHermesInstalled(runtime.proot, 0.05f, onProgress)
+            com.jarves.mh.model.AgentKind.OPENCODE -> ensureOpencodeInstalled(runtime.proot, 0.05f, onProgress)
         }
         onProgress(RuntimeInstallProgress("${agent.title} is ready", 1f))
     }
@@ -257,6 +260,9 @@ class RuntimeInstaller(private val context: Context) {
             com.jarves.mh.model.AgentKind.HERMES -> isInstalled() &&
                 File(rootfs, HERMES_GUEST_PATH.removePrefix("/")).canExecute() &&
                 !hermesMarker.readTextOrNull().isNullOrBlank()
+            com.jarves.mh.model.AgentKind.OPENCODE -> isInstalled() &&
+                File(rootfs, OPENCODE_GUEST_PATH.removePrefix("/")).canExecute() &&
+                !opencodeMarker.readTextOrNull().isNullOrBlank()
         }
     }
 
@@ -349,6 +355,11 @@ class RuntimeInstaller(private val context: Context) {
             ?.trim()
             ?.takeIf { it.isNotEmpty() && File(rootfs, HERMES_GUEST_PATH.removePrefix("/")).canExecute() }
             ?.let { put(com.jarves.mh.model.AgentKind.HERMES, it) }
+
+        opencodeMarker.readTextOrNull()
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() && File(rootfs, OPENCODE_GUEST_PATH.removePrefix("/")).canExecute() }
+            ?.let { put(com.jarves.mh.model.AgentKind.OPENCODE, it) }
     }
 
     /** Checks each installed agent against its own authoritative release source. */
@@ -378,6 +389,9 @@ class RuntimeInstaller(private val context: Context) {
             installed[com.jarves.mh.model.AgentKind.HERMES]?.let { current ->
                 put(com.jarves.mh.model.AgentKind.HERMES, AgentUpdateInfo(current, HERMES_VERSION))
             }
+            installed[com.jarves.mh.model.AgentKind.OPENCODE]?.let { current ->
+                put(com.jarves.mh.model.AgentKind.OPENCODE, AgentUpdateInfo(current, OPENCODE_VERSION))
+            }
         }
     }
 
@@ -392,6 +406,7 @@ class RuntimeInstaller(private val context: Context) {
             com.jarves.mh.model.AgentKind.DEEPSEEK_HARNESS -> updateDsh(runtime, expectedVersion, onProgress)
             com.jarves.mh.model.AgentKind.ANTIGRAVITY -> updateAgy(runtime, expectedVersion, onProgress)
             com.jarves.mh.model.AgentKind.HERMES -> ensureHermesInstalled(runtime.proot, 0.1f, onProgress)
+            com.jarves.mh.model.AgentKind.OPENCODE -> ensureOpencodeInstalled(runtime.proot, 0.1f, onProgress)
         }
         onProgress(RuntimeInstallProgress("${agent.title} $expectedVersion is ready", 1f, event = RuntimeInstallEvent.COMPLETED))
     }
@@ -1073,6 +1088,887 @@ class RuntimeInstaller(private val context: Context) {
             |if __name__ == "__main__":
             |    main()
         """.trimMargin()
+        file.writeText(script)
+    }
+
+    private suspend fun ensureOpencodeInstalled(
+        proot: File,
+        fraction: Float,
+        onProgress: suspend (RuntimeInstallProgress) -> Unit,
+    ) {
+        if (isAgentInstalled(com.jarves.mh.model.AgentKind.OPENCODE) && opencodeMarker.readTextOrNull() == OPENCODE_VERSION) {
+            ensureOpencodeRunnerScript()
+            return
+        }
+        onProgress(RuntimeInstallProgress("Setting up OpenCode CLI $OPENCODE_VERSION", fraction))
+        ensureCaCertificates()
+        val destination = File(rootfs, OPENCODE_GUEST_PATH.removePrefix("/"))
+        destination.parentFile?.mkdirs()
+        val runnerDir = File(rootfs, "usr/local/lib/opencode").apply { mkdirs() }
+        val runnerScript = File(runnerDir, "opencode_runner.py")
+        writeOpencodeRunnerScript(runnerScript)
+        writeOpencodeGuestExecutable(destination)
+        destination.setExecutable(true, false)
+        verifyGuest(proot, "$OPENCODE_GUEST_PATH --version", "OpenCode CLI verification failed")
+        opencodeMarker.writeText(OPENCODE_VERSION)
+        require(isAgentInstalled(com.jarves.mh.model.AgentKind.OPENCODE)) {
+            "OpenCode CLI installation is incomplete"
+        }
+    }
+
+    /**
+     * Ensures OpenCode CLI runner scripts and system CA certificates are always up to date
+     * before execution.
+     */
+    fun ensureOpencodeRunnerScript() {
+        try {
+            ensureCaCertificates()
+            val runnerDir = File(rootfs, "usr/local/lib/opencode").apply { mkdirs() }
+            val runnerScript = File(runnerDir, "opencode_runner.py")
+            writeOpencodeRunnerScript(runnerScript)
+            val destination = File(rootfs, OPENCODE_GUEST_PATH.removePrefix("/"))
+            if (!destination.exists() || opencodeMarker.readTextOrNull() != OPENCODE_VERSION) {
+                destination.parentFile?.mkdirs()
+                writeOpencodeGuestExecutable(destination)
+                destination.setExecutable(true, false)
+                opencodeMarker.writeText(OPENCODE_VERSION)
+            }
+        } catch (e: Exception) {
+            Log.w("RuntimeInstaller", "Could not ensure OpenCode runner script: ${e.message}")
+        }
+    }
+
+    private fun writeOpencodeGuestExecutable(destination: File) {
+        val script = """
+            |#!/usr/bin/env bash
+            |set -e
+            |if [ "${'$'}1" = "--version" ] || [ "${'$'}1" = "-v" ]; then
+            |    echo "OpenCode CLI v$OPENCODE_VERSION (DeepCode PRoot Linux)"
+            |    exit 0
+            |fi
+            |if [ "${'$'}1" = "--help" ] || [ "${'$'}1" = "-h" ]; then
+            |    echo "OpenCode CLI - Autonomous AI coding agent in Linux"
+            |    echo "Usage: opencode [run|chat] '<prompt>' [--model <model>]"
+            |    exit 0
+            |fi
+            |exec python3 /usr/local/lib/opencode/opencode_runner.py "${'$'}@"
+        """.trimMargin()
+        destination.writeText(script)
+        destination.setExecutable(true, false)
+    }
+
+    private fun writeOpencodeRunnerScript(file: File) {
+        val script = """
+            |#!/usr/bin/env python3
+            |import sys
+            |import os
+            |import json
+            |import ssl
+            |import random
+            |import string
+            |import urllib.request
+            |import urllib.error
+            |import subprocess
+            |import glob
+            |import re
+            |import time
+            |
+            |def get_resilient_ssl_context():
+            |    ca_candidates = [
+            |        "/etc/ssl/certs/ca-certificates.crt",
+            |        "/etc/pki/tls/certs/ca-bundle.crt",
+            |        "/etc/ssl/ca-bundle.pem",
+            |        "/etc/ssl/cert.pem",
+            |        "/usr/lib/ssl/cert.pem",
+            |        "/etc/ssl/certs",
+            |        "/system/etc/security/cacerts"
+            |    ]
+            |    for ca in ca_candidates:
+            |        if os.path.exists(ca):
+            |            try:
+            |                if os.path.isdir(ca):
+            |                    return ssl.create_default_context(capath=ca)
+            |                else:
+            |                    return ssl.create_default_context(cafile=ca)
+            |            except Exception:
+            |                pass
+            |    try:
+            |        import certifi
+            |        return ssl.create_default_context(cafile=certifi.where())
+            |    except Exception:
+            |        pass
+            |    try:
+            |        ctx = ssl.create_default_context()
+            |        ctx.check_hostname = False
+            |        ctx.verify_mode = ssl.CERT_NONE
+            |        return ctx
+            |    except Exception:
+            |        pass
+            |    try:
+            |        return ssl._create_unverified_context()
+            |    except Exception:
+            |        return None
+            |
+            |try:
+            |    ssl._create_default_https_context = ssl._create_unverified_context
+            |except Exception:
+            |    pass
+            |
+            |def execute_http_request(req, timeout=90):
+            |    ctx = get_resilient_ssl_context()
+            |    try:
+            |        return urllib.request.urlopen(req, timeout=timeout, context=ctx)
+            |    except urllib.error.URLError as err:
+            |        err_str = str(err).lower()
+            |        if "certificate" in err_str or "verify" in err_str or "ssl" in err_str:
+            |            try:
+            |                unverified_ctx = ssl._create_unverified_context()
+            |                return urllib.request.urlopen(req, timeout=timeout, context=unverified_ctx)
+            |            except Exception as retry_err:
+            |                raise retry_err
+            |        raise err
+            |    except Exception as err:
+            |        err_str = str(err).lower()
+            |        if "certificate" in err_str or "verify" in err_str or "ssl" in err_str:
+            |            try:
+            |                unverified_ctx = ssl._create_unverified_context()
+            |                return urllib.request.urlopen(req, timeout=timeout, context=unverified_ctx)
+            |            except Exception:
+            |                pass
+            |        raise err
+            |
+            |_B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+            |_counter = 0
+            |_last_time = 0
+            |
+            |def generate_canonical_id(descending=False):
+            |    global _counter, _last_time
+            |    now = int(time.time() * 1000)
+            |    if now != _last_time:
+            |        _last_time = now
+            |        _counter = 0
+            |    _counter += 1
+            |    n = (now << 12) + _counter
+            |    a = ~n if descending else n
+            |    hex_str = ""
+            |    for d in range(6):
+            |        shift = 40 - 8 * d
+            |        b = (a >> shift) & 0xFF
+            |        hex_str += f"{b:02x}"
+            |    rand_chars = "".join(random.choice(_B62) for _ in range(14))
+            |    return hex_str + rand_chars
+            |
+            |def generate_session_id():
+            |    return "ses_" + generate_canonical_id(descending=True)
+            |
+            |def generate_request_id():
+            |    return "msg_" + generate_canonical_id(descending=False)
+            |
+            |PROVIDER_DEFAULTS = {
+            |    "opencode_zen": {
+            |        "url_suffix": "/chat/completions",
+            |        "base_url": "https://opencode.ai/zen/v1",
+            |        "model": "mimo-v2.6-flash-free",
+            |    },
+            |    "openrouter": {
+            |        "url_suffix": "/v1/chat/completions",
+            |        "base_url": "https://openrouter.ai/api",
+            |        "model": "meta-llama/llama-3.3-70b-instruct:free",
+            |    },
+            |    "deepseek": {
+            |        "url_suffix": "/chat/completions",
+            |        "base_url": "https://api.deepseek.com",
+            |        "model": "deepseek-chat",
+            |    },
+            |    "anthropic": {
+            |        "url_suffix": "/v1/messages",
+            |        "base_url": "https://api.anthropic.com",
+            |        "model": "claude-sonnet-4-6",
+            |    },
+            |    "custom": {
+            |        "url_suffix": "/chat/completions",
+            |        "base_url": "",
+            |        "model": "",
+            |    },
+            |}
+            |
+            |ZEN_FREE_MODELS = [
+            |    "mimo-v2.6-flash-free",
+            |    "ling-3.1-flash-free",
+            |    "nemotron-3.5-lightning-free",
+            |    "big-pickle",
+            |    "mimo-v2.5-free",
+            |    "ling-3.0-flash-fin-free",
+            |    "nemotron-3-ultra-free"
+            |]
+            |
+            |OPENCODE_TOOLS = [
+            |    {
+            |        "type": "function",
+            |        "function": {
+            |            "name": "bash",
+            |            "description": "Execute a shell command inside the PRoot Linux environment with full root privileges. Output includes stdout and stderr.",
+            |            "parameters": {
+            |                "type": "object",
+            |                "properties": {
+            |                    "command": {"type": "string", "description": "The command line string to execute."}
+            |                },
+            |                "required": ["command"]
+            |            }
+            |        }
+            |    },
+            |    {
+            |        "type": "function",
+            |        "function": {
+            |            "name": "read",
+            |            "description": "Read the contents of a file in the workspace or Linux system.",
+            |            "parameters": {
+            |                "type": "object",
+            |                "properties": {
+            |                    "path": {"type": "string", "description": "Path to file (relative to workspace or absolute)."},
+            |                    "offset": {"type": "integer", "description": "Line number to start reading from (1-indexed). Optional."},
+            |                    "limit": {"type": "integer", "description": "Number of lines to read. Optional."}
+            |                },
+            |                "required": ["path"]
+            |            }
+            |        }
+            |    },
+            |    {
+            |        "type": "function",
+            |        "function": {
+            |            "name": "read_file",
+            |            "description": "Read file contents (alias for read).",
+            |            "parameters": {
+            |                "type": "object",
+            |                "properties": {
+            |                    "path": {"type": "string", "description": "Path to file to read."},
+            |                    "offset": {"type": "integer", "description": "Line number to start reading from (1-indexed). Optional."},
+            |                    "limit": {"type": "integer", "description": "Number of lines to read. Optional."}
+            |                },
+            |                "required": ["path"]
+            |            }
+            |        }
+            |    },
+            |    {
+            |        "type": "function",
+            |        "function": {
+            |            "name": "write_file",
+            |            "description": "Create or overwrite a file with the given content.",
+            |            "parameters": {
+            |                "type": "object",
+            |                "properties": {
+            |                    "path": {"type": "string", "description": "Path to file to write."},
+            |                    "content": {"type": "string", "description": "Full file content to write."}
+            |                },
+            |                "required": ["path", "content"]
+            |            }
+            |        }
+            |    },
+            |    {
+            |        "type": "function",
+            |        "function": {
+            |            "name": "patch_file",
+            |            "description": "Replace a unique target substring with new content in an existing file to fix bugs or update code.",
+            |            "parameters": {
+            |                "type": "object",
+            |                "properties": {
+            |                    "path": {"type": "string", "description": "Path to file to patch."},
+            |                    "old_string": {"type": "string", "description": "Exact substring to replace."},
+            |                    "new_string": {"type": "string", "description": "Replacement string."}
+            |                },
+            |                "required": ["path", "old_string", "new_string"]
+            |            }
+            |        }
+            |    },
+            |    {
+            |        "type": "function",
+            |        "function": {
+            |            "name": "list_dir",
+            |            "description": "List files and subdirectories in a directory path.",
+            |            "parameters": {
+            |                "type": "object",
+            |                "properties": {
+            |                    "path": {"type": "string", "description": "Directory path (defaults to current workspace)."}
+            |                }
+            |            }
+            |        }
+            |    },
+            |    {
+            |        "type": "function",
+            |        "function": {
+            |            "name": "grep_search",
+            |            "description": "Search for a pattern across files in the workspace.",
+            |            "parameters": {
+            |                "type": "object",
+            |                "properties": {
+            |                    "query": {"type": "string", "description": "Search string or regex pattern."},
+            |                    "path": {"type": "string", "description": "Directory path to search in (defaults to workspace)."}
+            |                },
+            |                "required": ["query"]
+            |            }
+            |        }
+            |    },
+            |    {
+            |        "type": "function",
+            |        "function": {
+            |            "name": "find_files",
+            |            "description": "Find files matching a glob pattern.",
+            |            "parameters": {
+            |                "type": "object",
+            |                "properties": {
+            |                    "pattern": {"type": "string", "description": "Glob pattern (e.g. '*.kt', '*.py', 'test_*')."},
+            |                    "path": {"type": "string", "description": "Directory to search from (defaults to workspace)."}
+            |                },
+            |                "required": ["pattern"]
+            |            }
+            |        }
+            |    }
+            |]
+            |
+            |def resolve_provider():
+            |    provider = os.environ.get("OPENCODE_PROVIDER", "").strip()
+            |    base_url = os.environ.get("OPENCODE_BASE_URL", "").strip().rstrip("/")
+            |    api_key = os.environ.get("OPENCODE_API_KEY", "").strip()
+            |
+            |    if not provider:
+            |        if api_key and "zen" in api_key.lower():
+            |            provider = "opencode_zen"
+            |        elif os.environ.get("OPENROUTER_API_KEY", "").strip():
+            |            provider = "openrouter"
+            |        elif os.environ.get("DEEPSEEK_API_KEY", "").strip():
+            |            provider = "deepseek"
+            |        elif os.environ.get("ANTHROPIC_API_KEY", "").strip():
+            |            provider = "anthropic"
+            |        elif os.environ.get("OPENAI_API_KEY", "").strip():
+            |            provider = "custom"
+            |        else:
+            |            provider = "opencode_zen"
+            |            if not api_key:
+            |                api_key = "zen-free"
+            |
+            |    if not api_key:
+            |        key_map = {
+            |            "openrouter": "OPENROUTER_API_KEY",
+            |            "deepseek": "DEEPSEEK_API_KEY",
+            |            "anthropic": "ANTHROPIC_API_KEY",
+            |            "custom": "OPENAI_API_KEY",
+            |        }
+            |        env_var = key_map.get(provider, "")
+            |        if env_var:
+            |            api_key = os.environ.get(env_var, "").strip()
+            |        if not api_key:
+            |            api_key = "zen-free"
+            |            provider = "opencode_zen"
+            |
+            |    defaults = PROVIDER_DEFAULTS.get(provider, PROVIDER_DEFAULTS["opencode_zen"])
+            |    if not base_url:
+            |        base_url = defaults["base_url"]
+            |
+            |    return provider, base_url, api_key
+            |
+            |def build_url(provider, base_url):
+            |    defaults = PROVIDER_DEFAULTS.get(provider, PROVIDER_DEFAULTS["opencode_zen"])
+            |    suffix = defaults["url_suffix"]
+            |    base = base_url.rstrip("/")
+            |    if "127.0.0.1" in base or "localhost" in base:
+            |        if base.endswith("/chat/completions"):
+            |            return base
+            |        return base + "/chat/completions"
+            |    if base.endswith(suffix.rstrip("/")):
+            |        return base if base.endswith(suffix) else base + "/"
+            |    if provider == "deepseek" and base.endswith("/anthropic"):
+            |        base = base[:-len("/anthropic")]
+            |    return base + suffix
+            |
+            |def resolve_model(provider, cli_model):
+            |    env_model = os.environ.get("OPENCODE_MODEL", "").strip()
+            |    model = cli_model or env_model
+            |    if not model:
+            |        defaults = PROVIDER_DEFAULTS.get(provider, {})
+            |        model = defaults.get("model", "mimo-v2.6-flash-free")
+            |    if provider == "opencode_zen":
+            |        api_key = os.environ.get("OPENCODE_API_KEY", "").strip()
+            |        if not api_key or api_key == "zen-free":
+            |            if model not in ZEN_FREE_MODELS:
+            |                model = "mimo-v2.6-flash-free"
+            |    return model
+            |
+            |def build_headers(provider, api_key, session_id=None, request_id=None, base_url=""):
+            |    headers = {"Content-Type": "application/json"}
+            |    if "127.0.0.1" in base_url or "localhost" in base_url:
+            |        if api_key and api_key != "zen-free":
+            |            headers["Authorization"] = f"Bearer {api_key}"
+            |        return headers
+            |    if provider == "opencode_zen":
+            |        sid = session_id or generate_session_id()
+            |        rid = request_id or generate_request_id()
+            |        headers["User-Agent"] = "opencode/1.19.0 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"
+            |        headers["x-opencode-client"] = "cli"
+            |        headers["x-opencode-project"] = "global"
+            |        headers["x-opencode-session"] = sid
+            |        headers["x-opencode-session-id"] = sid
+            |        headers["x-opencode-request"] = rid
+            |        headers["x-session-affinity"] = sid
+            |        auth_key = api_key if (api_key and api_key != "zen-free") else "public"
+            |        headers["Authorization"] = f"Bearer {auth_key}"
+            |    elif provider == "openrouter":
+            |        headers["User-Agent"] = "OpenCode-CLI/$OPENCODE_VERSION"
+            |        headers["HTTP-Referer"] = "https://opencode.ai"
+            |        headers["X-Title"] = "OpenCode CLI"
+            |        if api_key:
+            |            headers["Authorization"] = f"Bearer {api_key}"
+            |    elif provider == "anthropic":
+            |        headers["User-Agent"] = "OpenCode-CLI/$OPENCODE_VERSION"
+            |        headers["anthropic-version"] = "2023-06-01"
+            |        if api_key:
+            |            headers["x-api-key"] = api_key
+            |    else:
+            |        headers["User-Agent"] = "OpenCode-CLI/$OPENCODE_VERSION"
+            |        if api_key:
+            |            headers["Authorization"] = f"Bearer {api_key}"
+            |    return headers
+            |
+            |def execute_tool(name, args, workspace):
+            |    if isinstance(args, str):
+            |        try:
+            |            args = json.loads(args)
+            |        except Exception:
+            |            args = {"command": args} if name in ("bash", "run_command", "sh") else {"path": args}
+            |
+            |    if name in ("bash", "run_command", "sh", "exec"):
+            |        cmd = args.get("command") or args.get("cmd", "") or (args if isinstance(args, str) else "")
+            |        if not cmd:
+            |            return "Error: No command provided to bash tool."
+            |        try:
+            |            env = os.environ.copy()
+            |            env["PATH"] = "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:" + env.get("PATH", "")
+            |            env["TERM"] = "xterm-256color"
+            |            env["PAGER"] = "cat"
+            |            env["LANG"] = "C.UTF-8"
+            |            env["LC_ALL"] = "C.UTF-8"
+            |            res = subprocess.run(
+            |                ["/bin/bash", "-c", cmd],
+            |                cwd=workspace,
+            |                stdout=subprocess.PIPE,
+            |                stderr=subprocess.PIPE,
+            |                text=True,
+            |                timeout=300,
+            |                env=env
+            |            )
+            |            out = res.stdout
+            |            err = res.stderr
+            |            ret = res.returncode
+            |            combined = ""
+            |            if out:
+            |                combined += out
+            |            if err:
+            |                if combined:
+            |                    combined += "\n"
+            |                combined += f"[stderr]\n{err}"
+            |            return f"Exit {ret}\n{combined}" if combined else f"Exit {ret} (no output)"
+            |        except subprocess.TimeoutExpired:
+            |            return "Error: Command timed out after 300 seconds."
+            |        except Exception as e:
+            |            return f"Error executing bash: {str(e)}"
+            |
+            |    elif name in ("read", "read_file", "file_read"):
+            |        path = args.get("path", "")
+            |        if not os.path.isabs(path):
+            |            path = os.path.join(workspace, path)
+            |        if not os.path.exists(path):
+            |            return f"Error: File '{path}' does not exist."
+            |        try:
+            |            with open(path, "r", encoding="utf-8", errors="replace") as f:
+            |                lines = f.readlines()
+            |            offset = int(args.get("offset", 1)) - 1
+            |            limit = int(args.get("limit", 250))
+            |            offset = max(0, offset)
+            |            selected = lines[offset:offset+limit]
+            |            numbered = [f"{offset + i + 1:4d} | {line}" for i, line in enumerate(selected)]
+            |            return "".join(numbered) if numbered else "(empty file)"
+            |        except Exception as e:
+            |            return f"Error reading file: {str(e)}"
+            |
+            |    elif name in ("write_file", "file_write", "write"):
+            |        path = args.get("path", "")
+            |        content = args.get("content", "")
+            |        if not os.path.isabs(path):
+            |            path = os.path.join(workspace, path)
+            |        try:
+            |            os.makedirs(os.path.dirname(path), exist_ok=True)
+            |            with open(path, "w", encoding="utf-8") as f:
+            |                f.write(content)
+            |            return f"Successfully wrote {len(content)} bytes to '{path}'"
+            |        except Exception as e:
+            |            return f"Error writing file: {str(e)}"
+            |
+            |    elif name in ("patch_file", "edit_file", "edit"):
+            |        path = args.get("path", "")
+            |        old_str = args.get("old_string") or args.get("old", "")
+            |        new_str = args.get("new_string") or args.get("new", "")
+            |        if not os.path.isabs(path):
+            |            path = os.path.join(workspace, path)
+            |        if not os.path.exists(path):
+            |            return f"Error: File '{path}' does not exist."
+            |        try:
+            |            with open(path, "r", encoding="utf-8") as f:
+            |                content = f.read()
+            |            if old_str not in content:
+            |                return f"Error: Target substring not found in '{path}'"
+            |            count = content.count(old_str)
+            |            if count > 1:
+            |                return f"Error: Target substring occurs {count} times in '{path}'. Please provide more unique context."
+            |            patched = content.replace(old_str, new_str, 1)
+            |            with open(path, "w", encoding="utf-8") as f:
+            |                f.write(patched)
+            |            return f"Successfully patched '{path}'"
+            |        except Exception as e:
+            |            return f"Error patching file: {str(e)}"
+            |
+            |    elif name in ("list_dir", "ls"):
+            |        path = args.get("path", ".")
+            |        if not os.path.isabs(path):
+            |            path = os.path.join(workspace, path)
+            |        if not os.path.exists(path):
+            |            return f"Error: Directory '{path}' does not exist."
+            |        try:
+            |            entries = sorted(os.listdir(path))
+            |            results = []
+            |            for entry in entries[:150]:
+            |                full = os.path.join(path, entry)
+            |                is_dir = os.path.isdir(full)
+            |                tag = "DIR " if is_dir else "FILE"
+            |                size = os.path.getsize(full) if not is_dir else "-"
+            |                results.append(f"{tag:<5} {entry} ({size})")
+            |            return "\n".join(results) if results else "(empty directory)"
+            |        except Exception as e:
+            |            return f"Error listing directory: {str(e)}"
+            |
+            |    elif name == "grep_search":
+            |        query = args.get("query", "")
+            |        path = args.get("path", ".")
+            |        if not os.path.isabs(path):
+            |            path = os.path.join(workspace, path)
+            |        try:
+            |            res = subprocess.run(
+            |                ["grep", "-rnI", "--exclude-dir=.git", query, path],
+            |                stdout=subprocess.PIPE,
+            |                stderr=subprocess.PIPE,
+            |                text=True,
+            |                timeout=45
+            |            )
+            |            out = res.stdout.strip()
+            |            return out if out else f"No matches found for '{query}'"
+            |        except Exception as e:
+            |            return f"Error searching: {str(e)}"
+            |
+            |    elif name == "find_files":
+            |        pattern = args.get("pattern", "*")
+            |        path = args.get("path", ".")
+            |        if not os.path.isabs(path):
+            |            path = os.path.join(workspace, path)
+            |        try:
+            |            matched = []
+            |            for root, dirs, files in os.walk(path):
+            |                if ".git" in dirs:
+            |                    dirs.remove(".git")
+            |                for fn in files:
+            |                    if glob.fnmatch.fnmatch(fn, pattern):
+            |                        rel = os.path.relpath(os.path.join(root, fn), workspace)
+            |                        matched.append(rel)
+            |                        if len(matched) >= 100:
+            |                            break
+            |                if len(matched) >= 100:
+            |                    break
+            |            return "\n".join(matched) if matched else f"No files matching '{pattern}'"
+            |        except Exception as e:
+            |            return f"Error finding files: {str(e)}"
+            |
+            |    return f"Error: Unknown tool '{name}'"
+            |
+            |def parse_anthropic_stream(response):
+            |    for raw_chunk in response:
+            |        chunk_str = raw_chunk.decode("utf-8").strip()
+            |        if not chunk_str or chunk_str.startswith(":"):
+            |            continue
+            |        if chunk_str.startswith("event:"):
+            |            continue
+            |        if chunk_str.startswith("data:"):
+            |            data_str = chunk_str[5:].strip()
+            |            if data_str == "[DONE]":
+            |                break
+            |            try:
+            |                obj = json.loads(data_str)
+            |                evt_type = obj.get("type", "")
+            |                if evt_type == "content_block_delta":
+            |                    delta = obj.get("delta", {})
+            |                    text = delta.get("text", "")
+            |                    if text:
+            |                        yield ("delta", text)
+            |                elif evt_type == "message_stop":
+            |                    break
+            |            except Exception:
+            |                pass
+            |
+            |def parse_openai_stream(response):
+            |    tool_calls_acc = {}
+            |    for raw_chunk in response:
+            |        chunk_str = raw_chunk.decode("utf-8").strip()
+            |        if not chunk_str or chunk_str.startswith(":"):
+            |            continue
+            |        if chunk_str == "data: [DONE]":
+            |            break
+            |        if chunk_str.startswith("data:"):
+            |            data_str = chunk_str[5:].strip()
+            |            try:
+            |                obj = json.loads(data_str)
+            |                choices = obj.get("choices", [])
+            |                if not choices:
+            |                    continue
+            |                choice = choices[0]
+            |                delta = choice.get("delta", {})
+            |                token = delta.get("content", "")
+            |                reasoning = delta.get("reasoning_content", "") or delta.get("thought", "")
+            |                if reasoning:
+            |                    yield ("thought", reasoning)
+            |                if token:
+            |                    yield ("delta", token)
+            |                tcs = delta.get("tool_calls", [])
+            |                for tc in tcs:
+            |                    idx = tc.get("index", 0)
+            |                    if idx not in tool_calls_acc:
+            |                        tool_calls_acc[idx] = {"name": "", "arguments": ""}
+            |                    fn = tc.get("function", {})
+            |                    if "name" in fn:
+            |                        tool_calls_acc[idx]["name"] += fn["name"]
+            |                    if "arguments" in fn:
+            |                        tool_calls_acc[idx]["arguments"] += fn["arguments"]
+            |            except Exception:
+            |                pass
+            |    for idx in sorted(tool_calls_acc.keys()):
+            |        item = tool_calls_acc[idx]
+            |        yield ("tool_call", {"name": item["name"], "args": item["arguments"]})
+            |
+            |def main():
+            |    args = sys.argv[1:]
+            |    prompt = ""
+            |    cli_model = ""
+            |    workspace = os.environ.get("WORKSPACE", os.getcwd())
+            |
+            |    i = 0
+            |    while i < len(args):
+            |        arg = args[i]
+            |        if arg in ("-q", "--query", "-p", "--prompt"):
+            |            if i + 1 < len(args):
+            |                prompt = args[i + 1]
+            |                i += 1
+            |        elif arg == "--model":
+            |            if i + 1 < len(args):
+            |                cli_model = args[i + 1]
+            |                i += 1
+            |        elif arg in ("--dir", "--workspace"):
+            |            if i + 1 < len(args):
+            |                workspace = args[i + 1]
+            |                i += 1
+            |        elif arg in ("chat", "run", "--oneshot", "--yolo"):
+            |            pass
+            |        elif not prompt and not arg.startswith("-"):
+            |            prompt = arg
+            |        i += 1
+            |
+            |    if not prompt:
+            |        print("OpenCode CLI: No prompt provided.")
+            |        sys.exit(0)
+            |
+            |    provider, base_url, api_key = resolve_provider()
+            |    model = resolve_model(provider, cli_model)
+            |    url = build_url(provider, base_url)
+            |    is_tty = sys.stdout.isatty()
+            |
+            |    if is_tty:
+            |        print(f"\033[1;36m✦ OpenCode CLI\033[0m v$OPENCODE_VERSION ({model} via {provider})")
+            |        print(f"\033[90mWorkspace: {workspace}\033[0m\n", flush=True)
+            |    else:
+            |        print(json.dumps({"event": "thought", "text": f"OpenCode CLI starting ({model} via {provider})..."}), flush=True)
+            |
+            |    system_prompt = (
+            |        "You are OpenCode CLI, an autonomous AI software engineering agent operating inside a PRoot Linux environment.\n"
+            |        "You have full root privileges and direct access to run shell commands, build code, run tests, and manipulate files.\n"
+            |        "To inspect files, execute tests, run builds, or apply bug fixes, invoke the provided tools:\n"
+            |        "- bash: run shell commands (e.g. ./gradlew, npm, git, python, ls, cat, apt)\n"
+            |        "- read: inspect file contents\n"
+            |        "- write_file: create or overwrite a file\n"
+            |        "- patch_file: make exact substring replacements to edit files\n"
+            |        "- list_dir: list contents of a directory\n"
+            |        "- grep_search: search codebase for text or regex\n"
+            |        "- find_files: locate files by pattern\n"
+            |        "Take autonomous initiative to solve user problems completely without unnecessary questions.\n"
+            |        "When finished, provide a comprehensive, clear final reply summarizing the actions taken and results."
+            |    )
+            |
+            |    conversation = [
+            |        {"role": "system", "content": system_prompt},
+            |        {"role": "user", "content": prompt}
+            |    ]
+            |
+            |    max_turns = 25
+            |    turn = 0
+            |    total_streamed_chars = 0
+            |    total_tools_executed = 0
+            |
+            |    while turn < max_turns:
+            |        turn += 1
+            |        sid = generate_session_id() if provider == "opencode_zen" else None
+            |        rid = generate_request_id() if provider == "opencode_zen" else None
+            |        headers = build_headers(provider, api_key, sid, rid, base_url)
+            |
+            |        payload = {
+            |            "model": model,
+            |            "messages": conversation,
+            |            "tools": OPENCODE_TOOLS,
+            |            "stream": True
+            |        }
+            |
+            |        streamed_text = ""
+            |        streamed_thought = ""
+            |        current_tool_calls = []
+            |        stream_success = False
+            |
+            |        try:
+            |            req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+            |            with execute_http_request(req, timeout=90) as resp:
+            |                parser = parse_anthropic_stream if provider == "anthropic" else parse_openai_stream
+            |                for evt, val in parser(resp):
+            |                    stream_success = True
+            |                    if evt == "thought":
+            |                        streamed_thought += val
+            |                        if is_tty:
+            |                            sys.stdout.write(f"\033[90m{val}\033[0m")
+            |                            sys.stdout.flush()
+            |                        else:
+            |                            print(json.dumps({"event": "thought", "text": val}), flush=True)
+            |                    elif evt == "delta":
+            |                        streamed_text += val
+            |                        total_streamed_chars += len(val)
+            |                        if is_tty:
+            |                            sys.stdout.write(val)
+            |                            sys.stdout.flush()
+            |                        else:
+            |                            print(json.dumps({"event": "delta", "text": val}), flush=True)
+            |                    elif evt == "tool_call":
+            |                        current_tool_calls.append(val)
+            |        except Exception:
+            |            pass
+            |
+            |        if not stream_success and not streamed_text:
+            |            payload["stream"] = False
+            |            try:
+            |                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+            |                with execute_http_request(req, timeout=60) as resp:
+            |                    data = json.loads(resp.read().decode("utf-8"))
+            |                    msg = data.get("choices", [{}])[0].get("message", {})
+            |                    streamed_text = msg.get("content", "") or ""
+            |                    streamed_thought = msg.get("reasoning_content", "") or msg.get("thought", "") or ""
+            |                    raw_tc = msg.get("tool_calls", [])
+            |                    for tc in raw_tc:
+            |                        fn = tc.get("function", {})
+            |                        current_tool_calls.append({"name": fn.get("name"), "args": fn.get("arguments")})
+            |                    if streamed_thought and not is_tty:
+            |                        print(json.dumps({"event": "thought", "text": streamed_thought}), flush=True)
+            |                    if streamed_text:
+            |                        total_streamed_chars += len(streamed_text)
+            |                        if not is_tty:
+            |                            print(json.dumps({"event": "delta", "text": streamed_text}), flush=True)
+            |            except Exception:
+            |                # Failover to other Zen free models if upstream failed
+            |                found_fallback = False
+            |                for cand_model in ZEN_FREE_MODELS:
+            |                    if cand_model == model:
+            |                        continue
+            |                    payload["model"] = cand_model
+            |                    try:
+            |                        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+            |                        with execute_http_request(req, timeout=45) as resp:
+            |                            data = json.loads(resp.read().decode("utf-8"))
+            |                            msg = data.get("choices", [{}])[0].get("message", {})
+            |                            streamed_text = msg.get("content", "") or ""
+            |                            raw_tc = msg.get("tool_calls", [])
+            |                            for tc in raw_tc:
+            |                                fn = tc.get("function", {})
+            |                                current_tool_calls.append({"name": fn.get("name"), "args": fn.get("arguments")})
+            |                            if streamed_text:
+            |                                total_streamed_chars += len(streamed_text)
+            |                                if not is_tty:
+            |                                    print(json.dumps({"event": "delta", "text": streamed_text}), flush=True)
+            |                                found_fallback = True
+            |                                break
+            |                    except Exception:
+            |                        pass
+            |                if not found_fallback and total_streamed_chars == 0 and total_tools_executed == 0:
+            |                    sys.stderr.write("OpenCode CLI Error: All model endpoints and fallbacks failed to respond.\n")
+            |                    sys.exit(1)
+            |
+            |        if not current_tool_calls and streamed_text:
+            |            tag_matches = re.finditer(r'<tool:(\w+)(?:\s+path=["\']([^"\']+)["\'])?>(.*?)</tool:\1>', streamed_text, re.DOTALL)
+            |            for m in tag_matches:
+            |                t_name = m.group(1)
+            |                t_path = m.group(2)
+            |                t_body = m.group(3).strip()
+            |                t_args = {"path": t_path, "content": t_body} if t_path else ({"command": t_body} if t_name == "bash" else t_body)
+            |                current_tool_calls.append({"name": t_name, "args": t_args})
+            |
+            |            code_matches = re.finditer(r'```tool:(\w+)\s*\n(.*?)\n```', streamed_text, re.DOTALL)
+            |            for m in code_matches:
+            |                t_name = m.group(1)
+            |                t_body = m.group(2).strip()
+            |                t_args = {"command": t_body} if t_name == "bash" else t_body
+            |                current_tool_calls.append({"name": t_name, "args": t_args})
+            |
+            |        if not current_tool_calls:
+            |            if streamed_text:
+            |                if is_tty:
+            |                    print("\n\033[1;32m✔ Task completed\033[0m")
+            |                return
+            |            elif total_streamed_chars > 0 or total_tools_executed > 0:
+            |                return
+            |            else:
+            |                sys.stderr.write("OpenCode CLI Error: Process produced no output.\n")
+            |                sys.exit(1)
+            |
+            |        conversation.append({"role": "assistant", "content": streamed_text or ""})
+            |        for tc in current_tool_calls:
+            |            t_name = tc.get("name", "")
+            |            t_args = tc.get("args", {})
+            |            detail_str = str(t_args)
+            |            if isinstance(t_args, dict):
+            |                detail_str = t_args.get("command") or t_args.get("path") or str(t_args)
+            |
+            |            total_tools_executed += 1
+            |            if is_tty:
+            |                print(f"\n\033[1;34m⚡ Tool:\033[0m {t_name} \033[90m{detail_str}\033[0m", flush=True)
+            |            else:
+            |                print(json.dumps({"event": "tool", "name": t_name, "detail": detail_str}), flush=True)
+            |
+            |            t_result = execute_tool(t_name, t_args, workspace)
+            |            preview = t_result[:200].replace("\n", " ")
+            |
+            |            if is_tty:
+            |                print(f"\033[1;32m↪ Result:\033[0m {preview}", flush=True)
+            |            else:
+            |                print(json.dumps({"event": "tool_result", "summary": preview}), flush=True)
+            |
+            |            conversation.append({
+            |                "role": "user",
+            |                "content": f"[Tool Result from {t_name}]:\n{t_result}"
+            |            })
+            |
+            |    if total_streamed_chars == 0 and total_tools_executed == 0:
+            |        sys.stderr.write("OpenCode CLI Error: Reached max interaction steps without output.\n")
+            |        sys.exit(1)
+            |
+            |if __name__ == "__main__":
+            |    main()
+            |""".trimMargin()
         file.writeText(script)
     }
 
@@ -2418,9 +3314,11 @@ printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decis
     companion object {
         const val AGY_GUEST_PATH = "/root/.local/bin/agy"
         const val HERMES_GUEST_PATH = "/usr/local/bin/hermes"
+        const val OPENCODE_GUEST_PATH = "/usr/local/bin/opencode"
         const val GITHUB_CLI_GUEST_PATH = "/root/.local/bin/gh"
         private const val AGY_VERSION = "1.1.27"
         internal const val HERMES_VERSION = "0.5.2"
+        internal const val OPENCODE_VERSION = "1.19.1"
         private const val AGY_RELEASE_URL = "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.1.27-5211191891591168/linux-arm/cli_linux_arm64.tar.gz"
         private const val AGY_RELEASE_SHA512 = "ed45f6930785aa4b42f14e07ace1c9d91a94fb76e760f54acbd7d3d3951e1f957fd456a0dae2a3124dd9a3b689bf7afb7c9303a3e4ba95037fc10063424d9bf9"
         private const val GITHUB_CLI_VERSION = "2.100.0"
