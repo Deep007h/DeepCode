@@ -25,42 +25,60 @@ object ZenModels {
     const val HEADER_REQUEST_ID = "x-opencode-request"
     const val HEADER_SESSION_AFFINITY = "x-session-affinity"
 
-    private val hexChars = "0123456789abcdef".toCharArray()
-    private val b62Chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".toCharArray()
+    private var lastTime = 0L
+    private var counter = 0L
     private val secureRandom = SecureRandom()
+    private val b62Chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".toCharArray()
 
     // Stable session reuse cache per conversation/identity to avoid 429 FreeUsageLimitError quota exhaustion
     private val sessionCache = ConcurrentHashMap<String, String>()
 
     /**
-     * Canonical OpenCode session ID generator: "ses_" + 12 hex + 14 alphanumeric (30 chars total).
+     * Canonical OpenCode ID generator matching the official OpenCode CLI algorithm:
+     * - Descending for session IDs (ses_): ~n where n = (timestamp_ms * 4096) + counter
+     * - Ascending for request IDs (msg_): n where n = (timestamp_ms * 4096) + counter
+     * Encoded as 6 bytes hex (12 chars) + 14 random base62 characters (30 chars total).
+     * The upstream OpenCode gateway checks the embedded timestamp in the first 12 hex chars
+     * to verify the request originates from an authentic, active OpenCode client.
      */
-    fun generateSessionId(): String {
-        val p1 = StringBuilder(12)
-        for (i in 0 until 12) {
-            p1.append(hexChars[secureRandom.nextInt(hexChars.size)])
+    @Synchronized
+    private fun generateCanonicalId(descending: Boolean): String {
+        val now = System.currentTimeMillis()
+        if (now != lastTime) {
+            lastTime = now
+            counter = 0L
         }
-        val p2 = StringBuilder(14)
-        for (i in 0 until 14) {
-            p2.append(b62Chars[secureRandom.nextInt(b62Chars.size)])
+        counter++
+        val n = java.math.BigInteger.valueOf(now).shiftLeft(12).add(java.math.BigInteger.valueOf(counter))
+        val a = if (descending) n.not() else n
+
+        val hexSb = StringBuilder(12)
+        for (d in 0 until 6) {
+            val shift = 40 - 8 * d
+            val b = a.shiftRight(shift).and(java.math.BigInteger.valueOf(0xFF)).toInt()
+            hexSb.append(String.format(java.util.Locale.US, "%02x", b))
         }
-        return "ses_$p1$p2"
+
+        val randBytes = ByteArray(14)
+        secureRandom.nextBytes(randBytes)
+        val b62Sb = StringBuilder(14)
+        for (b in randBytes) {
+            val idx = (b.toInt() and 0xFF) % 62
+            b62Sb.append(b62Chars[idx])
+        }
+
+        return hexSb.toString() + b62Sb.toString()
     }
 
     /**
-     * Canonical OpenCode request ID generator: "msg_" + 12 hex + 14 alphanumeric (30 chars total).
+     * Canonical OpenCode session ID generator: "ses_" + 12 hex (timestamp-derived) + 14 base62.
      */
-    fun generateRequestId(): String {
-        val p1 = StringBuilder(12)
-        for (i in 0 until 12) {
-            p1.append(hexChars[secureRandom.nextInt(hexChars.size)])
-        }
-        val p2 = StringBuilder(14)
-        for (i in 0 until 14) {
-            p2.append(b62Chars[secureRandom.nextInt(b62Chars.size)])
-        }
-        return "msg_$p1$p2"
-    }
+    fun generateSessionId(): String = "ses_" + generateCanonicalId(descending = true)
+
+    /**
+     * Canonical OpenCode request ID generator: "msg_" + 12 hex (timestamp-derived) + 14 base62.
+     */
+    fun generateRequestId(): String = "msg_" + generateCanonicalId(descending = false)
 
     /**
      * Returns a stable canonical session ID for [conversationId]. If [conversationId] is null or blank,
@@ -70,6 +88,10 @@ object ZenModels {
         val key = conversationId?.trim().orEmpty()
         if (key.isEmpty()) return generateSessionId()
         return sessionCache.computeIfAbsent(key) { generateSessionId() }
+    }
+
+    fun clearSessionCache() {
+        sessionCache.clear()
     }
 
     /**
@@ -126,17 +148,13 @@ object ZenModels {
 
     val KNOWN_FREE_IDS = listOf(
         "mimo-v2.6-flash-free",
-        "ling-3.1-flash-free",
         "nemotron-3.5-lightning-free",
-        "cat-jam-free",
-        "space-bunny-free",
-        "step-5-preview-free",
-        "longcat-2.5-preview-free",
-        "jev-1.13-free",
         "big-pickle",
-        "mimo-v2.5-free",
-        "ling-3.0-flash-fin-free",
-        "nemotron-3-ultra-free"
+        "nemotron-3-ultra-free",
+        "space-bunny-free",
+        "cat-jam-free",
+        "longcat-2.5-preview-free",
+        "ling-3.1-flash-free"
     )
 
     val KNOWN_PAID_IDS = listOf(
@@ -184,7 +202,8 @@ object ZenModels {
             "muse-spark-1.3-contributor-free", "muse-spark-1.3-free",
             "muse-spark-1.2-contributor-free", "muse-spark-1.2-free",
             "laguna-s-2.1-free", "laguna-s-2.1",
-            "north-mini-code", "pickle"
+            "north-mini-code", "pickle",
+            "mimo-v2.5-free", "ling-3.0-flash-fin-free", "jev-1.13-free", "step-5-preview-free"
         )
         if (clean.lowercase() in brokenModels) {
             return DEFAULT_FREE

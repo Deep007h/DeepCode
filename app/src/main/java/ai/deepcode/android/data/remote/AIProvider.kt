@@ -299,6 +299,14 @@ object RateLimitTracker {
         cooldowns[providerName] = System.currentTimeMillis() + backoffMs
     }
 
+    fun clearCooldown(providerName: String) {
+        cooldowns.remove(providerName)
+    }
+
+    fun clearAllCooldowns() {
+        cooldowns.clear()
+    }
+
     fun isInCooldown(providerName: String): Boolean {
         val expiry = cooldowns[providerName] ?: return false
         if (System.currentTimeMillis() > expiry) {
@@ -420,19 +428,13 @@ class ZenProvider : AIProvider {
     override val isFree = true
     override val models = listOf(
         AIModel("mimo-v2.6-flash-free", "Mimo V2.6 Flash (Free)", "Zen AI", true, "128k tokens", "Free"),
-        AIModel("ling-3.1-flash-free", "Ling 3.1 Flash (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("nemotron-3.5-lightning-free", "Nemotron 3.5 Lightning (Free)", "Zen AI", true, "128k tokens", "Free"),
-        AIModel("cat-jam-free", "Cat Jam (Free)", "Zen AI", true, "128k tokens", "Free"),
-        AIModel("space-bunny-free", "Space Bunny (Free)", "Zen AI", true, "128k tokens", "Free"),
-        AIModel("step-5-preview-free", "Step 5 Preview (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("big-pickle", "Big Pickle (Free)", "Zen AI", true, "128k tokens", "Free"),
-        AIModel("mimo-v2.5-free", "Mimo V2.5 (Free)", "Zen AI", true, "128k tokens", "Free"),
-        AIModel("ling-3.0-flash-fin-free", "Ling 3.0 Flash Fin (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("nemotron-3-ultra-free", "Nemotron 3 Ultra (Free)", "Zen AI", true, "128k tokens", "Free"),
-        AIModel("deepseek-v4-flash-free", "DeepSeek V4 Flash (Free)", "Zen AI", true, "1M tokens", "Free"),
-        AIModel("muse-spark-1.3-contributor-free", "Muse Spark 1.3 (Free)", "Zen AI", true, "1M tokens", "Free"),
-        AIModel("muse-spark-1.2-contributor-free", "Muse Spark 1.2 (Free)", "Zen AI", true, "128k tokens", "Free"),
-        AIModel("laguna-s-2.1-free", "Laguna S 2.1 (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("space-bunny-free", "Space Bunny (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("cat-jam-free", "Cat Jam (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("longcat-2.5-preview-free", "LongCat 2.5 Preview (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("ling-3.1-flash-free", "Ling 3.1 Flash (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("claude-fable-5-1", "Claude Fable 5.1", "Zen AI", false, "1M tokens", "Paid"),
         AIModel("gemini-3.8-flash", "Gemini 3.8 Flash", "Zen AI", false, "1M tokens", "Paid"),
         AIModel("gemini-3.7-flash", "Gemini 3.7 Flash", "Zen AI", false, "1M tokens", "Paid"),
@@ -440,11 +442,6 @@ class ZenProvider : AIProvider {
         AIModel("grok-4.6", "Grok 4.6", "Zen AI", false, "128k tokens", "Paid"),
         AIModel("glm-5.3-flash", "GLM 5.3 Flash", "Zen AI", false, "128k tokens", "Paid"),
         AIModel("glm-5.3", "GLM 5.3", "Zen AI", false, "128k tokens", "Paid"),
-        AIModel("muse-spark-1.3", "Muse Spark 1.3", "Zen AI", false, "1M tokens", "Paid"),
-        AIModel("muse-spark-1.2", "Muse Spark 1.2", "Zen AI", false, "128k tokens", "Paid"),
-        AIModel("deepseek-v4-flash-vision-exp", "DeepSeek V4 Flash Vision Exp", "Zen AI", false, "1M tokens", "Paid"),
-        AIModel("deepseek-v4-flash", "DeepSeek V4 Flash", "Zen AI", false, "1M tokens", "Paid"),
-        AIModel("deepseek-v4-pro", "DeepSeek V4 Pro", "Zen AI", false, "1M tokens", "Paid"),
         AIModel("claude-fable-5", "Claude Fable 5", "Zen AI", false, "200k tokens", "Paid"),
         AIModel("claude-opus-5", "Claude Opus 5", "Zen AI", false, "200k tokens", "Paid"),
         AIModel("claude-sonnet-5", "Claude Sonnet 5", "Zen AI", false, "200k tokens", "Paid"),
@@ -496,13 +493,10 @@ class ZenProvider : AIProvider {
         onUsage: ((TurnTokenUsage) -> Unit)?
     ) {
         val effectiveApiKey = apiKey.trim()
+        val hasCustomKey = effectiveApiKey.isNotEmpty() && effectiveApiKey != "free"
 
-        // 0. Fast-path failover if Zen AI is currently in cooldown from an upstream restriction
-        if (RateLimitTracker.isInCooldown("Zen AI")) {
-            ai.deepcode.android.util.AppLogger.i("ZenProvider", "Zen AI currently in cooldown. Routing to fallback provider immediately.")
-            val handled = attemptFallbackProvider(messages, model, tools, onToken, onToolCall, onComplete, onError, onUsage)
-            if (handled) return
-        }
+        // Explicit Zen AI invocation resets any transient cooldown
+        RateLimitTracker.clearCooldown("Zen AI")
 
         val baseUrl = resolveBaseUrl(customBaseUrl, "https://opencode.ai/zen/v1")
         var lastException: Throwable? = null
@@ -541,10 +535,13 @@ class ZenProvider : AIProvider {
                 errStr.contains("model disabled", ignoreCase = true) ||
                 errStr.contains("modelerror", ignoreCase = true) ||
                 errStr.contains("model_not_found", ignoreCase = true) ||
-                errStr.contains("Endpoint is unavailable", ignoreCase = true)
+                errStr.contains("Endpoint is unavailable", ignoreCase = true) ||
+                errStr.contains("overloaded", ignoreCase = true)
 
-            // Check if key is rotatable (429 / rate limit / quota / invalid key)
-            val isAuthOrRateLimit = !isModelError && ApiKeyRotator.isRotatableError(lastException, null, errStr)
+            // Check if key is rotatable (429 / rate limit / quota / invalid key).
+            // Only throw RateLimitException for paid keys that need rotation.
+            // On free tier, 429 on one model should continue trying other candidate models.
+            val isAuthOrRateLimit = hasCustomKey && !isModelError && ApiKeyRotator.isRotatableError(lastException, null, errStr)
             if (isAuthOrRateLimit) {
                 val ex = (lastException as? RateLimitException) ?: RateLimitException("Zen AI", 429, errStr)
                 throw ex
@@ -571,9 +568,10 @@ class ZenProvider : AIProvider {
                 errStr2.contains("model disabled", ignoreCase = true) ||
                 errStr2.contains("modelerror", ignoreCase = true) ||
                 errStr2.contains("model_not_found", ignoreCase = true) ||
-                errStr2.contains("Endpoint is unavailable", ignoreCase = true)
+                errStr2.contains("Endpoint is unavailable", ignoreCase = true) ||
+                errStr2.contains("overloaded", ignoreCase = true)
 
-            if (!isModelError2 && ApiKeyRotator.isRotatableError(lastException, null, errStr2)) {
+            if (hasCustomKey && !isModelError2 && ApiKeyRotator.isRotatableError(lastException, null, errStr2)) {
                 val ex = (lastException as? RateLimitException) ?: RateLimitException("Zen AI", 429, errStr2)
                 throw ex
             }
@@ -586,7 +584,6 @@ class ZenProvider : AIProvider {
         val errStrFinal = lastException?.message ?: ""
         if (lastException is ZenRestrictionException || ZenModels.isZenFreeTierOrRestrictionError(lastException, null, errStrFinal)) {
             ai.deepcode.android.util.AppLogger.w("ZenProvider", "Zen restriction detected ($errStrFinal). Engaging provider failover.")
-            RateLimitTracker.recordRateLimit("Zen AI", 300_000L)
             val handled = attemptFallbackProvider(messages, sanitized, tools, onToken, onToolCall, onComplete, onError, onUsage)
             if (handled) return
 
