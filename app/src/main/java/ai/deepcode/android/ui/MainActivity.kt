@@ -1015,7 +1015,7 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                     modifier = Modifier.fillMaxSize().background(AppScreenBg)
                 ) { tab ->
                     when (tab) {
-                        0 -> Box(Modifier.fillMaxSize().padding(bottom = cachedBottomBarHeight)) {
+                        0 -> Box(Modifier.fillMaxSize()) {
                             DashboardScreen(
                                 activeConnections = activeConnections,
                                 integrationsCount = integrations.size,
@@ -1031,7 +1031,8 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                                     activeSessionId = sessionId
                                     appState.selectTab(1)
                                 },
-                                onNavigateToSettings = { appState.selectTab(4) }
+                                onNavigateToSettings = { appState.selectTab(4) },
+                                bottomBarHeight = cachedBottomBarHeight
                             )
                         }
                         1 -> ChatScreen(
@@ -1043,7 +1044,7 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                             onSessionChanged = { activeSessionId = it },
                             bottomBarHeight = cachedBottomBarHeight
                         )
-                        2 -> Box(Modifier.fillMaxSize().padding(bottom = cachedBottomBarHeight)) {
+                        2 -> Box(Modifier.fillMaxSize()) {
                             AutomationsScreen(
                                 onBack = { appState.selectTab(0) },
                                 onOpenChat = { sessionId, isChatGpt, ruleName ->
@@ -1062,17 +1063,19 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                                     }
                                     activeSessionId = sessionId
                                     appState.selectTab(1)
-                                }
+                                },
+                                bottomBarHeight = cachedBottomBarHeight
                             )
                         }
-                        3 -> Box(Modifier.fillMaxSize().padding(bottom = cachedBottomBarHeight)) {
+                        3 -> Box(Modifier.fillMaxSize()) {
                             ConnectionsScreen(
                                 repository = repository,
                                 onBack = { appState.selectTab(0) },
-                                onNavigateToSettings = { appState.selectTab(4) }
+                                onNavigateToSettings = { appState.selectTab(4) },
+                                bottomBarHeight = cachedBottomBarHeight
                             )
                         }
-                        4 -> Box(Modifier.fillMaxSize().padding(bottom = cachedBottomBarHeight)) {
+                        4 -> Box(Modifier.fillMaxSize()) {
                             SettingsScreen(
                                 repository = repository,
                                 profileManager = profileManager,
@@ -1089,7 +1092,8 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                                 onNavigateToThemesAndWallpapers = { appState.setShowThemesAndWallpapers(true) },
                                 onNavigateToVoiceModel = { appState.setShowVoiceModelSettings(true) },
                                 onNavigateToLinuxSubsystem = { appState.setShowLinuxSubsystem(true) },
-                                onBack = { appState.selectTab(0) }
+                                onBack = { appState.selectTab(0) },
+                                bottomBarHeight = cachedBottomBarHeight
                             )
                         }
                     }

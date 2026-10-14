@@ -45,6 +45,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -110,6 +111,7 @@ fun ConnectionsScreen(
     repository: DeepCodeRepository,
     onBack: () -> Unit,
     onNavigateToSettings: () -> Unit = {},
+    bottomBarHeight: Dp = 108.dp,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -156,7 +158,7 @@ fun ConnectionsScreen(
             .background(AppScreenBg)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)
+        contentPadding = PaddingValues(top = 16.dp, bottom = bottomBarHeight + 16.dp)
     ) {
         // Top Connection / Status Card
         item {

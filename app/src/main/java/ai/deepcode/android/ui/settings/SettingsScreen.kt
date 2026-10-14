@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ai.deepcode.android.data.repository.DeepCodeRepository
@@ -63,6 +64,7 @@ fun SettingsScreen(
     onNavigateToVoiceModel: () -> Unit = {},
     onNavigateToLinuxSubsystem: () -> Unit = {},
     onBack: (() -> Unit)? = null,
+    bottomBarHeight: Dp = 108.dp,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -126,7 +128,7 @@ fun SettingsScreen(
             .background(AppScreenBg)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp)
+        contentPadding = PaddingValues(top = 4.dp, bottom = bottomBarHeight + 16.dp)
     ) {
         // Settings Header
         item {

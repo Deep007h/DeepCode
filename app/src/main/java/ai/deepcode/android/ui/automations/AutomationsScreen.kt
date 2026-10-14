@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -152,6 +153,7 @@ fun isChatGptAutomation(rule: AutomationEntity): Boolean {
 fun AutomationsScreen(
     onBack: () -> Unit,
     onOpenChat: ((sessionId: String, isChatGpt: Boolean, ruleName: String) -> Unit)? = null,
+    bottomBarHeight: Dp = 108.dp,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -206,7 +208,7 @@ fun AutomationsScreen(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(top = 16.dp, bottom = 88.dp)
+            contentPadding = PaddingValues(top = 16.dp, bottom = bottomBarHeight + 16.dp)
         ) {
             // Header Row
             item(key = "header", contentType = "header") {

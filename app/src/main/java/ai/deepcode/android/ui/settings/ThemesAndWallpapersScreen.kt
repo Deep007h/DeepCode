@@ -374,8 +374,18 @@ fun ThemesAndWallpapersScreen(
                                         .fillMaxWidth()
                                         .shadow(elevation = 6.dp, shape = CircleShape, spotColor = Color.Black.copy(alpha = 0.4f))
                                         .clip(CircleShape)
-                                        .background(if (isDarkThemeActive) Color(0xF0141417) else Color(0xF2F5F5F8))
-                                        .border(0.8.dp, Color.White.copy(alpha = if (isDarkThemeActive) 0.12f else 0.4f), CircleShape)
+                                        .background(
+                                            if (isDarkThemeActive) {
+                                                Brush.verticalGradient(listOf(Color(0xC2181822), Color(0xB0121218)))
+                                            } else {
+                                                Brush.verticalGradient(listOf(Color(0xD9FFFFFF), Color(0xCCEAEAF2)))
+                                            }
+                                        )
+                                        .border(
+                                            0.8.dp,
+                                            if (isDarkThemeActive) Color.White.copy(alpha = 0.20f) else Color.Black.copy(alpha = 0.08f),
+                                            CircleShape
+                                        )
                                         .padding(horizontal = 4.dp, vertical = 3.dp),
                                     horizontalArrangement = Arrangement.SpaceEvenly,
                                     verticalAlignment = Alignment.CenterVertically
@@ -385,10 +395,10 @@ fun ThemesAndWallpapersScreen(
                                             modifier = Modifier
                                                 .weight(1f)
                                                 .clip(RoundedCornerShape(percent = 50))
-                                                .background(if (isSelected) (if (isDarkThemeActive) Color(0xFF2C2C32) else Color(0xFFDFDFE5)) else Color.Transparent)
+                                                .background(if (isSelected) (if (isDarkThemeActive) Color(0x553C3C46) else Color(0x28000000)) else Color.Transparent)
                                                 .border(
                                                     width = if (isSelected) 0.5.dp else 0.dp,
-                                                    color = if (isSelected) Color.White.copy(alpha = 0.15f) else Color.Transparent,
+                                                    color = if (isSelected) (if (isDarkThemeActive) Color.White.copy(alpha = 0.20f) else Color.Black.copy(alpha = 0.08f)) else Color.Transparent,
                                                     shape = RoundedCornerShape(percent = 50)
                                                 )
                                                 .padding(vertical = 3.dp),

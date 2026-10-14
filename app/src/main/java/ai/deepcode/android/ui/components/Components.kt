@@ -575,7 +575,39 @@ fun BottomNavBar(
     }
 
     if (dashboardStyle == DASHBOARD_STYLE_FLOATING) {
-        // 🍎 Apple-style Floating Stadium Capsule Dock with centered capsule tab highlight
+        // 🍎 Apple-style Translucent Floating Stadium Capsule Dock with frosted acrylic depth
+        val dockBackground = if (isDark) {
+            Brush.verticalGradient(
+                listOf(
+                    Color(0xC2181822), // ~76% opacity frosted dark obsidian
+                    Color(0xB0121218)  // ~69% opacity frosted dark obsidian
+                )
+            )
+        } else {
+            Brush.verticalGradient(
+                listOf(
+                    Color(0xD9FFFFFF), // ~85% opacity milky white frosted glass
+                    Color(0xCCEAEAF2)  // ~80% opacity milky white frosted glass
+                )
+            )
+        }
+        val dockBorder = if (isDark) {
+            Brush.verticalGradient(
+                listOf(
+                    Color.White.copy(alpha = 0.22f),
+                    Color.White.copy(alpha = 0.08f),
+                    Color.White.copy(alpha = 0.03f)
+                )
+            )
+        } else {
+            Brush.verticalGradient(
+                listOf(
+                    Color.White.copy(alpha = 0.90f),
+                    Color.Black.copy(alpha = 0.08f)
+                )
+            )
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -587,16 +619,16 @@ fun BottomNavBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .shadow(
-                        elevation = 12.dp,
+                        elevation = 16.dp,
                         shape = StadiumCapsuleShape,
-                        spotColor = Color.Black.copy(alpha = if (isDark) 0.55f else 0.20f),
-                        ambientColor = Color.Black.copy(alpha = if (isDark) 0.35f else 0.12f)
+                        spotColor = Color.Black.copy(alpha = if (isDark) 0.60f else 0.20f),
+                        ambientColor = Color.Black.copy(alpha = if (isDark) 0.40f else 0.12f)
                     )
                     .clip(StadiumCapsuleShape)
-                    .background(if (isDark) Color(0xF0141417) else Color(0xF2F5F5F8))
+                    .background(dockBackground)
                     .border(
                         width = 0.8.dp,
-                        color = if (isDark) Color.White.copy(alpha = 0.12f) else Color.Black.copy(alpha = 0.08f),
+                        brush = dockBorder,
                         shape = StadiumCapsuleShape
                     )
                     .padding(horizontal = 6.dp, vertical = 6.dp)
@@ -707,10 +739,10 @@ private fun CapsuleTabBar(
                         .fillMaxSize()
                         .padding(horizontal = 4.dp, vertical = 2.dp)
                         .clip(TabCapsuleShape)
-                        .background(if (isDark) Color(0xFF2C2C32) else Color(0xFFDFDFE5))
+                        .background(if (isDark) Color(0x553C3C46) else Color(0x28000000))
                         .border(
                             width = 0.5.dp,
-                            color = if (isDark) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.06f),
+                            color = if (isDark) Color.White.copy(alpha = 0.20f) else Color.Black.copy(alpha = 0.08f),
                             shape = TabCapsuleShape
                         )
                 )

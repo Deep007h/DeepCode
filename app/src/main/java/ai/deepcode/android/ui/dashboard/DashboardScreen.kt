@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ai.deepcode.android.ui.components.AppCard
@@ -50,7 +51,8 @@ fun DashboardScreen(
     repository: ai.deepcode.android.data.repository.DeepCodeRepository? = null,
     onShowTokenUsage: (() -> Unit)? = null,
     onSessionSelect: ((String) -> Unit)? = null,
-    onNavigateToSettings: () -> Unit = {}
+    onNavigateToSettings: () -> Unit = {},
+    bottomBarHeight: Dp = 108.dp
 ) {
     val context = LocalContext.current
 
@@ -94,7 +96,7 @@ fun DashboardScreen(
             .background(AppScreenBg)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(top = 8.dp, bottom = 104.dp)
+        contentPadding = PaddingValues(top = 8.dp, bottom = bottomBarHeight + 16.dp)
     ) {
         // ── TOP BAR WITH DAILY GREETING & STATUS ───────────────────────────────────
         item {
