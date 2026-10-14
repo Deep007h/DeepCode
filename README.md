@@ -25,10 +25,8 @@
 <p align="center">
   <a href="#-interface-preview"><b>Interface</b></a> •
   <a href="#-whats-new-in-v202"><b>What's New</b></a> •
-  <a href="#-autonomous-workflow-engines"><b>Workflow Engines</b></a> •
   <a href="#-key-features"><b>Features</b></a> •
   <a href="#-linux-subsystem--runtimes"><b>Linux Subsystem</b></a> •
-  <a href="#-cross-chat-long-term-memory"><b>Memory</b></a> •
   <a href="#-ai-providers--model-matrix"><b>AI Providers</b></a> •
   <a href="#-agent-tools"><b>Tools</b></a> •
   <a href="#-installation"><b>Installation</b></a> •
@@ -43,15 +41,15 @@
 
 <div align="center">
 
-| 🚀 Welcome & Quick Actions | 💬 Live Streaming & Memory Recall |
+| 🚀 Welcome & Quick Actions | 💬 Live Streaming & Autonomous Chat |
 |:---:|:---:|
 | <img src="screenshots/empty_chat_screen.png" width="310" style="border-radius: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); border: 2px solid rgba(255,255,255,0.08);" alt="DeepCode Chat Welcome Screen" /> | <img src="screenshots/chat_screen.png" width="310" style="border-radius: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); border: 2px solid rgba(255,255,255,0.08);" alt="DeepCode Autonomous Chat Screen" /> |
-| *Starter cards, quick prompts & neural voice entry* | *Real-time SSE streaming with Cross-Chat memory recall* |
+| *Starter cards, quick prompts & neural voice entry* | *Real-time SSE streaming with autonomous tool calling* |
 
 <br/>
 
 <p align="center">
-  <sub><b>Left</b>: Fresh session with prompt starter cards, quick coding actions, and voice waveform mode. <b>Right</b>: Active autonomous agent conversation demonstrating continuous bi-directional Cross-Chat Long-Term Memory recall in real-time.</sub>
+  <sub><b>Left</b>: Fresh session with prompt starter cards, quick coding actions, and voice waveform mode. <b>Right</b>: Active autonomous agent conversation demonstrating continuous bi-directional agent reasoning and tool execution in real-time.</sub>
 </p>
 
 </div>
@@ -122,38 +120,6 @@ Whether you need to generate multi-file codebases, execute Python/Node.js/C++ to
 
 </details>
 
----
-
-## 🔀 Autonomous Workflow Engines
-
-DeepCode gives you complete control over how AI models reason and execute tools on your device:
-
-```mermaid
-flowchart TD
-    User([User Request / Prompt]) --> Router{Workflow Selector}
-    
-    Router -->|Mode 1: Instant| Direct[🤖 Direct In-App Engine\n• 70+ Cloud LLMs\n• Dynamic Tool-Calling\n• Zero-Latency SSE Stream]
-    Router -->|Mode 2: Autonomous CLI| DSH[⚡ DeepSeek Harness\n• PRoot Linux Userspace\n• C++ JNI Process Bridge\n• OpenCode Zen / DeepSeek API]
-    Router -->|Mode 3: Autonomous CLI| Claude[✳️ Claude Code\n• Anthropic Terminal Agent\n• Multi-File Edits & Diffs\n• LocalFormatGateway Proxy]
-    Router -->|Mode 4: Autonomous CLI| Hermes[🪽 Hermes Agent\n• Nous Research Agent\n• Autonomous --yolo Loop\n• Python Toolchain]
-    Router -->|Mode 5: Autonomous CLI| AGY[🚀 Antigravity Agent\n• Google Antigravity Toolchain\n• Gemini 3.8 / Claude Sonnet 5]
-    
-    DSH --> Subsystem[(Private Linux Subsystem\nUbuntu 20.04 LTS ARM64)]
-    Claude --> Subsystem
-    Hermes --> Subsystem
-    AGY --> Subsystem
-    
-    Subsystem --> Out([Output Stream & File Checkpoints])
-    Direct --> Out
-```
-
-| Engine | Execution Context | Best For | Root Required? |
-|:---|:---|:---|:---:|
-| **Direct In-App Engine** | Native Android Runtime | Rapid Q&A, code snippets, PDF generation, memory retrieval, live web search | ❌ No |
-| **DeepSeek Harness (`dsh`)** | Ubuntu PRoot Linux | Autonomous CLI tool loops, deep repository refactors, multi-file codebases | ❌ No |
-| **Nous Hermes Agent (`hermes`)** | Ubuntu PRoot Linux | Multi-turn research & planning, automated scripting, `--yolo` autonomous tasks | ❌ No |
-| **Claude Code (`claude`)** | Ubuntu PRoot Linux | Complex multi-file architectural refactors, git patches, terminal commands | ❌ No |
-| **Google Antigravity (`agy`)** | Ubuntu PRoot Linux | Google Antigravity CLI workflows, Gemini 3.8 agentic tool execution | ❌ No |
 
 ---
 
@@ -176,7 +142,6 @@ DeepCode features a complete, self-contained userspace **Linux Subsystem** power
 ## 🌟 Key Features
 
 - 🤖 **Streaming Agentic Loop**: Multi-turn SSE streaming with dynamic tool-calling, chain-of-thought display, and syntax-highlighted code diffs.
-- 🧠 **Cross-Chat Long-Term Memory**: Captures and recalls project context, pull requests, and personal preferences across In-App chats and the Telegram Bot using SQLite FTS4.
 - 🔄 **Multi-Key Ring Auto-Rotation**: Store up to **6 API keys per provider** with silent, millisecond failover when hitting HTTP 429 rate limits or quota caps.
 - 🌐 **Interactive Web Preview**: Built-in HTTP development server and live browser view for previewing web apps, HTML, CSS, and JavaScript directly inside DeepCode.
 - 📝 **Integrated Sora Editor**: Fast text and code editor with syntax coloring, line numbers, search-and-replace, and undo/redo stacks.
@@ -185,28 +150,6 @@ DeepCode features a complete, self-contained userspace **Linux Subsystem** power
 - ⏰ **Background Automations**: Exact wakeups via Android's `AlarmManager.setExactAndAllowWhileIdle()` and `WAKE_LOCK`, executing tasks in dedicated persistent threads that survive device reboots.
 - 🔒 **Hardware-Isolated Security**: All API keys, tokens, and OAuth credentials encrypted via **AES-256-GCM** backed by the hardware **Android Keystore**.
 
----
-
-## 🧠 Cross-Chat Long-Term Memory
-
-```mermaid
-graph TD
-    A[In-App User Conversation] -->|Turn Completed| C[Memory Extractor Engine]
-    B[Telegram Bot Messages] -->|Turn Completed| C
-    
-    C -->|Extract Facts, Tasks & Projects| D[(Cross-Chat Memory Store\nSQLite + FTS4)]
-    
-    D -->|FTS4 Search + Recent Blocks| E[Dynamic Memory Context Builder]
-    
-    E -->|Injected System Prompt| F[AgentEngine / AI Models]
-    F -->|Context-Aware Answers| G[In-App Chat Screen]
-    F -->|Context-Aware Answers| H[Telegram Bot Response]
-```
-
-1. **Continuous Passive Harvesting**: Lightweight background coroutines analyze completed conversation turns to index durable project knowledge.
-2. **Deterministic Noise Filtering**: Ephemeral banter, short answers, and greetings are automatically pruned.
-3. **SQLite FTS4 Retrieval**: Instant keyword matching combines full-text search with active memories, feeding relevant context directly into the agent's prompt.
-4. **Full Privacy Control**: Manage, search, export, or wipe memories in **Settings → Cross-Chat Memory**.
 
 ---
 
@@ -297,7 +240,7 @@ If **DeepCode** saves you development time, powers your mobile coding workflows,
 
 ## 🔐 Security & Privacy
 
-- **On-Device Storage**: Code files, terminal history, memory chunks, and chat conversations remain strictly stored on your device.
+- **On-Device Storage**: Code files, terminal history, workspace files, and chat conversations remain strictly stored on your device.
 - **Hardware Encryption**: Sensitive credentials are encrypted with AES-256-GCM keys managed by the Android Keystore.
 - **Root Protection**: Root operations require explicit superuser approval through your device's root manager (Magisk / KernelSU / APatch).
 
