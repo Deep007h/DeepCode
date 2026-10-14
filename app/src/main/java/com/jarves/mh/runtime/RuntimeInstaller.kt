@@ -728,7 +728,7 @@ class RuntimeInstaller(private val context: Context) {
             |    "opencode_zen": {
             |        "url_suffix": "/chat/completions",
             |        "base_url": "https://opencode.ai/zen/v1",
-            |        "model": "mimo-v2.5-free",
+            |        "model": "mimo-v2.6-flash-free",
             |    },
             |    "openrouter": {
             |        "url_suffix": "/v1/chat/completions",
@@ -752,7 +752,7 @@ class RuntimeInstaller(private val context: Context) {
             |    },
             |}
             |
-            |ZEN_FREE_MODELS = ["mimo-v2.5-free", "ling-3.0-flash-fin-free", "nemotron-3-ultra-free", "nemotron-3.5-lightning-free"]
+            |ZEN_FREE_MODELS = ["mimo-v2.6-flash-free", "ling-3.1-flash-free", "nemotron-3.5-lightning-free", "mimo-v2.5-free", "ling-3.0-flash-fin-free", "nemotron-3-ultra-free"]
             |
             |def resolve_provider():
             |    provider = os.environ.get("HERMES_PROVIDER", "").strip()
@@ -814,13 +814,13 @@ class RuntimeInstaller(private val context: Context) {
             |    model = cli_model or env_model
             |    if not model:
             |        defaults = PROVIDER_DEFAULTS.get(provider, {})
-            |        model = defaults.get("model", "mimo-v2.5-free")
+            |        model = defaults.get("model", "mimo-v2.6-flash-free")
             |    # For Zen free tier, force a known free model
             |    if provider == "opencode_zen":
             |        api_key = os.environ.get("HERMES_API_KEY", "").strip()
             |        if not api_key or api_key == "zen-free":
             |            if model not in ZEN_FREE_MODELS:
-            |                model = "mimo-v2.5-free"
+            |                model = "mimo-v2.6-flash-free"
             |    return model
             |
             |def build_headers(provider, api_key, session_id=None, request_id=None):
@@ -829,13 +829,14 @@ class RuntimeInstaller(private val context: Context) {
             |    if provider == "opencode_zen":
             |        sid = session_id or generate_session_id()
             |        rid = request_id or generate_request_id()
-            |        headers["User-Agent"] = "opencode/1.18.31 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14"
+            |        headers["User-Agent"] = "opencode/1.19.0 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"
             |        headers["x-opencode-client"] = "cli"
             |        headers["x-opencode-project"] = "global"
             |        headers["x-opencode-session"] = sid
+            |        headers["x-opencode-session-id"] = sid
             |        headers["x-opencode-request"] = rid
             |        headers["x-session-affinity"] = sid
-            |        auth_key = api_key if (api_key and api_key != "zen-free") else "zen-free"
+            |        auth_key = api_key if (api_key and api_key != "zen-free") else "public"
             |        headers["Authorization"] = f"Bearer {auth_key}"
             |    elif provider == "openrouter":
             |        headers["User-Agent"] = "DeepCode-Hermes/$HERMES_VERSION"
@@ -1002,10 +1003,10 @@ class RuntimeInstaller(private val context: Context) {
             |
             |    if not has_streamed:
             |        zen_candidates = [
-            |            ("https://opencode.ai/zen/v1/chat/completions", "mimo-v2.5-free"),
-            |            ("https://opencode.ai/zen/v1/chat/completions", "ling-3.0-flash-fin-free"),
-            |            ("https://opencode.ai/zen/go/v1/chat/completions", "mimo-v2.5-free"),
-            |            ("https://opencode.ai/zen/go/v1/chat/completions", "nemotron-3-ultra-free"),
+            |            ("https://opencode.ai/zen/v1/chat/completions", "mimo-v2.6-flash-free"),
+            |            ("https://opencode.ai/zen/v1/chat/completions", "ling-3.1-flash-free"),
+            |            ("https://opencode.ai/zen/v1/chat/completions", "nemotron-3.5-lightning-free"),
+            |            ("https://opencode.ai/zen/v1/chat/completions", "big-pickle"),
             |        ]
             |
             |        if provider != "opencode_zen":

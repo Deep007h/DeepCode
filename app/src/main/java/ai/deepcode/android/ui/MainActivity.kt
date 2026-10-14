@@ -14,7 +14,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.asImageBitmap
 import ai.deepcode.android.ui.theme.AppScreenBg
 import androidx.compose.ui.text.style.TextOverflow
@@ -520,351 +526,323 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
     Box(modifier = Modifier.fillMaxSize()) {
         GlobalWallpaperBackground(repository = repository)
         ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
+            drawerState = drawerState,
+            gesturesEnabled = (selectedTab == 1 || drawerState.isOpen),
+            drawerContent = {
             ModalDrawerSheet(
-                drawerContainerColor = AppScreenBg,
+                drawerContainerColor = Color(0xFF0F0F12),
                 modifier = Modifier
-                    .widthIn(max = 300.dp)
-                    .fillMaxWidth(0.8f)
+                    .widthIn(max = 320.dp)
+                    .fillMaxWidth(0.82f)
                     .fillMaxHeight(),
-                drawerShape = RoundedCornerShape(topEnd = 20.dp, bottomEnd = 20.dp)
+                drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(AppScreenBg)
-                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                        .background(Color(0xFF0F0F12))
+                        .padding(horizontal = 16.dp, vertical = 18.dp)
                 ) {
-                    // Header Row: DEEPCODE + Edit Icon Box
+                    // 1. Header: Logo + DEEPCODE + Close Chevron
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 12.dp),
+                            .padding(top = 8.dp, bottom = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = "DEEPCODE",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = AppPrimary,
-                            fontFamily = FontFamily.SansSerif
-                        )
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(AppSurface.copy(alpha = 0.6f))
-                                .border(1.dp, AppBorder, RoundedCornerShape(10.dp))
-                                .clickable {
-                                    scope.launch {
-                                        val newId = repository.createSession("Session ${sessions.size + 1}")
-                                        activeSessionId = newId
-                                        drawerState.close()
-                                    }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "New Session",
-                                tint = AppPrimary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-
-                    // Search box
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 10.dp),
-                        placeholder = { Text("Search...", color = AppMuted, fontSize = 13.sp) },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.Search,
-                                contentDescription = null,
-                                tint = AppMuted,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        },
-                        trailingIcon = {
-                            Box(
-                                modifier = Modifier
-                                    .background(AppSurfaceVariant, RoundedCornerShape(6.dp))
-                                    .border(0.5.dp, AppBorder, RoundedCornerShape(6.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    "⌘ K",
-                                    color = AppMuted,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Diagonal twin bars logo
+                            Canvas(modifier = Modifier.size(20.dp)) {
+                                val stroke = 3.5.dp.toPx()
+                                val c = Color(0xFFFF5722)
+                                drawLine(
+                                    color = c,
+                                    start = Offset(size.width * 0.55f, size.height * 0.15f),
+                                    end = Offset(size.width * 0.20f, size.height * 0.85f),
+                                    strokeWidth = stroke,
+                                    cap = StrokeCap.Round
+                                )
+                                drawLine(
+                                    color = c,
+                                    start = Offset(size.width * 0.85f, size.height * 0.15f),
+                                    end = Offset(size.width * 0.50f, size.height * 0.85f),
+                                    strokeWidth = stroke,
+                                    cap = StrokeCap.Round
                                 )
                             }
-                        },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = AppWhite,
-                            unfocusedTextColor = AppWhite,
-                            focusedBorderColor = AppPrimary,
-                            unfocusedBorderColor = AppBorder,
-                            focusedContainerColor = AppSurfaceVariant,
-                            unfocusedContainerColor = AppSurfaceVariant
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "DEEPCODE",
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFF5722),
+                                letterSpacing = 1.2.sp
+                            )
+                        }
 
-                    // Scrollable LazyColumn for categories
+                        // Close drawer double arrow
+                        IconButton(
+                            onClick = { scope.launch { drawerState.close() } },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Canvas(modifier = Modifier.size(16.dp)) {
+                                val strokeWidth = 2.dp.toPx()
+                                val color = Color(0xFF9CA3AF)
+                                val h = size.height
+                                val w = size.width
+                                val path1 = Path().apply {
+                                    moveTo(w * 0.45f, h * 0.22f)
+                                    lineTo(w * 0.18f, h * 0.50f)
+                                    lineTo(w * 0.45f, h * 0.78f)
+                                }
+                                drawPath(path1, color = color, style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                                val path2 = Path().apply {
+                                    moveTo(w * 0.82f, h * 0.22f)
+                                    lineTo(w * 0.55f, h * 0.50f)
+                                    lineTo(w * 0.82f, h * 0.78f)
+                                }
+                                drawPath(path2, color = color, style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                            }
+                        }
+                    }
+
+                    // 2. New Chat Button
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(Color(0xFFFF4500), Color(0xFFFF6D00), Color(0xFFFF8500))
+                                )
+                            )
+                            .clickable {
+                                scope.launch {
+                                    val newId = repository.createSession("Session ${sessions.size + 1}")
+                                    activeSessionId = newId
+                                    appState.selectTab(1)
+                                    drawerState.close()
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "New Chat",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(18.dp))
+
+                    // 3. Scrollable Center List (TOOLS + RECENT CHATS)
                     LazyColumn(
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        // TOOLS Category
+                        // Section: TOOLS
                         item {
-                            DrawerCategoryHeader1(
-                                title = "Tools",
-                                isExpanded = drawerControlsExpanded,
-                                onToggle = { drawerControlsExpanded = !drawerControlsExpanded }
+                            Text(
+                                text = "TOOLS",
+                                color = Color(0xFF6B7280),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                            )
+                        }
+
+                        // Tool 1: Chats
+                        item {
+                            val isChatActive = selectedTab == 1 && !showLogViewer && selectedFilePath.isEmpty() && !showFileExplorer && !showAgents && !showTerminal && !showWebPreview && !showLinuxSubsystem
+                            ModernDrawerToolItem(
+                                title = "Chats",
+                                isSelected = isChatActive,
+                                onClick = {
+                                    appState.selectTab(1)
+                                    scope.launch { drawerState.close() }
+                                },
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Chat,
+                                        contentDescription = "Chats",
+                                        tint = if (isChatActive) Color(0xFFFF7A00) else Color(0xFF9CA3AF),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            )
+                        }
+
+                        // Tool 2: File Explorer
+                        item {
+                            val isFileExplorerActive = selectedFilePath.isNotEmpty() || showFileExplorer
+                            ModernDrawerToolItem(
+                                title = "File Explorer",
+                                isSelected = isFileExplorerActive,
+                                onClick = {
+                                    appState.setShowFileExplorer(true)
+                                    scope.launch { drawerState.close() }
+                                },
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Folder,
+                                        contentDescription = "File Explorer",
+                                        tint = if (isFileExplorerActive) Color(0xFFFF7A00) else Color(0xFF9CA3AF),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            )
+                        }
+
+                        // Tool 3: Terminal
+                        item {
+                            ModernDrawerToolItem(
+                                title = "Terminal",
+                                isSelected = showTerminal,
+                                onClick = {
+                                    appState.setShowTerminal(true)
+                                    scope.launch { drawerState.close() }
+                                },
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Terminal,
+                                        contentDescription = "Terminal",
+                                        tint = if (showTerminal) Color(0xFFFF7A00) else Color(0xFF9CA3AF),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            )
+                        }
+
+                        // Tool 4: Live Preview
+                        item {
+                            ModernDrawerToolItem(
+                                title = "Live Preview",
+                                isSelected = showWebPreview,
+                                onClick = {
+                                    appState.setShowWebPreview(true)
+                                    scope.launch { drawerState.close() }
+                                },
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "Live Preview",
+                                        tint = if (showWebPreview) Color(0xFFFF7A00) else Color(0xFF9CA3AF),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            )
+                        }
+
+                        // Tool 5: Linux Environment
+                        item {
+                            ModernDrawerToolItem(
+                                title = "Linux Environment",
+                                isSelected = showLinuxSubsystem,
+                                onClick = {
+                                    appState.setShowLinuxSubsystem(true)
+                                    scope.launch { drawerState.close() }
+                                },
+                                icon = {
+                                    Canvas(modifier = Modifier.size(19.dp)) {
+                                        val stroke = 1.6.dp.toPx()
+                                        val c = if (showLinuxSubsystem) Color(0xFFFF7A00) else Color(0xFF9CA3AF)
+                                        val cx = size.width / 2f
+                                        val cy = size.height / 2f
+                                        val w = size.width * 0.44f
+                                        val h = size.height * 0.25f
+                                        val top = Offset(cx, cy - h * 1.5f)
+                                        val right = Offset(cx + w, cy - h * 0.5f)
+                                        val bottom = Offset(cx, cy + h * 0.5f)
+                                        val left = Offset(cx - w, cy - h * 0.5f)
+                                        val bLeft = Offset(cx - w, cy + h * 0.8f)
+                                        val bBottom = Offset(cx, cy + h * 1.8f)
+                                        val bRight = Offset(cx + w, cy + h * 0.8f)
+
+                                        val pTop = Path().apply {
+                                            moveTo(top.x, top.y)
+                                            lineTo(right.x, right.y)
+                                            lineTo(bottom.x, bottom.y)
+                                            lineTo(left.x, left.y)
+                                            close()
+                                        }
+                                        drawPath(pTop, c, style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                                        drawLine(c, left, bLeft, stroke, cap = StrokeCap.Round)
+                                        drawLine(c, bottom, bBottom, stroke, cap = StrokeCap.Round)
+                                        drawLine(c, right, bRight, stroke, cap = StrokeCap.Round)
+                                        drawLine(c, bLeft, bBottom, stroke, cap = StrokeCap.Round)
+                                        drawLine(c, bRight, bBottom, stroke, cap = StrokeCap.Round)
+                                    }
+                                }
                             )
                         }
 
                         item {
-                            if (drawerControlsExpanded) {
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    val isChatActive = selectedTab == 1 && !showLogViewer && selectedFilePath.isEmpty() && !showFileExplorer && !showAgents
-                                    val isFileExplorerActive = selectedFilePath.isNotEmpty() || showFileExplorer
-                                    val isLogViewerActive = showLogViewer
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Text(
+                                text = "RECENT CHATS",
+                                color = Color(0xFF6B7280),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                            )
+                        }
 
-                                    DrawerItem1(
-                                        title = "Chat",
-                                        icon = Icons.AutoMirrored.Filled.Chat,
-                                        isSelected = isChatActive,
-                                        onClick = {
-                                            appState.selectTab(1)
-                                            scope.launch { drawerState.close() }
-                                        }
-                                    )
-                                    DrawerItem1(
-                                        title = "File Explorer",
-                                        icon = Icons.AutoMirrored.Filled.List,
-                                        isSelected = isFileExplorerActive,
-                                        onClick = {
-                                            appState.setShowFileExplorer(true)
-                                            scope.launch { drawerState.close() }
-                                        }
-                                    )
-                                    DrawerItem1(
-                                        title = "Terminal Console",
-                                        icon = Icons.Default.Terminal,
-                                        isSelected = showTerminal,
-                                        onClick = {
-                                            appState.setShowTerminal(true)
-                                            scope.launch { drawerState.close() }
-                                        }
-                                    )
-                                    DrawerItem1(
-                                        title = "Live Web Preview",
-                                        icon = Icons.Default.PlayArrow,
-                                        isSelected = showWebPreview,
-                                        onClick = {
-                                            appState.setShowWebPreview(true)
-                                            scope.launch { drawerState.close() }
-                                        }
-                                    )
-                                    DrawerItem1(
-                                        title = "Linux Subsystem",
-                                        icon = Icons.Default.Dns,
-                                        isSelected = showLinuxSubsystem,
-                                        onClick = {
-                                            appState.setShowLinuxSubsystem(true)
-                                            scope.launch { drawerState.close() }
-                                        }
-                                    )
-                                    DrawerItem1(
-                                        title = "Log Viewer",
-                                        icon = Icons.AutoMirrored.Filled.List,
-                                        isSelected = isLogViewerActive,
-                                        onClick = {
-                                            appState.setShowLogViewer(true)
-                                            scope.launch { drawerState.close() }
-                                        }
-                                    )
-                                    Box {
-                                        DrawerItem1(
-                                            title = "Personas",
-                                            icon = Icons.Default.Person,
-                                            isSelected = false,
-                                            onClick = {
-                                                showPersonaPicker = true
-                                            }
-                                        )
-                                        if (showPersonaPicker) {
-                                            val personaEnabled = repository.securePrefs.getSetting("persona_enabled", "false") == "true"
-                                            val activeContent = repository.securePrefs.getSetting("custom_persona", "")
-                                            val activeName = if (personaEnabled && activeContent.isNotEmpty()) {
-                                                val custom = try {
-                                                    val raw = repository.securePrefs.getSetting("saved_personas", "[]")
-                                                    val json = org.json.JSONArray(raw)
-                                                    (0 until json.length()).map { i ->
-                                                        val obj = json.getJSONObject(i)
-                                                        obj.getString("name") to obj.getString("content")
-                                                    }
-                                                } catch (_: Exception) { emptyList() }
-                                                val all = listOf("Default" to "") + ai.deepcode.android.ui.settings.builtInPersonas.map { it.name to it.content } + custom
-                                                all.find { it.second == activeContent }?.first ?: "Default"
-                                            } else "Default"
-                                            Popup(
-                                                // Dismissing the picker must NOT close the drawer:
-                                                // previously tapping outside closed both, losing
-                                                // drawer scroll position and confusing flow.
-                                                onDismissRequest = { showPersonaPicker = false },
-                                                alignment = Alignment.BottomStart
-                                            ) {
-                                                PersonaPickerContent(
-                                                    activePersonaName = activeName,
-                                                    onPersonaSelected = { showPersonaPicker = false; scope.launch { drawerState.close() } },
-                                                    securePrefs = repository.securePrefs
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
+                        if (sessions.isEmpty()) {
+                            item {
+                                Text(
+                                    text = "No recent chats",
+                                    color = Color(0xFF6B7280),
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                                )
                             }
-                        }
-
-                        // RECENT SESSIONS Category
-                        item {
-                            DrawerCategoryHeader1(
-                                title = "Recent Sessions",
-                                isExpanded = sessionsExpanded,
-                                onToggle = { sessionsExpanded = !sessionsExpanded }
-                            )
-                        }
-
-                        item {
-                            if (sessionsExpanded) {
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    val activeSession = remember(filteredSessions, activeSessionId) {
-                                        filteredSessions.find { it.id == activeSessionId } ?: filteredSessions.firstOrNull()
-                                    }
-                                    if (activeSession != null) {
-                                        ActiveSessionCard(
-                                            session = activeSession,
-                                            onClick = {
-                                                activeSessionId = activeSession.id
-                                                appState.selectTab(1)
-                                                scope.launch { drawerState.close() }
-                                            },
-                                            onRename = { showRenameDialog = activeSession },
-                                            onDelete = {
-                                                scope.launch {
-                                                    repository.deleteSession(activeSession.id)
-                                                    if (activeSessionId == activeSession.id) activeSessionId = ""
-                                                }
-                                            }
-                                        )
-                                    }
-
-                                    // + New Session Button
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(AppSurfaceVariant)
-                                            .border(1.dp, AppPrimary.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                                            .clickable {
-                                                scope.launch {
-                                                    val newId = repository.createSession("Session ${sessions.size + 1}")
-                                                    activeSessionId = newId
-                                                    drawerState.close()
-                                                }
-                                            }
-                                            .padding(vertical = 9.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.Center
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Add,
-                                                contentDescription = null,
-                                                tint = AppPrimary,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                            Spacer(Modifier.width(6.dp))
-                                            Text(
-                                                "New Session",
-                                                color = AppPrimary,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp
-                                            )
+                        } else {
+                            items(
+                                items = sessions,
+                                key = { "drawer_session_${it.id}" }
+                            ) { session ->
+                                ModernDrawerRecentChatItem(
+                                    session = session,
+                                    onClick = {
+                                        activeSessionId = session.id
+                                        appState.selectTab(1)
+                                        scope.launch { drawerState.close() }
+                                    },
+                                    onRename = { showRenameDialog = session },
+                                    onDelete = {
+                                        scope.launch {
+                                            repository.deleteSession(session.id)
+                                            if (activeSessionId == session.id) activeSessionId = ""
                                         }
                                     }
-                                }
-                            }
-                        }
-
-                        // PAST SESSIONS Category
-                        item {
-                            DrawerCategoryHeader1(
-                                title = "Past Sessions",
-                                isExpanded = pastSessionsExpanded,
-                                onToggle = { pastSessionsExpanded = !pastSessionsExpanded }
-                            )
-                        }
-
-                        if (pastSessionsExpanded) {
-                            val activeSession = filteredSessions.find { it.id == activeSessionId } ?: filteredSessions.firstOrNull()
-                            val otherSessions = filteredSessions.filter { it.id != activeSession?.id }
-
-                            if (otherSessions.isEmpty()) {
-                                item(key = "no_extra_sessions") {
-                                    Text(
-                                        text = "No additional sessions",
-                                        color = AppMuted,
-                                        fontSize = 11.sp,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
-                                }
-                            } else {
-                                // One lazy item per session with stable keys so
-                                // renames/deletes only recompose the affected row.
-                                items(
-                                    items = otherSessions,
-                                    key = { "session_${it.id}" },
-                                    contentType = { "session_row" }
-                                ) { session ->
-                                    ChatHistorySessionRow(
-                                        session = session,
-                                        onClick = {
-                                            activeSessionId = session.id
-                                            appState.selectTab(1)
-                                            scope.launch { drawerState.close() }
-                                        },
-                                        onRename = { showRenameDialog = session },
-                                        onDelete = {
-                                            scope.launch {
-                                                repository.deleteSession(session.id)
-                                                if (activeSessionId == session.id) activeSessionId = ""
-                                            }
-                                        }
-                                    )
-                                }
+                                )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-                    DrawerTokenUsage(repository, activeSessionId) {
-                        appState.setShowTokenUsage(true)
-                        scope.launch { drawerState.close() }
-                    }
-                    HorizontalDivider(color = AppBorder, modifier = Modifier.padding(vertical = 4.dp))
+                    // 4. Bottom Section: Divider + Settings + Developer Profile
+                    HorizontalDivider(
+                        color = Color.White.copy(alpha = 0.08f),
+                        thickness = 0.8.dp,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
 
                     // Settings Row
                     Row(
@@ -876,37 +854,28 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                                 scope.launch { drawerState.close() }
                             }
                             .padding(vertical = 10.dp, horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Settings",
-                                tint = AppWhite,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "Settings",
-                                color = AppWhite,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
                         Icon(
-                            imageVector = Icons.Default.ChevronRight,
-                            contentDescription = null,
-                            tint = AppMuted,
-                            modifier = Modifier.size(18.dp)
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = "Settings",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
-                    // User Profile Card
+                    // Developer Profile Tile
                     val drawerProfile = remember(profileManager) { profileManager.getActiveProfile() }
-                    val drawerProfileName = drawerProfile?.name ?: "deep"
+                    val drawerProfileName = drawerProfile?.name ?: "Developer"
                     val profileInitial = remember(drawerProfileName) {
                         drawerProfileName.firstOrNull()?.uppercase() ?: "D"
                     }
@@ -915,58 +884,55 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
-                            .background(AppSurfaceVariant)
-                            .border(1.dp, AppBorder, RoundedCornerShape(14.dp))
                             .clickable {
                                 appState.setShowLogin(true)
                                 scope.launch { drawerState.close() }
                             }
-                            .padding(10.dp),
+                            .padding(vertical = 6.dp, horizontal = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (drawerProfile != null) {
-                                ProfileAvatar(
-                                    profile = drawerProfile,
-                                    profileManager = profileManager,
-                                    size = 38.dp
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.radialGradient(
+                                            colors = listOf(Color(0xFFFF7A00), Color(0xFFFF5722))
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = profileInitial,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 17.sp
                                 )
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .size(38.dp)
-                                        .clip(CircleShape)
-                                        .background(AppPrimary),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = profileInitial,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp
-                                    )
-                                }
                             }
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
                                     text = drawerProfileName,
-                                    color = AppWhite,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
-                                    text = "Tap to switch profile",
-                                    color = AppMuted,
-                                    fontSize = 10.sp
+                                    text = "Personal Workspace",
+                                    color = Color(0xFF9CA3AF),
+                                    fontSize = 12.sp
                                 )
                             }
                         }
                         Icon(
-                            imageVector = Icons.Default.SwapHoriz,
-                            contentDescription = "Switch profile",
-                            tint = AppMuted,
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = Color(0xFF9CA3AF),
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -1002,8 +968,8 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
         ) { padding ->
             val cachedBottomBarHeight = remember(padding, dashboardStyle) {
                 val b = padding.calculateBottomPadding()
-                val minFloating = 88.dp
-                val minFixed = 68.dp
+                val minFloating = 108.dp
+                val minFixed = 76.dp
                 if (b > 0.dp) {
                     if (dashboardStyle == ai.deepcode.android.data.local.DASHBOARD_STYLE_FLOATING) maxOf(b, minFloating) else maxOf(b, minFixed)
                 } else {
@@ -1064,7 +1030,8 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                                     }
                                     activeSessionId = sessionId
                                     appState.selectTab(1)
-                                }
+                                },
+                                onNavigateToSettings = { appState.selectTab(4) }
                             )
                         }
                         1 -> ChatScreen(
@@ -1121,7 +1088,8 @@ fun AppMainLayout(repository: DeepCodeRepository, profileManager: ProfileManager
                                 onNavigateToPlugins = { appState.setShowPlugins(true) },
                                 onNavigateToThemesAndWallpapers = { appState.setShowThemesAndWallpapers(true) },
                                 onNavigateToVoiceModel = { appState.setShowVoiceModelSettings(true) },
-                                onNavigateToLinuxSubsystem = { appState.setShowLinuxSubsystem(true) }
+                                onNavigateToLinuxSubsystem = { appState.setShowLinuxSubsystem(true) },
+                                onBack = { appState.selectTab(0) }
                             )
                         }
                     }
@@ -1509,6 +1477,156 @@ fun RenameSessionDialog(
         shape = RoundedCornerShape(16.dp)
             )
         }
+
+@Composable
+private fun ModernDrawerToolItem(
+    title: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    icon: @Composable () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .then(
+                if (isSelected) {
+                    Modifier
+                        .background(Color(0xFF22160F))
+                        .border(1.dp, Color(0xFFFF6D00).copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                } else {
+                    Modifier
+                }
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Box(
+                modifier = Modifier.size(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                icon()
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Text(
+                text = title,
+                color = if (isSelected) Color(0xFFFF7A00) else Color(0xFFE5E7EB),
+                fontSize = 14.sp,
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModernDrawerRecentChatItem(
+    session: ChatSession,
+    onClick: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.Chat,
+                contentDescription = null,
+                tint = Color(0xFF9CA3AF),
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = session.title,
+                    color = Color(0xFFF3F4F6),
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = formatSessionTime(session.createdAt),
+                    color = Color(0xFF6B7280),
+                    fontSize = 11.5.sp,
+                    maxLines = 1
+                )
+            }
+        }
+
+        Box {
+            IconButton(
+                onClick = { menuExpanded = true },
+                modifier = Modifier.size(28.dp)
+            ) {
+                Canvas(modifier = Modifier.size(width = 16.dp, height = 16.dp)) {
+                    val r = 1.4.dp.toPx()
+                    val cy = size.height / 2f
+                    val cx = size.width / 2f
+                    val spacing = 4.5.dp.toPx()
+                    drawCircle(Color(0xFF9CA3AF), radius = r, center = Offset(cx - spacing, cy))
+                    drawCircle(Color(0xFF9CA3AF), radius = r, center = Offset(cx, cy))
+                    drawCircle(Color(0xFF9CA3AF), radius = r, center = Offset(cx + spacing, cy))
+                }
+            }
+
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
+                modifier = Modifier
+                    .background(Color(0xFF1E2028))
+                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Rename", color = Color(0xFFE5E7EB), fontSize = 13.sp) },
+                    onClick = {
+                        menuExpanded = false
+                        onRename()
+                    },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = "Rename",
+                            tint = Color(0xFF9CA3AF),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Delete", color = Color(0xFFEF4444), fontSize = 13.sp) },
+                    onClick = {
+                        menuExpanded = false
+                        onDelete()
+                    },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.DeleteOutline,
+                            contentDescription = "Delete",
+                            tint = Color(0xFFEF4444),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
 
 @Composable
 fun DrawerCategoryHeader1(

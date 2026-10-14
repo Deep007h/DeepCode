@@ -28,7 +28,7 @@ enum class ProviderKind(
         "Models through the OpenCode Zen gateway",
         ProviderProtocol.OPENAI_CHAT,
         "https://opencode.ai/zen/v1",
-        "mimo-v2.5-free",
+        "mimo-v2.6-flash-free",
         fixedBaseUrl = true,
         fixedProtocol = true,
     ),

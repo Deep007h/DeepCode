@@ -62,6 +62,7 @@ fun SettingsScreen(
     onNavigateToThemesAndWallpapers: () -> Unit = {},
     onNavigateToVoiceModel: () -> Unit = {},
     onNavigateToLinuxSubsystem: () -> Unit = {},
+    onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -129,13 +130,31 @@ fun SettingsScreen(
     ) {
         // Settings Header
         item {
-            Text(
-                text = "Settings",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = AppWhite,
-                modifier = Modifier.padding(top = 2.dp, bottom = 6.dp)
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (onBack != null) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.padding(end = 4.dp).size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = AppWhite
+                        )
+                    }
+                }
+                Text(
+                    text = "Settings",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = AppWhite
+                )
+            }
         }
 
         // Profile Card

@@ -135,7 +135,7 @@ class AgentRuntime(private val context: Context) {
 
     private val toolCallingModels = setOf(
         "deepseek-v4-flash-free", "deepseek-chat", "deepseek-v3", "deepseek-r1",
-        "mimo-v2.5-free", "nemotron-3-ultra-free", "nemotron-3.5-lightning-free",
+        "mimo-v2.6-flash-free", "ling-3.1-flash-free", "mimo-v2.5-free", "nemotron-3-ultra-free", "nemotron-3.5-lightning-free",
         "llama-3.3-70b-versatile", "llama-3.1-8b-instant",
         "gpt-4o", "gpt-4o-mini", "gpt-4-turbo",
         "claude-3-5-sonnet", "claude-3-haiku", "claude-3-sonnet",

@@ -32,7 +32,10 @@ object DecommissionedModels {
         "llama-guard-3-8b" to "meta-llama/llama-guard-4-12b",
 
         // Legacy / non-existent Zen IDs
-        "big-pickle" to ZenModels.DEFAULT_FREE,
+        "mimo-v2.5-free" to "mimo-v2.6-flash-free",
+        "mimo-v2.5" to "mimo-v2.6-flash-free",
+        "ling-3.0-flash-fin-free" to "ling-3.1-flash-free",
+        "nemotron-3-ultra-free" to "nemotron-3.5-lightning-free",
         "north-mini-code" to ZenModels.DEFAULT_FREE,
 
         // Non-existent Gemini models

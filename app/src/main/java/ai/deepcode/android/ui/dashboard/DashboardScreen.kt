@@ -49,7 +49,8 @@ fun DashboardScreen(
     onTabSelect: (Int) -> Unit,
     repository: ai.deepcode.android.data.repository.DeepCodeRepository? = null,
     onShowTokenUsage: (() -> Unit)? = null,
-    onSessionSelect: ((String) -> Unit)? = null
+    onSessionSelect: ((String) -> Unit)? = null,
+    onNavigateToSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -226,12 +227,12 @@ fun DashboardScreen(
                         modifier = Modifier
                             .size(38.dp)
                             .depthPill(shape = RoundedCornerShape(12.dp), elevation = 2.5.dp, isDark = isDarkThemeActive)
-                            .bouncyClickable(provideHaptic = true) { Toast.makeText(context, "Notifications synced", Toast.LENGTH_SHORT).show() },
+                            .bouncyClickable(provideHaptic = true) { onNavigateToSettings() },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Notifications,
-                            contentDescription = "Notifications",
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
                         )

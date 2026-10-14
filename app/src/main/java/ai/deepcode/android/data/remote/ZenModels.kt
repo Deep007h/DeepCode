@@ -12,15 +12,16 @@ import java.util.concurrent.ConcurrentHashMap
 object ZenModels {
     const val BASE_URL = "https://opencode.ai/zen/v1"
     const val GO_BASE_URL = "https://opencode.ai/zen/go/v1"
-    const val DEFAULT_FREE = "mimo-v2.5-free"
+    const val DEFAULT_FREE = "mimo-v2.6-flash-free"
 
     // Upstream OpenCode client verification headers
-    const val USER_AGENT = "opencode/1.18.31 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14"
+    const val USER_AGENT = "opencode/1.19.0 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"
     const val CLIENT_HEADER_NAME = "x-opencode-client"
     const val CLIENT_HEADER_VALUE = "cli"
     const val PROJECT_HEADER_NAME = "x-opencode-project"
     const val PROJECT_HEADER_VALUE = "global"
     const val HEADER_SESSION_ID = "x-opencode-session"
+    const val HEADER_SESSION_ID_ALT = "x-opencode-session-id"
     const val HEADER_REQUEST_ID = "x-opencode-request"
     const val HEADER_SESSION_AFFINITY = "x-session-affinity"
 
@@ -124,10 +125,18 @@ object ZenModels {
     }
 
     val KNOWN_FREE_IDS = listOf(
+        "mimo-v2.6-flash-free",
+        "ling-3.1-flash-free",
+        "nemotron-3.5-lightning-free",
+        "cat-jam-free",
+        "space-bunny-free",
+        "step-5-preview-free",
+        "longcat-2.5-preview-free",
+        "jev-1.13-free",
+        "big-pickle",
         "mimo-v2.5-free",
         "ling-3.0-flash-fin-free",
-        "nemotron-3-ultra-free",
-        "nemotron-3.5-lightning-free"
+        "nemotron-3-ultra-free"
     )
 
     val KNOWN_PAID_IDS = listOf(
@@ -175,7 +184,7 @@ object ZenModels {
             "muse-spark-1.3-contributor-free", "muse-spark-1.3-free",
             "muse-spark-1.2-contributor-free", "muse-spark-1.2-free",
             "laguna-s-2.1-free", "laguna-s-2.1",
-            "big-pickle", "north-mini-code", "pickle"
+            "north-mini-code", "pickle"
         )
         if (clean.lowercase() in brokenModels) {
             return DEFAULT_FREE
@@ -188,17 +197,19 @@ object ZenModels {
         val knownMatch = ALL_KNOWN_IDS.firstOrNull { it.equals(clean, ignoreCase = true) }
         if (knownMatch != null) return knownMatch
 
-        // Legacy & alias mapping
-        return when (clean.lowercase()) {
-            "claude-fable-5.1" -> "claude-fable-5-1"
-            "mimo-v2.5" -> "mimo-v2.5-free"
-            "ling-3.0-flash", "ling-3.0" -> "ling-3.0-flash-fin-free"
-            "nemotron-3-ultra" -> "nemotron-3-ultra-free"
-            "nemotron-3.5-lightning" -> "nemotron-3.5-lightning-free"
-            else -> {
-                if (clean.contains("free", ignoreCase = true)) DEFAULT_FREE
-                else available?.firstOrNull { it.id == DEFAULT_FREE }?.id ?: available?.firstOrNull { it.isFree }?.id ?: DEFAULT_FREE
-            }
+        val lower = clean.lowercase()
+
+        // Family / alias mapping
+        return when {
+            lower.contains("mimo") -> "mimo-v2.6-flash-free"
+            lower.contains("ling") -> "ling-3.1-flash-free"
+            lower.contains("nemotron") -> "nemotron-3.5-lightning-free"
+            lower.contains("pickle") -> "big-pickle"
+            lower == "claude-fable-5.1" -> "claude-fable-5-1"
+            lower.contains("free") -> DEFAULT_FREE
+            else -> available?.firstOrNull { it.id == DEFAULT_FREE }?.id
+                ?: available?.firstOrNull { it.isFree }?.id
+                ?: DEFAULT_FREE
         }
     }
 

@@ -765,7 +765,7 @@ internal object DshRouteMapper {
             ProviderKind.OPENCODE_ZEN -> DshRoute(
                 name = "opencode-zen",
                 keyEnv = DshRuntimeBridge.FALLBACK_KEY_ENV,
-                defaultModel = model.ifBlank { "mimo-v2.5-free" },
+                defaultModel = model.ifBlank { "mimo-v2.6-flash-free" },
                 custom = DshCustomRoute("openai-completions", profile.resolvedBaseUrl),
             )
             ProviderKind.NVIDIA_NIM -> DshRoute(

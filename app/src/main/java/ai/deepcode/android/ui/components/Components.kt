@@ -570,8 +570,7 @@ fun BottomNavBar(
             BottomNavTab("Dashboard", Icons.Default.Home, 0),
             BottomNavTab("Chat", Icons.AutoMirrored.Filled.Chat, 1),
             BottomNavTab("Automations", Icons.Default.Schedule, 2),
-            BottomNavTab("Connections", Icons.Default.Link, 3),
-            BottomNavTab("Settings", Icons.Default.Settings, 4)
+            BottomNavTab("Connections", Icons.Default.Link, 3)
         )
     }
 
@@ -673,7 +672,8 @@ private fun CapsuleTabBar(
         rowSize.width.toFloat() / tabCount
     } else 0f
 
-    val targetOffsetPx = activeTab * tabWidthPx
+    val showPill = tabWidthPx > 0f && activeTab in 0 until tabCount
+    val targetOffsetPx = if (showPill) activeTab * tabWidthPx else 0f
 
     LaunchedEffect(tabWidthPx) {
         if (tabWidthPx > 0f && !isMeasured) {
@@ -692,7 +692,7 @@ private fun CapsuleTabBar(
         contentAlignment = Alignment.CenterStart
     ) {
         // 💊 Sliding Capsule Selection Highlight (wraps icon + label with clean rounded edges)
-        if (tabWidthPx > 0f) {
+        if (showPill) {
             Box(
                 modifier = Modifier
                     .width(with(density) { tabWidthPx.toDp() })

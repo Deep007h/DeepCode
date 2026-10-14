@@ -61,7 +61,7 @@ val APP_WORKFLOW_PROVIDERS = listOf(
         name = "Zen AI (Free)",
         providerKind = ProviderKind.OPENCODE_ZEN,
         defaultBaseUrl = "https://opencode.ai/zen/v1",
-        defaultModel = "mimo-v2.5-free",
+        defaultModel = "mimo-v2.6-flash-free",
         dshApi = "openai-completions",
         storageKeys = listOf("zen", "opencode-zen", "opencode", "zenmux")
     ),

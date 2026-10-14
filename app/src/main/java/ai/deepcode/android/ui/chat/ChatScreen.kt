@@ -1236,8 +1236,8 @@ fun ChatScreen(
         }
 
         val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-        // Hardware-accelerated 120Hz tracking: when IME is visible, follow system insets directly (zero spring lag).
-        val currentBottomPadding = if (imeBottom > bottomBarHeight) imeBottom else (bottomBarHeight + 6.dp)
+        // Hardware-accelerated tracking: when IME is visible, follow keyboard directly; otherwise float cleanly above dock
+        val currentBottomPadding = if (imeBottom > 0.dp) imeBottom + 8.dp else maxOf(bottomBarHeight + 14.dp, 122.dp)
 
         Column(
             modifier = Modifier
@@ -3354,70 +3354,771 @@ private fun PersonaDarkRow(
 }
 
 // ═══════════════════════════════════════════════
-// Tool Execution Group Bubble
+// Tool Execution Group Tree Component
 // ═══════════════════════════════════════════════
+
+data class ToolExecutionItem(
+    val id: String,
+    val name: String,
+    val argsJson: String?,
+    val result: String
+)
+
+data class ToolExecutionCategory(
+    val id: String,
+    val title: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val items: List<ToolExecutionItem>
+)
+
+private fun cleanSearchQueryForTree(rawQuery: String): String {
+    var text = rawQuery.trim().removeSurrounding("\"").removeSurrounding("'").trim()
+    if (text.isBlank()) return "Web search"
+
+    // Extract site domain if present (e.g. site:coindesk.com -> CoinDesk)
+    var source: String? = null
+    val siteMatch = Regex("""site:([a-zA-Z0-9.-]+)""", RegexOption.IGNORE_CASE).find(text)
+    if (siteMatch != null) {
+        val domain = siteMatch.groupValues[1].removePrefix("www.").substringBefore(".")
+        source = when (domain.lowercase()) {
+            "coindesk" -> "CoinDesk"
+            "reuters" -> "Reuters"
+            "bloomberg" -> "Bloomberg"
+            "github" -> "GitHub"
+            "reddit" -> "Reddit"
+            "wikipedia" -> "Wikipedia"
+            "techcrunch" -> "TechCrunch"
+            else -> domain.replaceFirstChar { it.uppercase() }
+        }
+        text = text.replace(siteMatch.value, "").trim()
+    }
+
+    // Check for prominent known source keywords inside query text
+    if (source == null) {
+        val knownSources = listOf("Reuters", "Bloomberg", "CoinDesk", "TechCrunch", "Forbes", "BBC", "CNN", "The Verge", "GitHub", "Reddit", "Wikipedia", "AP")
+        for (ks in knownSources) {
+            if (text.contains(ks, ignoreCase = true)) {
+                source = ks
+                text = text.replace(Regex("""\b${Regex.escape(ks)}\b""", RegexOption.IGNORE_CASE), "").trim()
+                break
+            }
+        }
+    }
+
+    // Extract date pattern if present
+    var dateLabel: String? = null
+    val isoDateMatch = Regex("""\b(\d{4})-(\d{1,2})-(\d{1,2})\b""").find(text)
+    if (isoDateMatch != null) {
+        val monthNum = isoDateMatch.groupValues[2].toIntOrNull() ?: 1
+        val dayNum = isoDateMatch.groupValues[3].toIntOrNull() ?: 1
+        val monthNames = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+        val mName = monthNames.getOrElse(monthNum - 1) { "Oct" }
+        dateLabel = "$mName $dayNum"
+        text = text.replace(isoDateMatch.value, "").trim()
+    } else {
+        val wordsDateMatch = Regex(
+            """\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(?:20\d\d))?\b""",
+            RegexOption.IGNORE_CASE
+        ).find(text)
+        if (wordsDateMatch != null) {
+            val monthRaw = wordsDateMatch.groupValues[1].take(3).lowercase().replaceFirstChar { it.uppercase() }
+            val dayRaw = wordsDateMatch.groupValues[2]
+            dateLabel = "$monthRaw $dayRaw"
+            text = text.replace(wordsDateMatch.value, "").trim()
+        }
+    }
+
+    // Remove any remaining loose 4-digit years like 2024, 2025, 2026, 2027
+    text = text.replace(Regex("""\b202\d\b"""), "").trim()
+    // Clean up multiple spaces and trailing/leading punctuation
+    text = text.replace(Regex("""\s+"""), " ").trim { it <= ' ' || it == '-' || it == ':' || it == '•' || it == ',' }
+
+    // Format remaining text (capitalize words or sentence)
+    val subject = if (text.isNotBlank()) {
+        val words = text.split(" ")
+        words.mapIndexed { idx, w ->
+            if (idx == 0 || w.equals("ai", ignoreCase = true) || w.equals("news", ignoreCase = true) || w.equals("crypto", ignoreCase = true) || w.equals("india", ignoreCase = true) || w.equals("bitcoin", ignoreCase = true)) {
+                if (w.equals("ai", ignoreCase = true)) "AI" else w.replaceFirstChar { it.uppercase() }
+            } else {
+                w
+            }
+        }.joinToString(" ")
+    } else ""
+
+    return when {
+        subject.isNotBlank() && source != null -> "$subject • $source"
+        subject.isNotBlank() && dateLabel != null -> "$subject • $dateLabel"
+        source != null && dateLabel != null -> "$source • $dateLabel"
+        subject.isNotBlank() -> subject.take(34)
+        source != null -> source
+        dateLabel != null -> dateLabel
+        else -> rawQuery.take(30)
+    }
+}
+
+private fun formatCleanTreeTitle(name: String, argsJson: String?): String {
+    if (argsJson.isNullOrBlank()) {
+        return name.replace("_", " ").split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+    }
+    return try {
+        val json = com.google.gson.JsonParser.parseString(argsJson).asJsonObject
+        when (name.lowercase()) {
+            "web_search", "web_search_exa", "search_image", "searched_web" -> {
+                val q = json.get("query")?.asString?.trim() ?: ""
+                if (q.isBlank()) "Web search" else cleanSearchQueryForTree(q)
+            }
+            "web_fetch", "read_url" -> {
+                val url = json.get("url")?.asString?.trim() ?: ""
+                if (url.isBlank()) "Web fetch" else url.removePrefix("https://").removePrefix("http://").take(32)
+            }
+            "shell", "run_shell", "cmd", "bash" -> {
+                val cmd = (json.get("command")?.asString ?: json.get("cmd")?.asString)?.trim() ?: ""
+                if (cmd.isBlank()) "Command" else cmd.lines().firstOrNull()?.take(32) ?: "Command"
+            }
+            "read_file", "file_read" -> {
+                val path = json.get("path")?.asString ?: json.get("file")?.asString ?: ""
+                if (path.isBlank()) "Read file" else path.substringAfterLast("/").take(28)
+            }
+            "write_file", "file_write" -> {
+                val path = json.get("path")?.asString ?: json.get("file")?.asString ?: ""
+                if (path.isBlank()) "Write file" else path.substringAfterLast("/").take(28)
+            }
+            "list_directory" -> {
+                val path = json.get("path")?.asString ?: ""
+                if (path.isBlank()) "List directory" else path.substringAfterLast("/").ifEmpty { path }.take(28)
+            }
+            "create_pdf", "create_pdf_layout" -> {
+                val t = json.get("title")?.asString ?: ""
+                if (t.isBlank()) "PDF Document" else t.take(28)
+            }
+            "generate_image" -> {
+                val p = json.get("prompt")?.asString ?: ""
+                if (p.isBlank()) "Image generation" else p.take(30)
+            }
+            else -> {
+                val firstVal = json.entrySet().firstOrNull()?.value?.let {
+                    if (it.isJsonPrimitive) it.asString else null
+                }
+                if (!firstVal.isNullOrBlank()) {
+                    firstVal.take(30)
+                } else {
+                    name.replace("_", " ").split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+                }
+            }
+        }
+    } catch (_: Exception) {
+        name.replace("_", " ").split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+    }
+}
+
+private fun formatCleanTreeSubtitle(name: String): String {
+    return when (name.lowercase()) {
+        "web_search", "web_search_exa", "search_image", "searched_web" -> "Searched web"
+        "web_fetch", "read_url" -> "Fetched web"
+        "shell", "run_shell", "cmd", "bash" -> "Executed command"
+        "read_file", "file_read" -> "Read file"
+        "write_file", "file_write" -> "Wrote file"
+        "list_directory" -> "Listed directory"
+        "grep_search" -> "Searched codebase"
+        "create_pdf", "create_pdf_layout", "create_pdf_from_reference" -> "Created PDF"
+        "analyze_pdf" -> "Analyzed PDF"
+        "generate_image" -> "Generated image"
+        "generate_video" -> "Generated video"
+        "edge_tts" -> "Voice synthesis"
+        "tinyfish_agent" -> "Browser automation"
+        else -> "Tool action"
+    }
+}
+
+private fun getToolItemIcon(name: String): androidx.compose.ui.graphics.vector.ImageVector {
+    return when (name.lowercase()) {
+        "web_search", "web_search_exa", "search_image", "searched_web" -> Icons.Default.Search
+        "web_fetch", "read_url" -> Icons.Default.Language
+        "shell", "run_shell", "cmd", "bash" -> Icons.Default.Terminal
+        "read_file", "file_read", "list_directory" -> Icons.Default.Folder
+        "write_file", "file_write" -> Icons.Default.Code
+        "grep_search" -> Icons.Default.Search
+        "create_pdf", "analyze_pdf", "create_pdf_layout" -> Icons.Default.Description
+        else -> Icons.Default.Build
+    }
+}
+
+private fun categorizeToolItems(items: List<ToolExecutionItem>): List<ToolExecutionCategory> {
+    val searchItems = mutableListOf<ToolExecutionItem>()
+    val codeItems = mutableListOf<ToolExecutionItem>()
+    val terminalItems = mutableListOf<ToolExecutionItem>()
+    val docItems = mutableListOf<ToolExecutionItem>()
+    val otherItems = mutableListOf<ToolExecutionItem>()
+
+    for (item in items) {
+        when (item.name.lowercase()) {
+            "web_search", "web_search_exa", "search_image", "searched_web" -> searchItems.add(item)
+            "read_file", "write_file", "file_read", "file_write", "list_directory", "grep_search" -> codeItems.add(item)
+            "shell", "run_shell", "cmd", "bash" -> terminalItems.add(item)
+            "create_pdf", "analyze_pdf", "create_pdf_layout", "create_pdf_from_reference" -> docItems.add(item)
+            else -> otherItems.add(item)
+        }
+    }
+
+    val categories = mutableListOf<ToolExecutionCategory>()
+    if (searchItems.isNotEmpty()) {
+        categories.add(ToolExecutionCategory("web_search", "Web search", Icons.Default.Search, searchItems))
+    }
+    if (codeItems.isNotEmpty()) {
+        categories.add(ToolExecutionCategory("code_files", "Code & Files", Icons.Default.Code, codeItems))
+    }
+    if (terminalItems.isNotEmpty()) {
+        categories.add(ToolExecutionCategory("terminal", "Terminal", Icons.Default.Terminal, terminalItems))
+    }
+    if (docItems.isNotEmpty()) {
+        categories.add(ToolExecutionCategory("docs_media", "Documents & Media", Icons.Default.Description, docItems))
+    }
+    if (otherItems.isNotEmpty()) {
+        val title = if (categories.isEmpty() && otherItems.all { it.name == otherItems.first().name }) {
+            otherItems.first().name.replace("_", " ").split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+        } else {
+            "Other tools"
+        }
+        categories.add(ToolExecutionCategory("other_tools", title, Icons.Default.Dashboard, otherItems))
+    }
+    return categories
+}
+
 @Composable
 fun ToolExecutionGroupBubble(group: ChatItem.ToolExecutionGroup, modifier: Modifier = Modifier) {
     val toolMessages = group.toolMessages
-    data class DisplayItem(val id: String, val name: String, val argsJson: String?, val result: String)
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
     val toolCalls = remember(toolMessages) {
-        val list = mutableListOf<DisplayItem>()
-        val toolCallMsgs = toolMessages.filter { it.isToolCall && it.toolCallsJson != null }
-        for (callMsg in toolCallMsgs) {
-            try {
-                val jsonStr = callMsg.toolCallsJson ?: ""
-                val element = com.google.gson.JsonParser.parseString(jsonStr)
-                val objectsToProcess = when {
-                    element.isJsonArray -> {
-                        val arr = element.asJsonArray
-                        (0 until arr.size()).mapNotNull { idx -> arr.get(idx)?.takeIf { it.isJsonObject }?.asJsonObject }
-                    }
-                    element.isJsonObject -> listOf(element.asJsonObject)
-                    else -> emptyList()
-                }
-                for (jsonObject in objectsToProcess) {
-                    val id = jsonObject.get("id")?.asString ?: ""
-                    val name = jsonObject.get("name")?.asString ?: "tool"
-                    val args = jsonObject.get("arguments")?.toString() ?: jsonObject.get("args")?.toString()
-                    val responseMsg = toolMessages.find { msg ->
-                        if (msg.role != "tool") return@find false
-                        val resJsonStr = msg.toolCallsJson ?: ""
-                        if (id.isNotEmpty() && resJsonStr == id) true
-                        else try {
-                            val parsed = com.google.gson.JsonParser.parseString(resJsonStr)
-                            if (parsed.isJsonObject) parsed.asJsonObject.get("id")?.asString == id else (id.isNotEmpty() && resJsonStr.contains(id))
-                        } catch (_: Exception) {
-                            id.isNotEmpty() && resJsonStr.contains(id)
+        val list = mutableListOf<ToolExecutionItem>()
+        // 1. Prioritize assistant tool calls (they carry the tool name and arguments)
+        val assistantToolMsgs = toolMessages.filter { it.role != "tool" && it.isToolCall && !it.toolCallsJson.isNullOrBlank() }
+        val toolResultMsgs = toolMessages.filter { it.role == "tool" }
+
+        if (assistantToolMsgs.isNotEmpty()) {
+            for (callMsg in assistantToolMsgs) {
+                try {
+                    val jsonStr = callMsg.toolCallsJson ?: ""
+                    val element = com.google.gson.JsonParser.parseString(jsonStr)
+                    val objectsToProcess = when {
+                        element.isJsonArray -> {
+                            val arr = element.asJsonArray
+                            (0 until arr.size()).mapNotNull { idx -> arr.get(idx)?.takeIf { it.isJsonObject }?.asJsonObject }
                         }
+                        element.isJsonObject -> listOf(element.asJsonObject)
+                        else -> emptyList()
                     }
-                    list.add(DisplayItem(id.ifEmpty { UUID.randomUUID().toString() }, name, args, responseMsg?.content ?: "Executing..."))
+                    for (jsonObject in objectsToProcess) {
+                        val id = jsonObject.get("id")?.asString ?: UUID.randomUUID().toString()
+                        val name = jsonObject.get("name")?.asString ?: "tool"
+                        val args = jsonObject.get("arguments")?.toString() ?: jsonObject.get("args")?.toString()
+                        val responseMsg = toolResultMsgs.find { msg ->
+                            val resJsonStr = msg.toolCallsJson ?: ""
+                            if (id.isNotEmpty() && resJsonStr == id) true
+                            else try {
+                                val parsed = com.google.gson.JsonParser.parseString(resJsonStr)
+                                if (parsed.isJsonObject) parsed.asJsonObject.get("id")?.asString == id else (id.isNotEmpty() && resJsonStr.contains(id))
+                            } catch (_: Exception) {
+                                id.isNotEmpty() && resJsonStr.contains(id)
+                            }
+                        }
+                        list.add(ToolExecutionItem(id, name, args, responseMsg?.content ?: "Executing..."))
+                    }
+                } catch (_: Exception) {
+                    val idRegex = """ "id"\s*:\s*"([^"]+)" """.toRegex()
+                    val nameRegex = """ "name"\s*:\s*"([^"]+)" """.toRegex()
+                    val id = idRegex.find(callMsg.toolCallsJson ?: "")?.groups?.get(1)?.value ?: UUID.randomUUID().toString()
+                    val name = nameRegex.find(callMsg.toolCallsJson ?: "")?.groups?.get(1)?.value ?: "tool"
+                    val responseMsg = toolResultMsgs.find { msg ->
+                        val resJsonStr = msg.toolCallsJson ?: ""
+                        if (resJsonStr == id) true else resJsonStr.contains(id)
+                    }
+                    list.add(ToolExecutionItem(id, name, null, responseMsg?.content ?: "Executing..."))
                 }
-            } catch (_: Exception) {
-                val idRegex = """ "id"\s*:\s*"([^"]+)" """.toRegex()
-                val nameRegex = """ "name"\s*:\s*"([^"]+)" """.toRegex()
-                val id = idRegex.find(callMsg.toolCallsJson ?: "")?.groups?.get(1)?.value ?: ""
-                val name = nameRegex.find(callMsg.toolCallsJson ?: "")?.groups?.get(1)?.value ?: "tool"
-                val responseMsg = toolMessages.find { msg ->
-                    if (msg.role != "tool") return@find false
-                    val resJsonStr = msg.toolCallsJson ?: ""
-                    if (resJsonStr == id) true else resJsonStr.contains(id)
-                }
-                list.add(DisplayItem(id.ifEmpty { UUID.randomUUID().toString() }, name, null, responseMsg?.content ?: "Executing..."))
             }
         }
+
+        // 2. Fallback if no assistant tool calls were found (deduplicate results by ID)
+        if (list.isEmpty()) {
+            val seenIds = mutableSetOf<String>()
+            for (msg in toolResultMsgs) {
+                if (seenIds.add(msg.id)) {
+                    val name = try {
+                        val parsed = com.google.gson.JsonParser.parseString(msg.toolCallsJson ?: "")
+                        if (parsed.isJsonObject) parsed.asJsonObject.get("name")?.asString ?: "Tool Output" else "Tool Output"
+                    } catch (_: Exception) { "Tool Output" }
+                    list.add(ToolExecutionItem(msg.id, name, null, msg.content))
+                }
+            }
+        }
+
+        // 3. Fallback for raw tool messages if still empty
         if (list.isEmpty()) {
             toolMessages.forEach { msg ->
-                if (msg.role == "tool") list.add(DisplayItem(msg.id, "Tool Output", null, msg.content))
-                else if (msg.isToolCall) list.add(DisplayItem(msg.id, "Tool Call", null, msg.content))
+                if (msg.role == "tool") list.add(ToolExecutionItem(msg.id, "Tool Output", null, msg.content))
+                else if (msg.isToolCall) list.add(ToolExecutionItem(msg.id, "Tool Call", null, msg.content))
             }
         }
+
         list.filterNot { it.name == "edge_tts" || it.result.contains("[audio:") }
     }
+
     if (toolCalls.isEmpty()) return
-    Column(modifier = modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        toolCalls.forEach { item ->
-            val status = if (item.result.startsWith("Error") || item.result.contains("failed", ignoreCase = true)) "FAILED" else if (item.result == "Executing...") "RUNNING" else "SUCCESS"
-            ToolCallCard(toolName = item.name, status = status, result = item.result, argsJson = item.argsJson, modifier = Modifier.fillMaxWidth())
+
+    val categories = remember(toolCalls) { categorizeToolItems(toolCalls) }
+    var isMainExpanded by remember { mutableStateOf(true) }
+
+    // First category defaults to expanded, subsequent categories to collapsed (matching reference UI)
+    val expandedCategoryMap = remember(categories) {
+        mutableStateMapOf<String, Boolean>().apply {
+            categories.forEachIndexed { index, cat ->
+                put(cat.id, index == 0)
+            }
+        }
+    }
+
+    val totalActions = toolCalls.size
+    val webSearchCount = toolCalls.count { it.name.lowercase().contains("search") }
+    val headerSubtitle = remember(totalActions, webSearchCount) {
+        if (webSearchCount > 0 && webSearchCount < totalActions) {
+            "$totalActions actions • $webSearchCount web search${if (webSearchCount != 1) "es" else ""}"
+        } else if (webSearchCount > 0) {
+            "$totalActions action${if (totalActions != 1) "s" else ""} • $totalActions web search${if (totalActions != 1) "es" else ""}"
+        } else {
+            "$totalActions action${if (totalActions != 1) "s" else ""}"
+        }
+    }
+
+    val hasAnyFailed = toolCalls.any { it.result.startsWith("Error", ignoreCase = true) || it.result.contains("failed", ignoreCase = true) }
+    val hasAnyRunning = toolCalls.any { it.result == "Executing..." }
+
+    // Outer Container Card
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(if (isDark) Color(0xFF13151B) else Color(0xFFF8F9FA))
+            .border(1.dp, if (isDark) Color.White.copy(alpha = 0.08f) else Color(0xFFE2E4E9), RoundedCornerShape(22.dp))
+            .padding(14.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Main Header Row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { isMainExpanded = !isMainExpanded }
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(11.dp))
+                            .background(if (isDark) Color(0xFF1E212A) else Color(0xFFE5E7EB)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Build,
+                            contentDescription = "Tools",
+                            tint = Color(0xFFFBBF24),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Tool activity",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDark) Color.White else Color(0xFF111827)
+                        )
+                        Text(
+                            text = headerSubtitle,
+                            fontSize = 12.sp,
+                            color = if (isDark) Color(0xFF9CA3AF) else Color(0xFF6B7280)
+                        )
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (hasAnyFailed) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Failed",
+                            tint = Color(0xFFEF4444),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    } else if (hasAnyRunning) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 1.5.dp,
+                            color = Color(0xFFF59E0B)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Completed",
+                            tint = Color(0xFF10B981),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = if (isMainExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (isMainExpanded) "Collapse" else "Expand",
+                        tint = if (isDark) Color(0xFF9CA3AF) else Color(0xFF6B7280),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            // Categories list when main card is expanded
+            AnimatedVisibility(
+                visible = isMainExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    categories.forEach { category ->
+                        val isCatExpanded = expandedCategoryMap[category.id] ?: false
+                        val catFailed = category.items.any { it.result.startsWith("Error", ignoreCase = true) || it.result.contains("failed", ignoreCase = true) }
+                        val catRunning = category.items.any { it.result == "Executing..." }
+
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            // Category Row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Left tree guide column for Category root node
+                                Box(
+                                    modifier = Modifier
+                                        .width(26.dp)
+                                        .height(48.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Canvas(modifier = Modifier.fillMaxSize()) {
+                                        val centerX = 13.dp.toPx()
+                                        val centerY = size.height / 2f
+                                        val trunkColor = Color(0xFF3F4452)
+                                        val dotColor = Color(0xFF6B7280)
+
+                                        if (isCatExpanded && category.items.isNotEmpty()) {
+                                            drawLine(
+                                                color = trunkColor,
+                                                start = Offset(centerX, centerY),
+                                                end = Offset(centerX, size.height),
+                                                strokeWidth = 1.5.dp.toPx()
+                                            )
+                                        }
+
+                                        drawCircle(
+                                            color = dotColor,
+                                            radius = 3.dp.toPx(),
+                                            center = Offset(centerX, centerY)
+                                        )
+                                    }
+                                }
+
+                                // Category Card
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(if (isDark) Color(0xFF191C24) else Color(0xFFF1F3F5))
+                                        .border(1.dp, if (isDark) Color.White.copy(alpha = 0.07f) else Color(0xFFE2E4E9), RoundedCornerShape(16.dp))
+                                        .clickable { expandedCategoryMap[category.id] = !isCatExpanded }
+                                        .padding(horizontal = 12.dp, vertical = 9.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(34.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(if (isDark) Color(0xFF222631) else Color(0xFFE5E7EB)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = category.icon,
+                                                    contentDescription = category.title,
+                                                    tint = Color(0xFFFBBF24),
+                                                    modifier = Modifier.size(17.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Text(
+                                                text = category.title,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = if (isDark) Color.White else Color(0xFF111827),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(if (isDark) Color(0xFF272B37) else Color(0xFFE2E4E9))
+                                                    .padding(horizontal = 7.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = "${category.items.size}",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = if (isDark) Color(0xFF9CA3AF) else Color(0xFF4B5563)
+                                                )
+                                            }
+                                        }
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (catFailed) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = "Failed",
+                                                    tint = Color(0xFFEF4444),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            } else if (catRunning) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(14.dp),
+                                                    strokeWidth = 1.5.dp,
+                                                    color = Color(0xFFF59E0B)
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = "Success",
+                                                    tint = Color(0xFF10B981),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Icon(
+                                                imageVector = if (isCatExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                                contentDescription = if (isCatExpanded) "Collapse" else "Expand",
+                                                tint = if (isDark) Color(0xFF9CA3AF) else Color(0xFF6B7280),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Child Items when Category is expanded
+                            AnimatedVisibility(
+                                visible = isCatExpanded,
+                                enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut()
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    category.items.forEachIndexed { childIdx, item ->
+                                        val isLast = childIdx == category.items.lastIndex
+                                        var isItemDetailsExpanded by remember { mutableStateOf(false) }
+                                        val isItemFailed = item.result.startsWith("Error", ignoreCase = true) || item.result.contains("failed", ignoreCase = true)
+                                        val isItemRunning = item.result == "Executing..."
+
+                                        val itemTitle = remember(item.name, item.argsJson) {
+                                            formatCleanTreeTitle(item.name, item.argsJson)
+                                        }
+                                        val itemSubtitle = remember(item.name) {
+                                            formatCleanTreeSubtitle(item.name)
+                                        }
+                                        val itemIcon = remember(item.name) {
+                                            getToolItemIcon(item.name)
+                                        }
+
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 3.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            // Tree branch connector box
+                                            Box(
+                                                modifier = Modifier
+                                                    .width(26.dp)
+                                                    .height(if (isItemDetailsExpanded) 90.dp else 52.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                                    val centerX = 13.dp.toPx()
+                                                    val centerY = if (isItemDetailsExpanded) 26.dp.toPx() else size.height / 2f
+                                                    val branchEndX = 22.dp.toPx()
+                                                    val trunkColor = Color(0xFF3F4452)
+                                                    val dotColor = Color(0xFF6B7280)
+
+                                                    // Vertical trunk line
+                                                    drawLine(
+                                                        color = trunkColor,
+                                                        start = Offset(centerX, 0f),
+                                                        end = Offset(centerX, if (isLast) centerY else size.height),
+                                                        strokeWidth = 1.5.dp.toPx()
+                                                    )
+
+                                                    // Horizontal branch line
+                                                    drawLine(
+                                                        color = trunkColor,
+                                                        start = Offset(centerX, centerY),
+                                                        end = Offset(branchEndX, centerY),
+                                                        strokeWidth = 1.5.dp.toPx()
+                                                    )
+
+                                                    // Branch node dot
+                                                    drawCircle(
+                                                        color = dotColor,
+                                                        radius = 2.5.dp.toPx(),
+                                                        center = Offset(branchEndX, centerY)
+                                                    )
+                                                }
+                                            }
+
+                                            // Child Card
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(14.dp))
+                                                    .background(if (isDark) Color(0xFF14171E) else Color(0xFFF9FAFB))
+                                                    .border(1.dp, if (isDark) Color.White.copy(alpha = 0.05f) else Color(0xFFE5E7EB), RoundedCornerShape(14.dp))
+                                                    .clickable { isItemDetailsExpanded = !isItemDetailsExpanded }
+                                                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                                            ) {
+                                                Column(modifier = Modifier.fillMaxWidth()) {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.SpaceBetween
+                                                    ) {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            modifier = Modifier.weight(1f)
+                                                        ) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(30.dp)
+                                                                    .clip(RoundedCornerShape(9.dp))
+                                                                    .background(if (isDark) Color(0xFF1E212A) else Color(0xFFE5E7EB)),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = itemIcon,
+                                                                    contentDescription = item.name,
+                                                                    tint = Color(0xFFFBBF24),
+                                                                    modifier = Modifier.size(15.dp)
+                                                                )
+                                                            }
+                                                            Spacer(modifier = Modifier.width(10.dp))
+                                                            Column(modifier = Modifier.weight(1f)) {
+                                                                Text(
+                                                                    text = itemTitle,
+                                                                    fontSize = 13.sp,
+                                                                    fontWeight = FontWeight.Medium,
+                                                                    color = if (isDark) Color.White else Color(0xFF111827),
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Ellipsis
+                                                                )
+                                                                Text(
+                                                                    text = itemSubtitle,
+                                                                    fontSize = 11.5.sp,
+                                                                    color = if (isDark) Color(0xFF9CA3AF) else Color(0xFF6B7280),
+                                                                    maxLines = 1
+                                                                )
+                                                            }
+                                                        }
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        if (isItemFailed) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Close,
+                                                                contentDescription = "Failed",
+                                                                tint = Color(0xFFEF4444),
+                                                                modifier = Modifier.size(15.dp)
+                                                            )
+                                                        } else if (isItemRunning) {
+                                                            CircularProgressIndicator(
+                                                                modifier = Modifier.size(13.dp),
+                                                                strokeWidth = 1.5.dp,
+                                                                color = Color(0xFFF59E0B)
+                                                            )
+                                                        } else {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Check,
+                                                                contentDescription = "Success",
+                                                                tint = Color(0xFF10B981),
+                                                                modifier = Modifier.size(15.dp)
+                                                            )
+                                                        }
+                                                    }
+
+                                                    // Expanded Item Details
+                                                    AnimatedVisibility(visible = isItemDetailsExpanded) {
+                                                        Column(modifier = Modifier.padding(top = 8.dp)) {
+                                                            HorizontalDivider(
+                                                                color = if (isDark) Color.White.copy(alpha = 0.07f) else Color(0xFFE5E7EB),
+                                                                thickness = 0.8.dp
+                                                            )
+                                                            Spacer(modifier = Modifier.height(6.dp))
+                                                            if (!item.argsJson.isNullOrBlank()) {
+                                                                Text(
+                                                                    text = "Arguments:",
+                                                                    fontSize = 10.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = Color(0xFFFBBF24)
+                                                                )
+                                                                Text(
+                                                                    text = item.argsJson,
+                                                                    fontSize = 10.sp,
+                                                                    fontFamily = FontFamily.Monospace,
+                                                                    color = if (isDark) Color.White.copy(alpha = 0.75f) else Color(0xFF374151),
+                                                                    maxLines = 5,
+                                                                    overflow = TextOverflow.Ellipsis
+                                                                )
+                                                            }
+                                                            if (item.result.isNotBlank() && item.result != "Executing...") {
+                                                                Spacer(modifier = Modifier.height(4.dp))
+                                                                Text(
+                                                                    text = "Result:",
+                                                                    fontSize = 10.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = Color(0xFF10B981)
+                                                                )
+                                                                Text(
+                                                                    text = item.result.take(500),
+                                                                    fontSize = 10.sp,
+                                                                    fontFamily = FontFamily.Monospace,
+                                                                    color = if (isDark) Color.White.copy(alpha = 0.75f) else Color(0xFF374151),
+                                                                    maxLines = 6,
+                                                                    overflow = TextOverflow.Ellipsis
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -4204,7 +4905,7 @@ class ChatViewModel(val repository: DeepCodeRepository) : ViewModel() {
     private val _pendingToolCall = MutableStateFlow<ToolCall?>(null)
     val pendingToolCall = _pendingToolCall.asStateFlow()
 
-    private val _activeModel = MutableStateFlow(AIModel("mimo-v2.5-free", "Mimo V2.5 (Free)", "Zen AI", true, "128k", "Free"))
+    private val _activeModel = MutableStateFlow(AIModel("mimo-v2.6-flash-free", "Mimo V2.6 Flash (Free)", "Zen AI", true, "128k", "Free"))
     val activeModel = _activeModel.asStateFlow()
 
     private val _attachedFiles = MutableStateFlow<List<AttachedFile>>(emptyList())
@@ -4264,7 +4965,7 @@ class ChatViewModel(val repository: DeepCodeRepository) : ViewModel() {
     init {
         val prefs = repository.securePrefs
         val savedProvider = prefs.getSetting("chat_provider", "Zen AI")
-        val defaultModelId = if (savedProvider == "Zen AI" || savedProvider == "Zen") "mimo-v2.5-free" else ""
+        val defaultModelId = if (savedProvider == "Zen AI" || savedProvider == "Zen") "mimo-v2.6-flash-free" else ""
         val rawSavedModelId = prefs.getSetting("chat_model", defaultModelId).ifEmpty { defaultModelId }
         val savedModelId = if (rawSavedModelId.isNotEmpty()) DecommissionedModels.sanitize(rawSavedModelId) else defaultModelId
         if (savedModelId != rawSavedModelId && savedModelId.isNotEmpty()) {
@@ -4273,9 +4974,11 @@ class ChatViewModel(val repository: DeepCodeRepository) : ViewModel() {
         if (savedModelId.isNotEmpty()) {
             val isFree = savedModelId.contains("free", ignoreCase = true)
             val friendlyName = when (savedModelId) {
-                "mimo-v2.5-free" -> "Mimo V2.5 (Free)"
-                "ling-3.0-flash-fin-free" -> "Ling 3.0 Flash Fin (Free)"
-                "nemotron-3-ultra-free" -> "Nemotron 3 Ultra (Free)"
+                "mimo-v2.6-flash-free" -> "Mimo V2.6 Flash (Free)"
+                "mimo-v2.5-free" -> "Mimo V2.6 Flash (Free)"
+                "ling-3.1-flash-free" -> "Ling 3.1 Flash (Free)"
+                "ling-3.0-flash-fin-free" -> "Ling 3.1 Flash (Free)"
+                "nemotron-3-ultra-free" -> "Nemotron 3.5 Lightning (Free)"
                 "nemotron-3.5-lightning-free" -> "Nemotron 3.5 Lightning (Free)"
                 else -> savedModelId.split("/").lastOrNull()?.replace("-", " ")?.replaceFirstChar { it.uppercase() } ?: savedModelId
             }
@@ -4318,16 +5021,18 @@ class ChatViewModel(val repository: DeepCodeRepository) : ViewModel() {
         }
 
         val targetProvider = sessionProvider.ifEmpty { prefs.getSetting("chat_provider", "Zen AI") }
-        val defaultTargetModelId = if (targetProvider == "Zen AI" || targetProvider == "Zen") "mimo-v2.5-free" else ""
+        val defaultTargetModelId = if (targetProvider == "Zen AI" || targetProvider == "Zen") "mimo-v2.6-flash-free" else ""
         val rawTargetModelId = sessionModelId.ifEmpty { prefs.getSetting("chat_model", defaultTargetModelId) }.ifEmpty { defaultTargetModelId }
         val targetModelId = if (rawTargetModelId.isNotEmpty()) DecommissionedModels.sanitize(rawTargetModelId) else defaultTargetModelId
 
         if (targetModelId.isNotEmpty()) {
             val isFree = targetModelId.contains("free", ignoreCase = true)
             val friendlyName = when (targetModelId) {
-                "mimo-v2.5-free" -> "Mimo V2.5 (Free)"
-                "ling-3.0-flash-fin-free" -> "Ling 3.0 Flash Fin (Free)"
-                "nemotron-3-ultra-free" -> "Nemotron 3 Ultra (Free)"
+                "mimo-v2.6-flash-free" -> "Mimo V2.6 Flash (Free)"
+                "mimo-v2.5-free" -> "Mimo V2.6 Flash (Free)"
+                "ling-3.1-flash-free" -> "Ling 3.1 Flash (Free)"
+                "ling-3.0-flash-fin-free" -> "Ling 3.1 Flash (Free)"
+                "nemotron-3-ultra-free" -> "Nemotron 3.5 Lightning (Free)"
                 "nemotron-3.5-lightning-free" -> "Nemotron 3.5 Lightning (Free)"
                 else -> targetModelId.split("/").lastOrNull()?.replace("-", " ")?.replaceFirstChar { it.uppercase() } ?: targetModelId
             }
@@ -5431,7 +6136,7 @@ class ChatViewModel(val repository: DeepCodeRepository) : ViewModel() {
                             role = "tool",
                             content = event.summary,
                             timestamp = System.currentTimeMillis() + 1,
-                            isToolCall = true,
+                            isToolCall = false,
                             toolCallsJson = """{"id":"$callId","name":"${event.toolName}"}"""
                         )
                         repository.insertMessage(toolResMsg)
@@ -6440,7 +7145,7 @@ $githubSection
                 role = "tool",
                 content = result,
                 timestamp = System.currentTimeMillis(),
-                isToolCall = true,
+                isToolCall = false,
                 toolCallsJson = """{"id":"${tc.id}","name":"${tc.name}"}"""
             )
             repository.insertMessage(toolResultMsg)

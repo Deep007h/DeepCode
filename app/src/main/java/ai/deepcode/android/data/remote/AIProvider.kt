@@ -419,10 +419,16 @@ class ZenProvider : AIProvider {
     override val name = "Zen AI"
     override val isFree = true
     override val models = listOf(
+        AIModel("mimo-v2.6-flash-free", "Mimo V2.6 Flash (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("ling-3.1-flash-free", "Ling 3.1 Flash (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("nemotron-3.5-lightning-free", "Nemotron 3.5 Lightning (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("cat-jam-free", "Cat Jam (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("space-bunny-free", "Space Bunny (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("step-5-preview-free", "Step 5 Preview (Free)", "Zen AI", true, "128k tokens", "Free"),
+        AIModel("big-pickle", "Big Pickle (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("mimo-v2.5-free", "Mimo V2.5 (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("ling-3.0-flash-fin-free", "Ling 3.0 Flash Fin (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("nemotron-3-ultra-free", "Nemotron 3 Ultra (Free)", "Zen AI", true, "128k tokens", "Free"),
-        AIModel("nemotron-3.5-lightning-free", "Nemotron 3.5 Lightning (Free)", "Zen AI", true, "128k tokens", "Free"),
         AIModel("deepseek-v4-flash-free", "DeepSeek V4 Flash (Free)", "Zen AI", true, "1M tokens", "Free"),
         AIModel("muse-spark-1.3-contributor-free", "Muse Spark 1.3 (Free)", "Zen AI", true, "1M tokens", "Free"),
         AIModel("muse-spark-1.2-contributor-free", "Muse Spark 1.2 (Free)", "Zen AI", true, "128k tokens", "Free"),
@@ -652,6 +658,7 @@ class ZenProvider : AIProvider {
     ) {
         withContext(Dispatchers.IO) {
             val effectiveKey = token.trim()
+            val authHeader = if (effectiveKey.isNotEmpty() && effectiveKey != "free") "Bearer $effectiveKey" else "Bearer public"
             val url = java.net.URL("$baseUrl/chat/completions")
             val conn = url.openConnection() as java.net.HttpURLConnection
             try {
@@ -660,11 +667,12 @@ class ZenProvider : AIProvider {
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("Accept", "text/event-stream")
                 conn.setRequestProperty("Cache-Control", "no-cache")
-                conn.setRequestProperty("Authorization", "Bearer $effectiveKey")
+                conn.setRequestProperty("Authorization", authHeader)
                 conn.setRequestProperty("User-Agent", ZenModels.USER_AGENT)
                 conn.setRequestProperty(ZenModels.CLIENT_HEADER_NAME, ZenModels.CLIENT_HEADER_VALUE)
                 conn.setRequestProperty(ZenModels.PROJECT_HEADER_NAME, ZenModels.PROJECT_HEADER_VALUE)
                 conn.setRequestProperty(ZenModels.HEADER_SESSION_ID, sessionId)
+                conn.setRequestProperty(ZenModels.HEADER_SESSION_ID_ALT, sessionId)
                 conn.setRequestProperty(ZenModels.HEADER_REQUEST_ID, requestId)
                 conn.setRequestProperty(ZenModels.HEADER_SESSION_AFFINITY, sessionId)
                 conn.connectTimeout = 10000
@@ -717,17 +725,19 @@ class ZenProvider : AIProvider {
     ) {
         withContext(Dispatchers.IO) {
             val effectiveKey = token.trim()
+            val authHeader = if (effectiveKey.isNotEmpty() && effectiveKey != "free") "Bearer $effectiveKey" else "Bearer public"
             val reqBuilder = Request.Builder()
                 .url("$baseUrl/chat/completions")
                 .post(payloadJson.toRequestBody("application/json".toMediaType()))
                 .addHeader("Content-Type", "application/json")
                 .addHeader("Accept", "text/event-stream")
                 .addHeader("Cache-Control", "no-cache")
-                .addHeader("Authorization", "Bearer $effectiveKey")
+                .addHeader("Authorization", authHeader)
                 .addHeader("User-Agent", ZenModels.USER_AGENT)
                 .addHeader(ZenModels.CLIENT_HEADER_NAME, ZenModels.CLIENT_HEADER_VALUE)
                 .addHeader(ZenModels.PROJECT_HEADER_NAME, ZenModels.PROJECT_HEADER_VALUE)
                 .addHeader(ZenModels.HEADER_SESSION_ID, sessionId)
+                .addHeader(ZenModels.HEADER_SESSION_ID_ALT, sessionId)
                 .addHeader(ZenModels.HEADER_REQUEST_ID, requestId)
                 .addHeader(ZenModels.HEADER_SESSION_AFFINITY, sessionId)
 
@@ -777,17 +787,19 @@ class ZenProvider : AIProvider {
             val sessionId = ZenModels.generateSessionId()
             val requestId = ZenModels.generateRequestId()
             val effectiveKey = token.trim()
+            val authHeader = if (effectiveKey.isNotEmpty() && effectiveKey != "free") "Bearer $effectiveKey" else "Bearer public"
             val url = java.net.URL("$baseUrl/chat/completions")
             val conn = url.openConnection() as java.net.HttpURLConnection
             try {
                 conn.doOutput = true
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
-                conn.setRequestProperty("Authorization", "Bearer $effectiveKey")
+                conn.setRequestProperty("Authorization", authHeader)
                 conn.setRequestProperty("User-Agent", ZenModels.USER_AGENT)
                 conn.setRequestProperty(ZenModels.CLIENT_HEADER_NAME, ZenModels.CLIENT_HEADER_VALUE)
                 conn.setRequestProperty(ZenModels.PROJECT_HEADER_NAME, ZenModels.PROJECT_HEADER_VALUE)
                 conn.setRequestProperty(ZenModels.HEADER_SESSION_ID, sessionId)
+                conn.setRequestProperty(ZenModels.HEADER_SESSION_ID_ALT, sessionId)
                 conn.setRequestProperty(ZenModels.HEADER_REQUEST_ID, requestId)
                 conn.setRequestProperty(ZenModels.HEADER_SESSION_AFFINITY, sessionId)
                 conn.connectTimeout = 15000
@@ -1087,18 +1099,16 @@ class ZenProvider : AIProvider {
                 Candidate("Groq", "groq") { req ->
                     when {
                         req.contains("qwen", ignoreCase = true) || req.contains("code", ignoreCase = true) || req.contains("deepseek", ignoreCase = true) ->
-                            "qwen/qwen3.8-27b"
-                        req.contains("mini", ignoreCase = true) || req.contains("fast", ignoreCase = true) || req.contains("flash", ignoreCase = true) ->
-                            "groq/compound-mini"
-                        req.contains("oss", ignoreCase = true) || req.contains("120b", ignoreCase = true) ->
-                            "openai/gpt-oss-120b"
-                        else -> "groq/compound"
+                            "deepseek-r1-distill-llama-70b"
+                        req.contains("mini", ignoreCase = true) || req.contains("fast", ignoreCase = true) || req.contains("flash", ignoreCase = true) || req.contains("instant", ignoreCase = true) ->
+                            "llama-3.1-8b-instant"
+                        else -> "llama-3.3-70b-versatile"
                     }
                 },
                 Candidate("Google Gemini", "gemini") { _ -> "gemini-2.5-flash" },
                 Candidate("Ollama Cloud", "ollama") { _ -> "gemma4:31b" },
                 Candidate("OpenRouter", "openrouter") { _ -> "nex-agi/nex-n2.5-mini:free" },
-                Candidate("Cerebrus", "cerebras") { _ -> "qwen-3.8-27b" }
+                Candidate("Cerebrus", "cerebras") { _ -> "llama-3.3-70b" }
             )
 
             for (c in candidates) {
@@ -1127,19 +1137,40 @@ class ZenProvider : AIProvider {
                     val targetModel = c.pickModel(requestedModel)
 
                     ai.deepcode.android.util.AppLogger.i("ZenProvider", "Failover from Zen AI to ${targetProvider.name} ($targetModel)")
-                    targetProvider.streamCompletion(
-                        messages = messages,
-                        model = targetModel,
-                        tools = tools,
-                        apiKey = fallbackKey,
-                        customBaseUrl = null,
-                        onToken = onToken,
-                        onToolCall = onToolCall,
-                        onComplete = onComplete,
-                        onError = onError,
-                        onUsage = onUsage
-                    )
-                    return true
+                    var hasHandled = false
+                    try {
+                        var noticeSent = false
+                        targetProvider.streamCompletion(
+                            messages = messages,
+                            model = targetModel,
+                            tools = tools,
+                            apiKey = fallbackKey,
+                            customBaseUrl = null,
+                            onToken = { tok ->
+                                if (!noticeSent) {
+                                    noticeSent = true
+                                    onToken("*(Switched to ${targetProvider.name} · $targetModel)*\n\n")
+                                }
+                                hasHandled = true
+                                onToken(tok)
+                            },
+                            onToolCall = { tc ->
+                                hasHandled = true
+                                onToolCall(tc)
+                            },
+                            onComplete = { comp ->
+                                hasHandled = true
+                                onComplete(comp)
+                            },
+                            onError = { err ->
+                                ai.deepcode.android.util.AppLogger.w("ZenProvider", "Candidate ${targetProvider.name} failed: ${err.message}")
+                            },
+                            onUsage = onUsage
+                        )
+                        if (hasHandled) return true
+                    } catch (e: Throwable) {
+                        ai.deepcode.android.util.AppLogger.w("ZenProvider", "Candidate ${targetProvider.name} threw: ${e.message}")
+                    }
                 }
             }
 
@@ -1150,19 +1181,40 @@ class ZenProvider : AIProvider {
                 if (key.isNotEmpty()) {
                     val targetModel = p.models.firstOrNull { it.isFree }?.id ?: p.models.firstOrNull()?.id ?: continue
                     ai.deepcode.android.util.AppLogger.i("ZenProvider", "Failover from Zen AI to ${p.name} ($targetModel)")
-                    p.streamCompletion(
-                        messages = messages,
-                        model = targetModel,
-                        tools = tools,
-                        apiKey = key,
-                        customBaseUrl = null,
-                        onToken = onToken,
-                        onToolCall = onToolCall,
-                        onComplete = onComplete,
-                        onError = onError,
-                        onUsage = onUsage
-                    )
-                    return true
+                    var hasHandled = false
+                    try {
+                        var noticeSent = false
+                        p.streamCompletion(
+                            messages = messages,
+                            model = targetModel,
+                            tools = tools,
+                            apiKey = key,
+                            customBaseUrl = null,
+                            onToken = { tok ->
+                                if (!noticeSent) {
+                                    noticeSent = true
+                                    onToken("*(Switched to ${p.name} · $targetModel)*\n\n")
+                                }
+                                hasHandled = true
+                                onToken(tok)
+                            },
+                            onToolCall = { tc ->
+                                hasHandled = true
+                                onToolCall(tc)
+                            },
+                            onComplete = { comp ->
+                                hasHandled = true
+                                onComplete(comp)
+                            },
+                            onError = { err ->
+                                ai.deepcode.android.util.AppLogger.w("ZenProvider", "Fallback ${p.name} failed: ${err.message}")
+                            },
+                            onUsage = onUsage
+                        )
+                        if (hasHandled) return true
+                    } catch (e: Throwable) {
+                        ai.deepcode.android.util.AppLogger.w("ZenProvider", "Fallback ${p.name} threw: ${e.message}")
+                    }
                 }
             }
 

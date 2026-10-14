@@ -113,7 +113,7 @@ class HermesAgentIntegrationTest {
             assertTrue("Must define OpenAI stream parser", content.contains("def parse_openai_stream("))
 
             // Default free model for Zen
-            assertTrue("Must default to mimo-v2.5-free", content.contains("mimo-v2.5-free"))
+            assertTrue("Must default to mimo-v2.6-flash-free", content.contains("mimo-v2.6-flash-free"))
         } finally {
             tempDir.deleteRecursively()
         }

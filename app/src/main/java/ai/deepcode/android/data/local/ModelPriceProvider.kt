@@ -131,11 +131,13 @@ object ModelPriceProvider {
         register("nvidia/nvidia-nemotron-3.5-lightning-30b-a3b-bf16", ModelPricing(0.20, 0.40, 128_000, 8192))
 
         // ── Unique Zen / Contributor Models ─────────────────────────────
+        register("mimo-v2.6-flash-free", ModelPricing(0.15, 0.30, 128_000, 8192))
         register("mimo-v2.5-free", ModelPricing(0.15, 0.30, 128_000, 8192))
         register("mimo-v2.5", ModelPricing(0.15, 0.30, 128_000, 8192))
         register("muse-spark-1.3-contributor-free", ModelPricing(0.15, 0.30, 1_000_000, 16384))
         register("muse-spark-1.3", ModelPricing(0.15, 0.30, 1_000_000, 16384))
         register("muse-spark-1.2-contributor-free", ModelPricing(0.10, 0.20, 128_000, 8192))
+        register("ling-3.1-flash-free", ModelPricing(0.10, 0.20, 128_000, 8192))
         register("ling-3.0-flash-fin-free", ModelPricing(0.10, 0.20, 128_000, 8192))
         register("laguna-s-2.1-free", ModelPricing(0.10, 0.20, 128_000, 8192))
 
