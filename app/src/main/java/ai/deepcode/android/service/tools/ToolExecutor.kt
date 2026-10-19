@@ -502,7 +502,42 @@ class ToolExecutor(private val context: Context? = null) {
     fun executeTool(name: String, argumentsJson: String, workingDir: String, useRoot: Boolean): String {
         return try {
             val unmaskedArgsJson = ai.deepcode.android.security.AuthSurrogate.unmaskSurrogates(argumentsJson)
-            val args = try { gson.fromJson(unmaskedArgsJson, JsonObject::class.java) ?: JsonObject() } catch (_: Exception) { JsonObject() }
+            val args = try {
+                val trimmed = unmaskedArgsJson.trim()
+                if (trimmed.isEmpty()) {
+                    JsonObject()
+                } else {
+                    val parsed = com.google.gson.JsonParser.parseString(trimmed)
+                    when {
+                        parsed.isJsonObject -> {
+                            val obj = parsed.asJsonObject
+                            if (!obj.has("command") && !obj.has("path") && !obj.has("query") && !obj.has("content")) {
+                                val inner = obj.get("parameters") ?: obj.get("arguments") ?: obj.get("args") ?: obj.get("input")
+                                if (inner != null && inner.isJsonObject) inner.asJsonObject else obj
+                            } else {
+                                obj
+                            }
+                        }
+                        parsed.isJsonArray -> {
+                            val arr = parsed.asJsonArray
+                            if (arr.size() > 0 && arr[0].isJsonObject) arr[0].asJsonObject else JsonObject()
+                        }
+                        parsed.isJsonPrimitive -> {
+                            val primStr = parsed.asString
+                            JsonObject().apply {
+                                when (name) {
+                                    "run_command", "shell", "bash", "sh", "exec", "cmd" -> addProperty("command", primStr)
+                                    "read_file", "file_read", "view_file" -> addProperty("path", primStr)
+                                    "web_search" -> addProperty("query", primStr)
+                                    "web_fetch", "fetch_url", "read_url_content" -> addProperty("url", primStr)
+                                    else -> addProperty("input", primStr)
+                                }
+                            }
+                        }
+                        else -> JsonObject()
+                    }
+                }
+            } catch (_: Exception) { JsonObject() }
             
             // ── Sentinel Arbiter: Evaluate Risk & Enforce Safe Mode ──
             val decision = ai.deepcode.android.security.SentinelArbiter.evaluateToolCall(name, args, useRoot, context)
