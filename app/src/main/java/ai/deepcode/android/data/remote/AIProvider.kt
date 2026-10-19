@@ -36,6 +36,20 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 
 
+fun parseToolCallsArray(rawJson: String?): JsonArray {
+    if (rawJson.isNullOrBlank()) return JsonArray()
+    return try {
+        val parsed = JsonParser.parseString(rawJson)
+        when {
+            parsed.isJsonArray -> parsed.asJsonArray
+            parsed.isJsonObject -> JsonArray().apply { add(parsed.asJsonObject) }
+            else -> JsonArray()
+        }
+    } catch (_: Exception) {
+        JsonArray()
+    }
+}
+
 fun shouldIncludeTools(messages: List<Message>, tools: List<Tool>?): Boolean {
     if (tools.isNullOrEmpty()) return false
 
@@ -2032,14 +2046,16 @@ class AnthropicProvider : AIProvider {
                             blocks.add(textObj)
                         }
                         try {
-                            val tcArray = JsonParser.parseString(msg.toolCallsJson).asJsonArray
+                            val tcArray = parseToolCallsArray(msg.toolCallsJson)
                             for (i in 0 until tcArray.size()) {
-                                val tcObj = tcArray.get(i).asJsonObject
+                                val item = tcArray.get(i)
+                                if (!item.isJsonObject) continue
+                                val tcObj = item.asJsonObject
                                 val toolUseObj = JsonObject().apply {
                                     addProperty("type", "tool_use")
                                     addProperty("id", tcObj.get("id")?.asString ?: "call_$i")
                                     addProperty("name", tcObj.get("name")?.asString ?: "")
-                                    val argEl = tcObj.get("arguments")
+                                    val argEl = tcObj.get("arguments") ?: tcObj.get("input")
                                     val argsStr = if (argEl != null && argEl.isJsonPrimitive) argEl.asString else argEl?.toString() ?: "{}"
                                     val argsJson = try { JsonParser.parseString(argsStr).asJsonObject } catch (_: Exception) { JsonObject() }
                                     add("input", argsJson)
