@@ -188,7 +188,7 @@ fun TemplateDetailPage(
                                     readOnly = true,
                                     label = { Text("Category") },
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
-                                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                                    modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
                                     colors = OutlinedTextFieldDefaults.colors(
                                         focusedTextColor = MaterialTheme.colorScheme.onSurface,
                                         unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
