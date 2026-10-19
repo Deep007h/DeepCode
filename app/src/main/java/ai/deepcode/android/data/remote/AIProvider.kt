@@ -1397,15 +1397,17 @@ class GeminiProvider : AIProvider {
                             val lastAssistantWithTool = messages.lastOrNull { it.role == "assistant" && it.isToolCall && !it.toolCallsJson.isNullOrEmpty() }
                             if (lastAssistantWithTool != null) {
                                 try {
-                                    val tcArray = JsonParser.parseString(lastAssistantWithTool.toolCallsJson).asJsonArray
+                                    val tcArray = parseToolCallsArray(lastAssistantWithTool.toolCallsJson)
                                     for (i in 0 until tcArray.size()) {
-                                        val tc = tcArray.get(i).asJsonObject
+                                        val item = tcArray.get(i)
+                                        if (!item.isJsonObject) continue
+                                        val tc = item.asJsonObject
                                         if (tc.has("id") && tc.get("id").asString == rawId) {
                                             toolName = tc.get("name")?.asString ?: toolName
                                             break
                                         }
                                     }
-                                    if (toolName == "tool" && tcArray.size() > 0) {
+                                    if (toolName == "tool" && tcArray.size() > 0 && tcArray.get(0).isJsonObject) {
                                         toolName = tcArray.get(0).asJsonObject.get("name")?.asString ?: toolName
                                     }
                                 } catch (_: Exception) {}
@@ -1430,13 +1432,15 @@ class GeminiProvider : AIProvider {
                             partsArray.add(textObj)
                         }
                         try {
-                            val tcArray = JsonParser.parseString(msg.toolCallsJson).asJsonArray
+                            val tcArray = parseToolCallsArray(msg.toolCallsJson)
                             for (i in 0 until tcArray.size()) {
-                                val tcObj = tcArray.get(i).asJsonObject
+                                val item = tcArray.get(i)
+                                if (!item.isJsonObject) continue
+                                val tcObj = item.asJsonObject
                                 val fnCallPart = JsonObject().apply {
                                     val fnCallObj = JsonObject().apply {
                                         addProperty("name", tcObj.get("name")?.asString ?: "")
-                                        val argEl = tcObj.get("arguments")
+                                        val argEl = tcObj.get("arguments") ?: tcObj.get("args")
                                         val argsStr = if (argEl != null && argEl.isJsonPrimitive) argEl.asString else argEl?.toString() ?: "{}"
                                         val argsJson = try { JsonParser.parseString(argsStr).asJsonObject } catch (_: Exception) { JsonObject() }
                                         add("args", argsJson)
@@ -3129,15 +3133,17 @@ class AntigravityProvider : AIProvider {
                         val lastAssistantWithTool = messages.lastOrNull { it.role == "assistant" && it.isToolCall && !it.toolCallsJson.isNullOrEmpty() }
                         if (lastAssistantWithTool != null) {
                             try {
-                                val tcArray = JsonParser.parseString(lastAssistantWithTool.toolCallsJson).asJsonArray
+                                val tcArray = parseToolCallsArray(lastAssistantWithTool.toolCallsJson)
                                 for (i in 0 until tcArray.size()) {
-                                    val tc = tcArray.get(i).asJsonObject
+                                    val item = tcArray.get(i)
+                                    if (!item.isJsonObject) continue
+                                    val tc = item.asJsonObject
                                     if (tc.has("id") && tc.get("id").asString == rawId) {
                                         toolName = tc.get("name")?.asString ?: toolName
                                         break
                                     }
                                 }
-                                if (toolName == "tool" && tcArray.size() > 0) {
+                                if (toolName == "tool" && tcArray.size() > 0 && tcArray.get(0).isJsonObject) {
                                     toolName = tcArray.get(0).asJsonObject.get("name")?.asString ?: toolName
                                 }
                             } catch (_: Exception) {}
@@ -3165,15 +3171,15 @@ class AntigravityProvider : AIProvider {
                 }
                 "assistant" -> {
                     if (msg.isToolCall && !msg.toolCallsJson.isNullOrEmpty()) {
-                        val toolCallsArray = try {
-                            gson.fromJson(msg.toolCallsJson, JsonArray::class.java)
-                        } catch (e: Exception) { null }
-                        if (toolCallsArray != null && toolCallsArray.size() > 0) {
+                        val toolCallsArray = parseToolCallsArray(msg.toolCallsJson)
+                        if (toolCallsArray.size() > 0) {
                             for (i in 0 until toolCallsArray.size()) {
-                                val tcObj = toolCallsArray[i].asJsonObject
+                                val item = toolCallsArray[i]
+                                if (!item.isJsonObject) continue
+                                val tcObj = item.asJsonObject
                                 val id = tcObj.get("id")?.asString ?: ""
                                 val name = tcObj.get("name")?.asString ?: ""
-                                val argEl = tcObj.get("arguments")
+                                val argEl = tcObj.get("arguments") ?: tcObj.get("args")
                                 val argsStr = if (argEl != null && argEl.isJsonPrimitive) argEl.asString else argEl?.toString() ?: "{}"
                                 val args = try { gson.fromJson(argsStr, JsonObject::class.java) } catch (e: Exception) { JsonObject() }
                                 val c = JsonObject().apply {
