@@ -49,8 +49,10 @@ import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -485,7 +487,7 @@ fun IntegrationIcon(
             "github" -> Icons.Default.Code
             "slack" -> Icons.Default.Forum
             "discord" -> Icons.Default.Groups
-            "telegram" -> Icons.Default.Send
+            "telegram" -> Icons.AutoMirrored.Filled.Send
             "whatsapp" -> Icons.Default.Phone
             "spotify", "youtube_music" -> Icons.Default.Headphones
             "twitter" -> Icons.Default.Share
@@ -494,7 +496,7 @@ fun IntegrationIcon(
             "shopify" -> Icons.Default.ShoppingCart
             "dropbox" -> Icons.Default.Cloud
             "notion" -> Icons.Default.EditNote
-            "trello", "asana" -> Icons.Default.Assignment
+            "trello", "asana" -> Icons.AutoMirrored.Filled.Assignment
             "airtable" -> Icons.Default.TableChart
             "hubspot" -> Icons.Default.Hub
             "zendesk" -> Icons.Default.SupportAgent

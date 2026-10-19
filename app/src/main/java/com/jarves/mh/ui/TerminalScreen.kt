@@ -33,8 +33,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.LightMode
@@ -477,10 +477,10 @@ fun TerminalScreen(
                             commandInput = TextFieldValue(commandHistory.getOrNull(historyIndex) ?: "", TextRange((commandHistory.getOrNull(historyIndex) ?: "").length))
                         }
                     }
-                    TerminalIconKeyButton(Icons.Default.ArrowBack, "Move cursor left") {
+                    TerminalIconKeyButton(Icons.AutoMirrored.Filled.ArrowBack, "Move cursor left") {
                         commandInput = commandInput.copy(selection = TextRange((commandInput.selection.start - 1).coerceAtLeast(0)))
                     }
-                    TerminalIconKeyButton(Icons.Default.ArrowForward, "Move cursor right") {
+                    TerminalIconKeyButton(Icons.AutoMirrored.Filled.ArrowForward, "Move cursor right") {
                         commandInput = commandInput.copy(selection = TextRange((commandInput.selection.end + 1).coerceAtMost(commandInput.text.length)))
                     }
                     TerminalKeyButton("ALT", "Alt modifier", active = altActive, fixedWidth = true) { altActive = !altActive }

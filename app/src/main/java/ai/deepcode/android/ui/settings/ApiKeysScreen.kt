@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.AltRoute
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
@@ -2513,7 +2514,7 @@ private fun ProviderIcon(id: String, name: String) {
             idLower.contains("deepseek") -> Icons.Default.Waves
             idLower.contains("mistral") || idLower == "codestral" -> Icons.Default.LocalFireDepartment
             idLower.contains("cerebras") -> Icons.Default.Memory
-            idLower.contains("openrouter") -> Icons.Default.AltRoute
+            idLower.contains("openrouter") -> Icons.AutoMirrored.Filled.AltRoute
             idLower.contains("together") -> Icons.Default.Hub
             idLower.contains("fireworks") -> Icons.Default.Brightness7
             idLower.contains("deepinfra") -> Icons.Default.Layers

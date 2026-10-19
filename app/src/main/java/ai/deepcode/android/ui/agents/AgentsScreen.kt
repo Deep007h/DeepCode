@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -166,7 +167,7 @@ private fun AgentCard(
         "code_executor" -> Icons.Default.Terminal
         "critic" -> Icons.Default.Shield
         "crypto_agent" -> Icons.Default.MonetizationOn
-        "help" -> Icons.Default.Chat
+        "help" -> Icons.AutoMirrored.Filled.Chat
         "webbridge" -> Icons.Default.Language
         "document_creator" -> Icons.Default.Description
         else -> if (agent.isBuiltin) Icons.Default.Star else Icons.Default.Code
