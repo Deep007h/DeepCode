@@ -6952,7 +6952,8 @@ $githubSection
         val lower = text.lowercase()
         val hasToolMarker = lower.contains("tool_call") || lower.contains("tool_calls") ||
             lower.contains("<invoke") || lower.contains("<function=") || lower.contains("```tool") ||
-            lower.contains("github_")
+            lower.contains("[tool_call") || lower.contains("[call:") || lower.contains("[tool:") ||
+            lower.contains("<tool_call:") || lower.contains("github_")
         if (!hasToolMarker) return emptyList()
         val result = mutableListOf<ToolCall>()
 
@@ -7076,6 +7077,45 @@ $githubSection
                 obj.toString()
             }
             result.add(ToolCall("tc_${UUID.randomUUID().toString().take(8)}", name, args))
+        }
+        if (result.isNotEmpty()) return result
+
+        // Format 7: Bracketed [TOOL_CALL: name(args)] or [TOOL_CALL: name {json}] or [CALL: name {json}]
+        val bracketRegex = Regex("""\[(?:TOOL_CALL|CALL|TOOL):\s*([a-zA-Z0-9_-]+)\s*(\{[^\]]*\}|\([^\]]*\)|\[[^\]]*\])\]""", RegexOption.IGNORE_CASE)
+        for (m in bracketRegex.findAll(text)) {
+            val name = m.groupValues[1].trim()
+            val rawArgs = m.groupValues[2].trim()
+            val argsStr = if (rawArgs.startsWith("{") && rawArgs.endsWith("}")) {
+                rawArgs
+            } else if (rawArgs.startsWith("(") && rawArgs.endsWith(")")) {
+                val inner = rawArgs.removeSurrounding("(", ")").trim()
+                if (inner.startsWith("{") && inner.endsWith("}")) {
+                    inner
+                } else {
+                    val obj = com.google.gson.JsonObject()
+                    obj.addProperty("input", inner)
+                    obj.toString()
+                }
+            } else {
+                val obj = com.google.gson.JsonObject()
+                obj.addProperty("input", rawArgs)
+                obj.toString()
+            }
+            result.add(ToolCall("tc_${UUID.randomUUID().toString().take(8)}", name, argsStr))
+        }
+        if (result.isNotEmpty()) return result
+
+        // Format 8: Tagged tool call — <tool_call:tool_name>args</tool_call:tool_name>
+        val taggedRegex = Regex("""<tool_call:([a-zA-Z0-9_-]+)>\s*(.*?)\s*</tool_call:\1>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        for (m in taggedRegex.findAll(text)) {
+            val name = m.groupValues[1].trim()
+            val rawArgs = m.groupValues[2].trim()
+            val argsStr = if (rawArgs.startsWith("{") && rawArgs.endsWith("}")) rawArgs else {
+                val obj = com.google.gson.JsonObject()
+                obj.addProperty("input", rawArgs)
+                obj.toString()
+            }
+            result.add(ToolCall("tc_${UUID.randomUUID().toString().take(8)}", name, argsStr))
         }
 
         return result
