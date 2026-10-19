@@ -570,7 +570,15 @@ class ToolExecutor(private val context: Context? = null) {
             }
                 "read_file", "file_read", "view_file" -> {
                     val path = optString(args, "path", "file", "target", "file_path", "filePath", "target_file", "targetFile", "absolute_path", "absolutePath", "AbsolutePath", "TargetFile", "filename", "fileName", "uri") ?: return "Missing path argument"
-                    readFile(path, workingDir, effectiveRoot)
+                    val startLine = optInt(args, "start_line", -1).takeIf { it > 0 }
+                        ?: optInt(args, "StartLine", -1).takeIf { it > 0 }
+                        ?: optInt(args, "startLine", -1).takeIf { it > 0 }
+                        ?: optInt(args, "offset", -1).takeIf { it > 0 }
+                    val endLine = optInt(args, "end_line", -1).takeIf { it > 0 }
+                        ?: optInt(args, "EndLine", -1).takeIf { it > 0 }
+                        ?: optInt(args, "endLine", -1).takeIf { it > 0 }
+                        ?: optInt(args, "limit", -1).takeIf { it > 0 }
+                    readFile(path, workingDir, effectiveRoot, startLine, endLine)
                 }
                 "write_file", "file_write", "write_to_file" -> {
                     val path = optString(args, "path", "file", "target", "file_path", "filePath", "target_file", "targetFile", "absolute_path", "absolutePath", "AbsolutePath", "TargetFile", "filename", "fileName", "uri") ?: return "Missing path argument"
@@ -3920,7 +3928,7 @@ class ToolExecutor(private val context: Context? = null) {
         }
     }
 
-    private fun readFile(path: String, workingDir: String, useRoot: Boolean): String {
+    private fun readFile(path: String, workingDir: String, useRoot: Boolean, startLine: Int? = null, endLine: Int? = null): String {
         val file = resolvePath(path, workingDir)
         val maxChars = 256 * 1024
         val maxBytes = 256 * 1024L
@@ -3931,26 +3939,40 @@ class ToolExecutor(private val context: Context? = null) {
             return "[file:${file.absolutePath}] (${file.length()} bytes)"
         }
 
+        fun sliceLines(rawText: String): String {
+            if (startLine == null && endLine == null) {
+                return if (rawText.length > maxChars) {
+                    rawText.take(maxChars) + "\n\n... [TRUNCATED: Content exceeds 256KB preview limit]"
+                } else {
+                    rawText
+                }
+            }
+            val lines = rawText.lines()
+            val totalLines = lines.size
+            if (totalLines == 0) return "Total Lines: 0\n(File is empty)"
+            val start = (startLine ?: 1).coerceIn(1, totalLines)
+            val end = (endLine ?: totalLines).coerceIn(start, totalLines)
+            val slice = lines.subList(start - 1, end)
+            val formatted = slice.mapIndexed { idx, line -> "${start + idx}: $line" }.joinToString("\n")
+            return "File: ${file.name}\nTotal Lines: $totalLines\nShowing lines $start to $end:\n$formatted"
+        }
+
         if (useRoot) {
             val escapedPath = escapeShellArg(file.absolutePath)
             val result = TerminalRunner.runCommand("cat $escapedPath", workingDir, true)
             if (!result.startsWith("Error running command:") && !result.contains("No such file") && !result.contains("Permission denied") && !result.contains("Is a directory")) {
-                return if (result.length > maxChars) {
-                    result.take(maxChars) + "\n\n... [TRUNCATED: Content exceeds 256KB preview limit]"
-                } else {
-                    result
-                }
+                return sliceLines(result)
             } else if (result.contains("No such file") || result.contains("Is a directory") || result.contains("Permission denied")) {
                 return result.trim()
             }
         }
         if (file.exists() && file.isFile) {
-            if (file.length() > maxBytes) {
+            if (startLine == null && endLine == null && file.length() > maxBytes) {
                 val bytes = ByteArray(maxBytes.toInt())
                 file.inputStream().use { it.read(bytes) }
                 return String(bytes, Charsets.UTF_8) + "\n\n... [TRUNCATED: File size (${file.length()} bytes) exceeds 256KB preview limit]"
             }
-            return try {
+            val text = try {
                 file.readText()
             } catch (e: Exception) {
                 if (useRoot) {
@@ -3960,6 +3982,7 @@ class ToolExecutor(private val context: Context? = null) {
                     throw e
                 }
             }
+            return sliceLines(text)
         }
         val drive = telegramDrive
         if (drive != null && drive.isConfigured()) {
@@ -3967,11 +3990,7 @@ class ToolExecutor(private val context: Context? = null) {
             val result = drive.retrieveTextFile(fileName)
             if (result.isSuccess) {
                 val text = result.getOrThrow()
-                return if (text.length > maxChars) {
-                    text.take(maxChars) + "\n\n... [TRUNCATED: File size exceeds 256KB preview limit]"
-                } else {
-                    text
-                }
+                return sliceLines(text)
             }
         }
         return "File does not exist or is a directory: ${file.absolutePath}"
