@@ -4214,10 +4214,28 @@ class ToolExecutor(private val context: Context? = null) {
         return try {
             val results = mutableListOf<String>()
             val skipDirs = setOf(".git", ".gradle", "build", "node_modules", ".idea", ".kotlin")
-            val globRegex = pattern.replace(".", "\\.").replace("*", ".*").replace("?", ".").toRegex(RegexOption.IGNORE_CASE)
+            val globRegex = try {
+                val regexPattern = buildString {
+                    append("^")
+                    var i = 0
+                    while (i < pattern.length) {
+                        when (val c = pattern[i]) {
+                            '*' -> append(".*")
+                            '?' -> append(".")
+                            '.', '(', ')', '+', '|', '^', '$', '[', ']', '{', '}', '\\' -> {
+                                append('\\').append(c)
+                            }
+                            else -> append(c)
+                        }
+                        i++
+                    }
+                    append("$")
+                }
+                Regex(regexPattern, RegexOption.IGNORE_CASE)
+            } catch (_: Exception) { null }
             target.walkTopDown().maxDepth(12).onEnter { dir -> dir.name !in skipDirs && !dir.name.startsWith(".") || dir == target }.forEach { file ->
                 if (results.size >= 100) return@forEach
-                if (globRegex.matches(file.name) || file.name.contains(pattern, ignoreCase = true)) {
+                if ((globRegex != null && globRegex.matches(file.name)) || file.name.contains(pattern, ignoreCase = true)) {
                     results.add(file.absolutePath)
                 }
             }

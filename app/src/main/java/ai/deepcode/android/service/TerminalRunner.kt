@@ -196,6 +196,8 @@ class TerminalRunner {
                     )
                     if (!finished) {
                         outputText + "\n[COMMAND TIMED OUT after $COMMAND_TIMEOUT_SECONDS seconds — process was killed]"
+                    } else if (exitCode != 0 && outputText.isBlank()) {
+                        "[Process exited with code $exitCode]"
                     } else {
                         outputText
                     }
