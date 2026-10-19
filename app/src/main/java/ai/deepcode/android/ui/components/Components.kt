@@ -819,67 +819,67 @@ private fun CapsuleTabBar(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-            tabs.forEach { tab ->
-                val isActive = tab.index == activeTab
-                val iconTint by androidx.compose.animation.animateColorAsState(
-                    targetValue = if (isActive) (if (isDark) Color.White else Color(0xFF111113))
-                                  else (if (isDark) Color(0xFF8E8E93) else Color(0xFF6B7280)),
-                    animationSpec = androidx.compose.animation.core.tween(180),
-                    label = "capsuleIconTint_${tab.index}"
-                )
-                val textTint by androidx.compose.animation.animateColorAsState(
-                    targetValue = if (isActive) (if (isDark) Color.White else Color(0xFF111113))
-                                  else (if (isDark) Color(0xFF8E8E93) else Color(0xFF6B7280)),
-                    animationSpec = androidx.compose.animation.core.tween(180),
-                    label = "capsuleTextTint_${tab.index}"
-                )
-                val scale by androidx.compose.animation.core.animateFloatAsState(
-                    targetValue = if (isActive) 1.08f else 1.0f,
-                    animationSpec = spring(dampingRatio = 0.65f, stiffness = 400f),
-                    label = "capsuleScale_${tab.index}"
-                )
+                tabs.forEach { tab ->
+                    val isActive = tab.index == activeTab
+                    val iconTint by androidx.compose.animation.animateColorAsState(
+                        targetValue = if (isActive) (if (isDark) Color.White else Color(0xFF111113))
+                                      else (if (isDark) Color(0xFF8E8E93) else Color(0xFF6B7280)),
+                        animationSpec = androidx.compose.animation.core.tween(180),
+                        label = "capsuleIconTint_${tab.index}"
+                    )
+                    val textTint by androidx.compose.animation.animateColorAsState(
+                        targetValue = if (isActive) (if (isDark) Color.White else Color(0xFF111113))
+                                      else (if (isDark) Color(0xFF8E8E93) else Color(0xFF6B7280)),
+                        animationSpec = androidx.compose.animation.core.tween(180),
+                        label = "capsuleTextTint_${tab.index}"
+                    )
+                    val scale by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = if (isActive) 1.08f else 1.0f,
+                        animationSpec = spring(dampingRatio = 0.65f, stiffness = 400f),
+                        label = "capsuleScale_${tab.index}"
+                    )
 
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(TabCapsuleShape)
-                        .clickable(
-                            interactionSource = remember(tab.index) { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            if (!isActive) {
-                                try {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                } catch (_: Exception) {}
-                            }
-                            onTabSelected(tab.index)
-                        }
-                        .padding(vertical = 6.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = tab.icon,
-                        contentDescription = tab.label,
-                        tint = iconTint,
+                    Column(
                         modifier = Modifier
-                            .size(22.dp)
-                            .graphicsLayer {
-                                scaleX = scale
-                                scaleY = scale
+                            .weight(1f)
+                            .clip(TabCapsuleShape)
+                            .clickable(
+                                interactionSource = remember(tab.index) { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                if (!isActive) {
+                                    try {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    } catch (_: Exception) {}
+                                }
+                                onTabSelected(tab.index)
                             }
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = tab.label,
-                        fontSize = 11.sp,
-                        fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
-                        color = textTint,
-                        maxLines = 1
-                    )
+                            .padding(vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = tab.icon,
+                            contentDescription = tab.label,
+                            tint = iconTint,
+                            modifier = Modifier
+                                .size(22.dp)
+                                .graphicsLayer {
+                                    scaleX = scale
+                                    scaleY = scale
+                                }
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = tab.label,
+                            fontSize = 11.sp,
+                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+                            color = textTint,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
-        }
     }
 }
 }
