@@ -439,6 +439,44 @@ class ToolExecutor(private val context: Context? = null) {
         found
     } catch (_: Exception) { null }
 
+    private fun optRawString(a: JsonObject, vararg keys: String): String? = try {
+        var found: String? = null
+        for (k in keys) {
+            val el = a.get(k)?.takeIf { !it.isJsonNull }
+            if (el != null) {
+                val str = when {
+                    el.isJsonPrimitive -> el.asString
+                    el.isJsonObject || el.isJsonArray -> el.toString()
+                    else -> null
+                }
+                if (str != null) {
+                    found = str
+                    break
+                }
+            }
+        }
+        if (found == null) {
+            for (entry in a.entrySet()) {
+                val key = entry.key
+                if (keys.any { it.equals(key, ignoreCase = true) }) {
+                    val el = entry.value.takeIf { !it.isJsonNull }
+                    if (el != null) {
+                        val str = when {
+                            el.isJsonPrimitive -> el.asString
+                            el.isJsonObject || el.isJsonArray -> el.toString()
+                            else -> null
+                        }
+                        if (str != null) {
+                            found = str
+                            break
+                        }
+                    }
+                }
+            }
+        }
+        found
+    } catch (_: Exception) { null }
+
     private fun optInt(a: JsonObject, k: String, default: Int): Int {
         try {
             val el = a.get(k) ?: return default
@@ -501,14 +539,14 @@ class ToolExecutor(private val context: Context? = null) {
                 }
                 "write_file", "file_write", "write_to_file" -> {
                     val path = optString(args, "path", "file", "target", "file_path", "filePath", "target_file", "targetFile", "absolute_path", "absolutePath", "AbsolutePath", "TargetFile") ?: return "Missing path argument"
-                    val content = optString(args, "content", "text", "code", "code_content", "codeContent", "CodeContent", "data") ?: return "Missing content argument"
+                    val content = optRawString(args, "content", "text", "code", "code_content", "codeContent", "CodeContent", "data") ?: return "Missing content argument"
                     val storage = optString(args, "storage") ?: ""
                     writeFile(path, content, workingDir, effectiveRoot, storage)
                 }
                 "edit_file", "replace_file_content", "edit", "str_replace", "replace" -> {
                     val path = optString(args, "path", "file_path", "filePath", "file", "target", "target_file", "targetFile", "absolute_path", "absolutePath", "AbsolutePath", "TargetFile") ?: return "Missing path argument"
-                    val oldStr = optString(args, "old_str", "oldStr", "target", "search", "target_content", "targetContent", "TargetContent", "find") ?: return "Missing old_str argument"
-                    val newStr = optString(args, "new_str", "newStr", "replacement", "replace", "replacement_content", "replacementContent", "ReplacementContent") ?: ""
+                    val oldStr = optRawString(args, "old_str", "oldStr", "target", "search", "target_content", "targetContent", "TargetContent", "find") ?: return "Missing old_str argument"
+                    val newStr = optRawString(args, "new_str", "newStr", "replacement", "replace", "replacement_content", "replacementContent", "ReplacementContent") ?: ""
                     val replaceAll = args.get("replace_all")?.takeIf { !it.isJsonNull }?.asBoolean ?: args.get("replaceAll")?.takeIf { !it.isJsonNull }?.asBoolean ?: false
                     editFile(path, oldStr, newStr, replaceAll, workingDir, effectiveRoot)
                 }
@@ -564,7 +602,7 @@ class ToolExecutor(private val context: Context? = null) {
                 }
                 "apply_patch" -> {
                     val path = optString(args, "path", "file", "target", "target_file", "TargetFile") ?: return "Missing path argument"
-                    val content = optString(args, "content", "patch", "diff") ?: return "Missing content/patch argument"
+                    val content = optRawString(args, "content", "patch", "diff") ?: return "Missing content/patch argument"
                     val storage = optString(args, "storage") ?: ""
                     writeFile(path, content, workingDir, effectiveRoot, storage)
                 }
