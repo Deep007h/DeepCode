@@ -569,19 +569,19 @@ class ToolExecutor(private val context: Context? = null) {
                 plugin.execute(name, args, ctx)
             }
                 "read_file", "file_read", "view_file" -> {
-                    val path = optString(args, "path", "file", "target", "file_path", "filePath", "target_file", "targetFile", "absolute_path", "absolutePath", "AbsolutePath", "TargetFile") ?: return "Missing path argument"
+                    val path = optString(args, "path", "file", "target", "file_path", "filePath", "target_file", "targetFile", "absolute_path", "absolutePath", "AbsolutePath", "TargetFile", "filename", "fileName", "uri") ?: return "Missing path argument"
                     readFile(path, workingDir, effectiveRoot)
                 }
                 "write_file", "file_write", "write_to_file" -> {
-                    val path = optString(args, "path", "file", "target", "file_path", "filePath", "target_file", "targetFile", "absolute_path", "absolutePath", "AbsolutePath", "TargetFile") ?: return "Missing path argument"
-                    val content = optRawString(args, "content", "text", "code", "code_content", "codeContent", "CodeContent", "data") ?: return "Missing content argument"
+                    val path = optString(args, "path", "file", "target", "file_path", "filePath", "target_file", "targetFile", "absolute_path", "absolutePath", "AbsolutePath", "TargetFile", "filename", "fileName", "uri") ?: return "Missing path argument"
+                    val content = optRawString(args, "content", "text", "code", "code_content", "codeContent", "CodeContent", "data", "file_content", "fileContent") ?: return "Missing content argument"
                     val storage = optString(args, "storage") ?: ""
                     writeFile(path, content, workingDir, effectiveRoot, storage)
                 }
                 "edit_file", "replace_file_content", "edit", "str_replace", "replace" -> {
-                    val path = optString(args, "path", "file_path", "filePath", "file", "target", "target_file", "targetFile", "absolute_path", "absolutePath", "AbsolutePath", "TargetFile") ?: return "Missing path argument"
-                    val oldStr = optRawString(args, "old_str", "oldStr", "target", "search", "target_content", "targetContent", "TargetContent", "find") ?: return "Missing old_str argument"
-                    val newStr = optRawString(args, "new_str", "newStr", "replacement", "replace", "replacement_content", "replacementContent", "ReplacementContent") ?: ""
+                    val path = optString(args, "path", "file_path", "filePath", "file", "target", "target_file", "targetFile", "absolute_path", "absolutePath", "AbsolutePath", "TargetFile", "filename", "fileName") ?: return "Missing path argument"
+                    val oldStr = optRawString(args, "old_str", "oldStr", "old_string", "oldString", "old_text", "oldText", "target", "search", "target_content", "targetContent", "TargetContent", "find", "original") ?: return "Missing old_str argument"
+                    val newStr = optRawString(args, "new_str", "newStr", "new_string", "newString", "new_text", "newText", "replacement", "replace", "replacement_content", "replacementContent", "ReplacementContent", "replacementText") ?: ""
                     val replaceAll = args.get("replace_all")?.takeIf { !it.isJsonNull }?.asBoolean ?: args.get("replaceAll")?.takeIf { !it.isJsonNull }?.asBoolean ?: false
                     editFile(path, oldStr, newStr, replaceAll, workingDir, effectiveRoot)
                 }
@@ -590,12 +590,12 @@ class ToolExecutor(private val context: Context? = null) {
                     listDirectory(path, workingDir, effectiveRoot)
                 }
                 "find_by_name", "find_files", "search_files", "find", "locate" -> {
-                    val pattern = optString(args, "pattern", "query", "name", "Pattern") ?: return "Missing pattern argument"
-                    val path = optString(args, "path", "SearchDirectory", "search_directory", "directory", "dir") ?: "."
+                    val pattern = optString(args, "pattern", "query", "name", "Pattern", "file_name", "fileName", "glob") ?: return "Missing pattern argument"
+                    val path = optString(args, "path", "SearchDirectory", "search_directory", "search_dir", "searchDir", "directory", "dir", "dirPath", "dir_path", "directoryPath", "DirectoryPath") ?: "."
                     findByName(pattern, path, workingDir, effectiveRoot)
                 }
                 "run_command", "shell", "bash", "sh", "exec", "execute", "cmd", "terminal_command", "terminal_exec", "adb_command", "adb", "git_operations", "node_exec", "npm_exec", "curl" -> {
-                    val command = optString(args, "command", "cmd", "script", "input", "code", "command_line", "commandLine", "CommandLine", "cmd_line")
+                    val command = optString(args, "command", "cmd", "script", "input", "code", "command_line", "commandLine", "CommandLine", "cmd_line", "bash", "shell")
                         ?: return "Missing command argument"
                     TerminalRunner.runCommand(command, workingDir, effectiveRoot)
                 }
@@ -622,8 +622,8 @@ class ToolExecutor(private val context: Context? = null) {
                     }
                 }
                 "grep_search", "grep" -> {
-                    val query = optString(args, "query", "pattern", "Query", "Pattern", "search", "term") ?: return "Missing query argument"
-                    val path = optString(args, "path", "SearchPath", "search_path", "dir", "directory") ?: "."
+                    val query = optString(args, "query", "pattern", "Query", "Pattern", "search", "term", "regex") ?: return "Missing query argument"
+                    val path = optString(args, "path", "SearchPath", "search_path", "dir", "directory", "dirPath", "directoryPath", "DirectoryPath", "target") ?: "."
                     grepSearch(query, path, workingDir, effectiveRoot)
                 }
                 "create_file", "touch", "mkdir" -> {
@@ -642,7 +642,7 @@ class ToolExecutor(private val context: Context? = null) {
                     writeFile(path, content, workingDir, effectiveRoot, storage)
                 }
                 "web_fetch", "fetch_url", "read_url_content" -> {
-                    val url = optString(args, "url", "Url", "link", "URL") ?: return "Missing url argument"
+                    val url = optString(args, "url", "Url", "link", "URL", "uri", "target_url", "targetUrl", "href", "endpoint", "path") ?: return "Missing url argument"
                     webFetch(url)
                 }
                 "tinyfish_agent" -> {
@@ -651,7 +651,7 @@ class ToolExecutor(private val context: Context? = null) {
                     runTinyFishAgent(url, goal)
                 }
                 "web_search" -> {
-                    val query = optString(args, "query") ?: return "Missing query argument"
+                    val query = optString(args, "query", "q", "search_query", "searchQuery", "searchTerm", "search_term", "search", "keyword", "Query") ?: return "Missing query argument"
                     val numResults = optInt(args, "numResults", 8).coerceIn(1, 20)
                     val livecrawl = optString(args, "livecrawl") ?: "fallback"
                     val type = optString(args, "type") ?: "auto"
