@@ -29,7 +29,10 @@ function taskResponse(task) {
     output_type: task.output_type || 'text',
     output: task.output || null,
     metadata: task.metadata || null,
-    error: task.error || null
+    error: task.error || null,
+    needs_user_action: task.needs_user_action || null,
+    failover_metadata: task.failover_metadata || null,
+    recovery_hint: task.recovery_hint || null
   };
 }
 
@@ -54,7 +57,16 @@ app.post('/task', async (req, res) => {
 
     logger.info(`Task ${taskId} received: type=${body.task_type}, site=${body.target_site}, prompt=${body.user_prompt?.substring(0, 60)}...`);
 
-    const userPrompt = body.user_prompt || body.prompt || '';
+    const userPrompt = (body.user_prompt || body.prompt || '').trim();
+    if (!userPrompt) {
+      task.status = 'FAILED';
+      task.error = 'user_prompt is required and cannot be empty';
+      task.output = {
+        text_content: '⚠️ ' + task.error,
+        description: task.error
+      };
+      return res.status(400).json(taskResponse(task));
+    }
     const requestedType = body.task_type || '';
     const requestedSite = body.target_site || body.preferred_site || 'auto';
     const outputFormat = body.output_format || body.constraints?.output_format || 'text';
@@ -178,11 +190,25 @@ app.post('/credentials', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime() });
+  res.json({
+    status: 'ok',
+    uptime: process.uptime(),
+    browser_active: !!browserManager.browser
+  });
+});
+
+app.post('/browser/reset', async (req, res) => {
+  try {
+    await browserManager.shutdown();
+    res.json({ success: true, message: 'Browser session reset' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 async function runAutomation(taskId, platform, userPrompt, opts) {
   const { credentials, outputFormat, timeout, attachments, additionalInstructions, triggeredBy, newConversation, failoverContext } = opts;
+  const startTime = Date.now();
 
   let playbook;
   try {
@@ -216,7 +242,7 @@ async function runAutomation(taskId, platform, userPrompt, opts) {
         userPrompt,
         triggeredBy,
         failoverContext,
-        timeElapsed: Date.now() - Date.now()
+        timeElapsed: Date.now() - startTime
       });
     } catch (err) {
       lastError = err;
@@ -234,7 +260,13 @@ async function runAutomation(taskId, platform, userPrompt, opts) {
 }
 
 process.on('SIGINT', async () => {
-  logger.info('Shutting down...');
+  logger.info('Shutting down (SIGINT)...');
+  await browserManager.shutdown();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  logger.info('Shutting down (SIGTERM)...');
   await browserManager.shutdown();
   process.exit(0);
 });

@@ -154,6 +154,31 @@ object AppLogger {
         i("AppLogger", "Logcat capture STOPPED")
     }
 
+    // ── secret sanitization ──────────────────────────────────────────────────
+    private val SECRET_PATTERNS = listOf(
+        Regex("""(?i)Bearer\s+[a-zA-Z0-9_\-\.]{15,}""") to "Bearer [REDACTED]",
+        Regex("""\bsk-[a-zA-Z0-9_\-]{20,}\b""") to "sk-[REDACTED]",
+        Regex("""\bghp_[a-zA-Z0-9]{20,}\b""") to "ghp_[REDACTED]",
+        Regex("""\bgho_[a-zA-Z0-9]{20,}\b""") to "gho_[REDACTED]",
+        Regex("""\batr_[a-zA-Z0-9_\-]{20,}\b""") to "atr-[REDACTED]",
+        Regex("""\bAIza[0-9A-Za-z-_]{35}\b""") to "AIza[REDACTED]",
+        Regex("""\bxoxb-[a-zA-Z0-9\-]{20,}\b""") to "xoxb-[REDACTED]",
+        Regex("""(?i)\b(api[_-]?key|access_token|refresh_token|client_secret|password)\s*[:=]\s*["']?([a-zA-Z0-9_\-]{16,})["']?""") to "$1=[REDACTED]"
+    )
+
+    fun sanitizeLog(raw: String): String {
+        if (raw.isEmpty()) return raw
+        var result = raw
+        for ((pattern, replacement) in SECRET_PATTERNS) {
+            result = pattern.replace(result, replacement)
+        }
+        return try {
+            ai.deepcode.android.security.AuthSurrogate.maskSecrets(result)
+        } catch (_: Throwable) {
+            result
+        }
+    }
+
     // ── public log API ────────────────────────────────────────────────────────
 
     fun d(tag: String, message: String) = log(LogLevel.DEBUG, tag, message)
@@ -272,6 +297,7 @@ object AppLogger {
         val now = System.currentTimeMillis()
         val timestamp = getDateFormat().format(Date(now))
         val id = entryCounter.incrementAndGet()
+        val cleanMessage = sanitizeLog(message)
 
         val entry = LogEntry(
             id = id,
@@ -279,7 +305,7 @@ object AppLogger {
             formattedTime = timestamp,
             level = level,
             tag = tag,
-            message = message,
+            message = cleanMessage,
             threadName = Thread.currentThread().name,
             activityName = currentActivity.value,
             category = category
@@ -406,14 +432,17 @@ object AppLogger {
         val st = stackTraceOverride ?: if (throwable != null) Log.getStackTraceString(throwable) else null
         val id = entryCounter.incrementAndGet()
 
+        val cleanMessage = sanitizeLog(message)
+        val cleanSt = st?.let { sanitizeLog(it) }
+
         val entry = LogEntry(
             id = id,
             timestamp = now,
             formattedTime = timestamp,
             level = level,
             tag = tag,
-            message = message,
-            stackTrace = st,
+            message = cleanMessage,
+            stackTrace = cleanSt,
             threadName = Thread.currentThread().name,
             sourceClass = null,
             sourceMethod = null,
@@ -426,11 +455,11 @@ object AppLogger {
         writeToFileAsync(entry, timestamp)
 
         when (level) {
-            LogLevel.DEBUG -> Log.d(tag, message)
-            LogLevel.INFO  -> Log.i(tag, message)
-            LogLevel.WARN  -> Log.w(tag, message)
-            LogLevel.ERROR -> Log.e(tag, message, throwable)
-            LogLevel.FATAL -> Log.e(tag, "FATAL: $message", throwable)
+            LogLevel.DEBUG -> Log.d(tag, cleanMessage)
+            LogLevel.INFO  -> Log.i(tag, cleanMessage)
+            LogLevel.WARN  -> Log.w(tag, cleanMessage)
+            LogLevel.ERROR -> Log.e(tag, cleanMessage, throwable)
+            LogLevel.FATAL -> Log.e(tag, "FATAL: $cleanMessage", throwable)
         }
     }
 

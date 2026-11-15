@@ -5,7 +5,7 @@ import {
 } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import pino from 'pino';
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, unlinkSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -18,7 +18,8 @@ export class WhatsAppSocket {
     this.connected = false;
     this.phone = null;
     this.currentQR = null;
-    this.qrResolve = null;
+    this.qrListeners = [];
+    this.reconnectAttempts = 0;
     this.messages = [];
     this.contacts = new Map();
     this.storeContacts = {};
@@ -57,6 +58,22 @@ export class WhatsAppSocket {
     } catch {}
   }
 
+  _clearAuthData() {
+    try {
+      if (existsSync(this.authDir)) {
+        const files = readdirSync(this.authDir);
+        for (const file of files) {
+          if (file !== 'store.json') {
+            try { unlinkSync(resolve(this.authDir, file)); } catch {}
+          }
+        }
+      }
+      this.logger.info('WhatsApp auth session cleared');
+    } catch (e) {
+      this.logger.warn(`Failed to clear auth data: ${e.message}`);
+    }
+  }
+
   async connect() {
     const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
 
@@ -85,25 +102,32 @@ export class WhatsAppSocket {
         });
         this.connected = false;
         this.phone = null;
-        if (this.qrResolve) {
-          this.qrResolve(this.currentQR);
-          this.qrResolve = null;
+        const listeners = [...this.qrListeners];
+        this.qrListeners = [];
+        for (const fn of listeners) {
+          try { fn(this.currentQR); } catch {}
         }
       }
 
       if (connection === 'close') {
         const reason = lastDisconnect?.error?.output?.statusCode;
-        const shouldReconnect = reason !== DisconnectReason.loggedOut;
+        const isLoggedOut = reason === DisconnectReason.loggedOut;
+        const shouldReconnect = !isLoggedOut;
         this.connected = false;
         this.phone = null;
         this.logger.info(`Connection closed (reason: ${reason}), reconnecting: ${shouldReconnect}`);
-        if (shouldReconnect) {
-          setTimeout(() => this.connect(), 1000);
+        if (isLoggedOut) {
+          this._clearAuthData();
+        } else if (shouldReconnect) {
+          const delayMs = Math.min(this.reconnectAttempts * 2000, 30000) || 1000;
+          this.reconnectAttempts++;
+          setTimeout(() => this.connect(), delayMs);
         }
       }
 
       if (connection === 'open') {
         this.connected = true;
+        this.reconnectAttempts = 0;
         this.phone = sock.user?.id?.split(':')[0] || 'unknown';
         this.currentQR = null;
         this.logger.info(`Connected as ${this.phone}`);
@@ -168,13 +192,16 @@ export class WhatsAppSocket {
     if (this.currentQR) return this.currentQR;
 
     return new Promise((resolve, reject) => {
-      this.qrResolve = resolve;
-      setTimeout(() => {
-        if (this.qrResolve) {
-          this.qrResolve = null;
-          reject(new Error('QR timeout'));
-        }
+      const listener = (qr) => {
+        clearTimeout(timer);
+        resolve(qr);
+      };
+      const timer = setTimeout(() => {
+        this.qrListeners = this.qrListeners.filter(l => l !== listener);
+        reject(new Error('QR timeout'));
       }, timeoutMs);
+
+      this.qrListeners.push(listener);
     });
   }
 
@@ -182,43 +209,21 @@ export class WhatsAppSocket {
     if (!this.sock || !this.connected) {
       throw new Error('Not connected to WhatsApp');
     }
-    const result = await this.sock.sendMessage(jid, { text });
+    const formattedJid = jid.includes('@') ? jid : `${jid.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
+    const result = await this.sock.sendMessage(formattedJid, { text });
     return { id: result.key.id };
   }
 
   async getMessages(jid, limit = 20) {
-    if (!this.sock) return [];
-    try {
-      const msgs = await this.sock.loadMessages(jid, limit);
-      return msgs
-        .filter(m => m.message?.conversation || m.message?.extendedTextMessage?.text)
-        .map(m => ({
-          id: m.key.id,
-          jid: m.key.remoteJid,
-          fromMe: m.key.fromMe,
-          text: m.message?.conversation || m.message?.extendedTextMessage?.text || '',
-          timestamp: m.messageTimestamp,
-        }))
-        .slice(-limit);
-    } catch {
-      return [];
-    }
+    const formattedJid = jid ? (jid.includes('@') ? jid : `${jid.replace(/[^0-9]/g, '')}@s.whatsapp.net`) : null;
+    const filtered = this.messages
+      .filter(m => !formattedJid || m.jid === formattedJid)
+      .slice(-limit);
+    return filtered;
   }
 
   async getContactsList() {
-    if (!this.sock) return Object.values(this.storeContacts);
-    try {
-      const contacts = await this.sock.fetchAllContacts();
-      return Object.entries(contacts)
-        .filter(([jid]) => !jid.includes('@broadcast') && !jid.includes('status'))
-        .map(([jid, c]) => ({
-          jid,
-          name: c.notify || c.name || c.pushName || jid.split('@')[0],
-          verifiedName: c.verifiedName || null,
-        }));
-    } catch {
-      return Object.values(this.storeContacts);
-    }
+    return Object.values(this.storeContacts);
   }
 
   async setPresence(type = 'available') {
@@ -238,13 +243,18 @@ export class WhatsAppSocket {
     this.phone = null;
     this.currentQR = null;
     this.messages = [];
+    this._clearAuthData();
   }
 
   disconnect() {
     if (this.sock) {
-      this.sock.end(new Error('manual disconnect'));
+      try {
+        this.sock.end(new Error('manual disconnect'));
+      } catch {}
     }
     this.sock = null;
     this.connected = false;
+    this.phone = null;
+    this.currentQR = null;
   }
 }

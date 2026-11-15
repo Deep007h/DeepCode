@@ -401,6 +401,26 @@ class ToolExecutor(private val context: Context? = null) {
         return null
     }
 
+    fun getOrInitNotionService(): NotionService? {
+        notionService?.let { return it }
+        val ctx = context ?: return null
+        var token = ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx).getSetting("notion_token", "").trim()
+        if (token.isEmpty()) {
+            token = try {
+                ai.deepcode.android.data.local.AppDatabase.getDatabase(ctx).integrationDao().getIntegrationByAppIdSync("notion")?.accessToken?.trim() ?: ""
+            } catch (_: Exception) { "" }
+            if (token.isNotEmpty()) {
+                ai.deepcode.android.data.local.EncryptedPrefs.getInstance(ctx).saveSetting("notion_token", token)
+            }
+        }
+        if (token.isNotEmpty()) {
+            val svc = NotionService(token)
+            notionService = svc
+            return svc
+        }
+        return null
+    }
+
     private fun optString(a: JsonObject, vararg keys: String): String? = try {
         var found: String? = null
         for (k in keys) {
@@ -675,7 +695,7 @@ class ToolExecutor(private val context: Context? = null) {
                 }
                 "notion_search" -> {
                     try {
-                        val svc = notionService ?: return "Notion not connected. Connect your Notion integration token first."
+                        val svc = getOrInitNotionService() ?: return "Notion not connected. Connect your Notion integration token first."
                         val query = args.get("query")?.asString ?: ""
                         val result = svc.search(query)
                         result.fold(
@@ -691,7 +711,7 @@ class ToolExecutor(private val context: Context? = null) {
                 }
                 "notion_read" -> {
                     try {
-                        val svc = notionService ?: return "Notion not connected. Connect your Notion integration token first."
+                        val svc = getOrInitNotionService() ?: return "Notion not connected. Connect your Notion integration token first."
                         val rawPageId = optString(args, "page_id") ?: return "Missing page_id argument"
                         val pageId = rawPageId.trim().replace("-", "").take(64)
                         if (pageId.isBlank() || !pageId.all { it.isLetterOrDigit() }) return "Invalid page_id parameter"
@@ -706,7 +726,7 @@ class ToolExecutor(private val context: Context? = null) {
                 }
                 "notion_list_databases" -> {
                     try {
-                        val svc = notionService ?: return "Notion not connected. Connect your Notion integration token first."
+                        val svc = getOrInitNotionService() ?: return "Notion not connected. Connect your Notion integration token first."
                         val result = svc.listDatabases()
                         result.fold(
                             onSuccess = { dbs ->

@@ -1,5 +1,7 @@
 package com.jarves.mh.network
 
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import com.jarves.mh.model.ProviderProtocol
 import org.json.JSONArray
 import org.json.JSONObject
@@ -78,8 +80,9 @@ class ProviderApiClient {
         if (baseUrl.isBlank() || model.isBlank() || apiKey.isBlank()) {
             return@withContext ConnectionValidation.Failure("Base URL, model, and API key are required.")
         }
+        val cleanModel = model.removePrefix("~").trim()
         val endpoint = messagesEndpoint(baseUrl, protocol)
-        val body = validationBody(model, protocol)
+        val body = validationBody(cleanModel, protocol)
         // Gateways may need to cold-start a model before returning the first token.
         // A ten-second validation timeout produced false "network" failures even
         // though discovery and the endpoint itself were healthy.
@@ -155,8 +158,18 @@ class ProviderApiClient {
                 }
                 if (endpoint.startsWith("https://opencode.ai/zen/")) {
                     // OpenCode Zen expects requests to identify the OpenCode client and session.
-                    setRequestProperty("User-Agent", "opencode/1.18.20")
-                    setRequestProperty("x-session-id", "session-${UUID.randomUUID()}")
+                    val sId = ai.deepcode.android.data.remote.ZenModels.generateSessionId()
+                    setRequestProperty("User-Agent", ai.deepcode.android.data.remote.ZenModels.USER_AGENT)
+                    setRequestProperty(ai.deepcode.android.data.remote.ZenModels.CLIENT_HEADER_NAME, ai.deepcode.android.data.remote.ZenModels.CLIENT_HEADER_VALUE)
+                    setRequestProperty(ai.deepcode.android.data.remote.ZenModels.PROJECT_HEADER_NAME, ai.deepcode.android.data.remote.ZenModels.PROJECT_HEADER_VALUE)
+                    setRequestProperty(ai.deepcode.android.data.remote.ZenModels.HEADER_SESSION_ID, sId)
+                    setRequestProperty(ai.deepcode.android.data.remote.ZenModels.HEADER_SESSION_ID_ALT, sId)
+                    setRequestProperty(ai.deepcode.android.data.remote.ZenModels.HEADER_REQUEST_ID, ai.deepcode.android.data.remote.ZenModels.generateRequestId())
+                    setRequestProperty(ai.deepcode.android.data.remote.ZenModels.HEADER_SESSION_AFFINITY, sId)
+                }
+                if (endpoint.contains("openrouter.ai") || protocol == ProviderProtocol.OPENROUTER) {
+                    setRequestProperty("HTTP-Referer", "https://deepcode.ai")
+                    setRequestProperty("X-Title", "DeepCode")
                 }
                 if (apiKey.isNotBlank() && protocol != ProviderProtocol.OPENROUTER && protocol != ProviderProtocol.OPENAI_CHAT && protocol != ProviderProtocol.OPENAI_RESPONSES) {
                     setRequestProperty("x-api-key", apiKey)
@@ -176,9 +189,15 @@ class ProviderApiClient {
     private fun modelEndpoints(baseUrl: String, protocol: ProviderProtocol): List<String> {
         val base = baseUrl.trim().trimEnd('/')
         val withoutAnthropic = base.removeSuffix("/anthropic")
+        val withoutV1 = base.removeSuffix("/v1")
         val candidates = when (protocol) {
-            ProviderProtocol.OPENROUTER -> listOf("$base/v1/models")
-            ProviderProtocol.OPENAI_CHAT, ProviderProtocol.OPENAI_RESPONSES -> listOf("$base/models")
+            ProviderProtocol.OPENROUTER -> listOf("$base/v1/models", "$base/models")
+            ProviderProtocol.OPENAI_CHAT, ProviderProtocol.OPENAI_RESPONSES -> listOf(
+                if (base.endsWith("/v1")) "$base/models" else "$base/v1/models",
+                "$base/models",
+                "$withoutV1/v1/models",
+                "$base/api/tags"
+            )
             else -> listOf("$base/v1/models", "$base/models", "$withoutAnthropic/models", "$withoutAnthropic/v1/models")
         }
         return candidates.distinct()
@@ -186,10 +205,13 @@ class ProviderApiClient {
 
     private fun messagesEndpoint(baseUrl: String, protocol: ProviderProtocol): String {
         val base = baseUrl.trim().trimEnd('/')
+        if (base.endsWith("/chat/completions") || base.endsWith("/messages") || base.endsWith("/responses")) {
+            return base
+        }
         return when (protocol) {
-            ProviderProtocol.OPENROUTER -> "$base/v1/messages"
-            ProviderProtocol.OPENAI_CHAT -> "$base/chat/completions"
-            ProviderProtocol.OPENAI_RESPONSES -> "$base/responses"
+            ProviderProtocol.OPENROUTER -> if (base.endsWith("/v1")) "$base/messages" else "$base/v1/messages"
+            ProviderProtocol.OPENAI_CHAT -> if (base.endsWith("/v1")) "$base/chat/completions" else "$base/v1/chat/completions"
+            ProviderProtocol.OPENAI_RESPONSES -> if (base.endsWith("/v1")) "$base/responses" else "$base/v1/responses"
             else -> if (base.endsWith("/v1")) "$base/messages" else "$base/v1/messages"
         }
     }
@@ -200,35 +222,60 @@ class ProviderApiClient {
             url.path.trimEnd('/').endsWith("/models")
     }.getOrDefault(false)
 
-    internal fun validationBody(model: String, protocol: ProviderProtocol): String = when (protocol) {
-        ProviderProtocol.OPENAI_RESPONSES -> JSONObject()
-            .put("model", model)
-            .put(
-                "input",
-                JSONArray().put(
-                    JSONObject()
-                        .put("role", "user")
-                        .put(
-                            "content",
-                            JSONArray().put(
-                                JSONObject()
-                                    .put("type", "input_text")
-                                    .put("text", "Hello, reply with 1 word."),
-                            ),
-                        ),
-                ),
-            )
-            .toString()
-        ProviderProtocol.OPENAI_CHAT -> JSONObject()
-            .put("model", model)
-            .put("max_tokens", 1)
-            .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "Reply OK")))
-            .toString()
-        else -> JSONObject()
-            .put("model", model)
-            .put("max_tokens", 1)
-            .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "Reply OK")))
-            .toString()
+    internal fun validationBody(model: String, protocol: ProviderProtocol): String {
+        val cleanModel = model.removePrefix("~").trim()
+        return when (protocol) {
+            ProviderProtocol.OPENAI_RESPONSES -> {
+                val inputObj = JsonObject().apply {
+                    addProperty("role", "user")
+                    val contentArr = JsonArray().apply {
+                        add(JsonObject().apply {
+                            addProperty("type", "input_text")
+                            addProperty("text", "Hello, reply with 1 word.")
+                        })
+                    }
+                    add("content", contentArr)
+                }
+                val inputArr = JsonArray().apply {
+                    add(inputObj)
+                }
+                JsonObject().apply {
+                    addProperty("model", cleanModel)
+                    add("input", inputArr)
+                }.toString()
+            }
+            ProviderProtocol.OPENAI_CHAT -> {
+                val msgArr = JsonArray().apply {
+                    add(JsonObject().apply {
+                        addProperty("role", "user")
+                        addProperty("content", "Reply OK")
+                    })
+                }
+                val obj = JsonObject().apply {
+                    addProperty("model", cleanModel)
+                    add("messages", msgArr)
+                    if (cleanModel.startsWith("o1") || cleanModel.startsWith("o3")) {
+                        addProperty("max_completion_tokens", 1)
+                    } else {
+                        addProperty("max_tokens", 1)
+                    }
+                }
+                obj.toString()
+            }
+            else -> {
+                val msgArr = JsonArray().apply {
+                    add(JsonObject().apply {
+                        addProperty("role", "user")
+                        addProperty("content", "Reply OK")
+                    })
+                }
+                JsonObject().apply {
+                    addProperty("model", cleanModel)
+                    addProperty("max_tokens", 1)
+                    add("messages", msgArr)
+                }.toString()
+            }
+        }
     }
 
     private fun friendlyHttpError(code: Int): String = when (code) {

@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -41,12 +43,56 @@ class CalendarService(private val context: Context) {
         return listEvents(startOfDay, endOfDay, "50", false)
     }
 
-    suspend fun getUpcomingEvents(maxResults: Int = 10): Result<List<CalendarEvent>> {
-        val now = dateFormat.format(Date(System.currentTimeMillis()))
+    suspend fun getUpcomingEvents(maxResults: Int = 10, timeMinIso: String? = null): Result<List<CalendarEvent>> {
+        val now = timeMinIso?.takeIf { it.isNotBlank() } ?: dateFormat.format(Date(System.currentTimeMillis()))
         val cal = Calendar.getInstance()
-        cal.add(Calendar.DAY_OF_MONTH, 14)
-        val twoWeeks = dateFormat.format(Date(cal.timeInMillis))
-        return listEvents(now, twoWeeks, maxResults.toString(), true)
+        cal.add(Calendar.DAY_OF_MONTH, 30)
+        val end = dateFormat.format(Date(cal.timeInMillis))
+        return listEvents(now, end, maxResults.toString(), true)
+    }
+
+    suspend fun createEvent(
+        summary: String,
+        startTime: String,
+        endTime: String,
+        description: String = "",
+        location: String = ""
+    ): Result<String> {
+        val tokenResult = authService.getValidAccessToken("google_calendar")
+        if (tokenResult.isFailure) return Result.failure(tokenResult.exceptionOrNull()!!)
+        val token = tokenResult.getOrThrow()
+        return withContext(Dispatchers.IO) {
+            try {
+                val payload = JsonObject().apply {
+                    addProperty("summary", summary)
+                    if (description.isNotEmpty()) addProperty("description", description)
+                    if (location.isNotEmpty()) addProperty("location", location)
+                    add("start", JsonObject().apply {
+                        if (startTime.contains("T")) addProperty("dateTime", startTime)
+                        else addProperty("date", startTime)
+                    })
+                    add("end", JsonObject().apply {
+                        if (endTime.contains("T")) addProperty("dateTime", endTime)
+                        else addProperty("date", endTime)
+                    })
+                }
+                val mediaType = "application/json".toMediaTypeOrNull()
+                val request = Request.Builder()
+                    .url("https://www.googleapis.com/calendar/v3/calendars/primary/events")
+                    .header("Authorization", "Bearer $token")
+                    .header("Content-Type", "application/json")
+                    .post(payload.toString().toRequestBody(mediaType))
+                    .build()
+                val response = client.newCall(request).execute()
+                val body = response.body?.string() ?: return@withContext Result.failure(Exception("Empty response"))
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(Exception("Calendar API error: HTTP ${response.code} - $body"))
+                }
+                Result.success(body)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
     }
 
     private suspend fun listEvents(timeMin: String, timeMax: String, maxResults: String, useMax: Boolean): Result<List<CalendarEvent>> {

@@ -85,6 +85,7 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
     init {
         viewModelScope.launch {
             prepopulateIfEmpty()
+            checkAllHealth()
         }
     }
 
@@ -165,8 +166,9 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
                 val integration = repository.getIntegrationByAppId(appId)
                 if (integration != null) {
                     val updated = integration.copy(
-                        status = "connected",
-                        connectedAt = System.currentTimeMillis()
+                        status = ConnectionStatus.CONNECTED,
+                        connectedAt = System.currentTimeMillis(),
+                        lastSyncedAt = System.currentTimeMillis()
                     )
                     repository.insertIntegration(updated)
                     addLog("YouTube Music connected. I can now open and search YouTube Music on your device.")
@@ -178,21 +180,7 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
         if (isGoogleService) {
             addLog("Opening Google account picker for $appId...")
         } else {
-            addLog("Initiating OAuth flow for $appId...")
-            viewModelScope.launch {
-                val integration = repository.getIntegrationByAppId(appId)
-                if (integration != null) {
-                    val updated = integration.copy(
-                        status = "connected",
-                        accessToken = "mock_access_token_${UUID.randomUUID()}",
-                        refreshToken = "mock_refresh_token_${UUID.randomUUID()}",
-                        connectedAt = System.currentTimeMillis(),
-                        lastSyncedAt = System.currentTimeMillis()
-                    )
-                    repository.insertIntegration(updated)
-                    addLog("$appId connected.")
-                }
-            }
+            addLog("To connect $appId, please use the configuration dialog.")
         }
     }
 
@@ -220,7 +208,7 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
             val integration = repository.getIntegrationByAppId(appId)
             if (integration != null) {
                 val updated = integration.copy(
-                    status = "disconnected",
+                    status = ConnectionStatus.DISCONNECTED,
                     accessToken = "",
                     refreshToken = "",
                     connectedAt = 0L,
@@ -240,8 +228,9 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
                     try {
                         val botStore = BotConfigStore(appContext)
                         botStore.saveBots(emptyList())
+                        securePrefs.saveSetting("telegram_bot_token", "")
                         TelegramBridgeService.stop(appContext)
-                        addLog("Telegram Bot Bridge service stopped.")
+                        addLog("Telegram Bot Bridge service stopped and credentials cleared.")
                     } catch (e: Exception) {
                         addLog("Error stopping Telegram Bridge: ${e.message}")
                     }
@@ -252,6 +241,21 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
                         addLog("GitHub disconnected and credentials cleared.")
                     } catch (e: Exception) {
                         addLog("Error disconnecting GitHub: ${e.message}")
+                    }
+                } else if (appId == "notion") {
+                    try {
+                        securePrefs.saveSetting("notion_token", "")
+                        ai.deepcode.android.data.repository.DeepCodeRepository.getInstance(appContext).updateNotionToken(null)
+                        addLog("Notion disconnected and token cleared.")
+                    } catch (e: Exception) {
+                        addLog("Error disconnecting Notion: ${e.message}")
+                    }
+                } else if (appId == "google_account" || appId == "gmail" || appId == "google_calendar" || appId == "google_drive") {
+                    try {
+                        securePrefs.saveSetting("google_account_email", "")
+                        addLog("Google credentials cleared for $appId.")
+                    } catch (e: Exception) {
+                        addLog("Error disconnecting Google: ${e.message}")
                     }
                 } else if (appId == "whatsapp") {
                     disconnectWhatsApp()
@@ -304,81 +308,98 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
     }
 
     fun connectTelegramBot(botToken: String) {
+        val cleanToken = botToken.trim()
+        if (cleanToken.isEmpty()) {
+            addLog("Telegram bot token cannot be empty.")
+            return
+        }
         viewModelScope.launch {
             addLog("Validating Telegram Bot Token...")
+            updateIntegrationStatus("telegram", ConnectionStatus.CONNECTING)
             withContext(Dispatchers.IO) {
-                var proceed = false
                 val client = okhttp3.OkHttpClient()
                 try {
-                    val url = "https://api.telegram.org/bot$botToken/getMe"
+                    val url = "https://api.telegram.org/bot$cleanToken/getMe"
                     val request = okhttp3.Request.Builder().url(url).build()
                     client.newCall(request).execute().use { response ->
                         if (response.isSuccessful) {
-                            addLog("Telegram Bot verified successfully. Status: Connected.")
-                            proceed = true
+                            val bodyStr = response.body?.string() ?: ""
+                            val json = com.google.gson.JsonParser.parseString(bodyStr).asJsonObject
+                            if (json.get("ok")?.asBoolean == true) {
+                                val botObj = json.getAsJsonObject("result")
+                                val botUsername = botObj?.get("username")?.asString ?: "Telegram Bot"
+                                securePrefs.saveSetting("telegram_bot_token", cleanToken)
+                                val integration = repository.getIntegrationByAppId("telegram")
+                                if (integration != null) {
+                                    val updated = integration.copy(
+                                        status = ConnectionStatus.CONNECTED,
+                                        displayName = "Telegram (@$botUsername)",
+                                        accessToken = cleanToken,
+                                        connectedAt = System.currentTimeMillis(),
+                                        lastSyncedAt = System.currentTimeMillis()
+                                    )
+                                    repository.insertIntegration(updated)
+                                }
+                                val botStore = BotConfigStore(appContext)
+                                botStore.saveBots(listOf(BotConfig(token = cleanToken)))
+                                TelegramBridgeService.registerBotCommands(cleanToken)
+                                TelegramBridgeService.start(appContext)
+                                addLog("Telegram Bot verified successfully (@$botUsername). Status: Connected.")
+                            } else {
+                                addLog("Failed to validate Telegram Bot token: ${json.get("description")?.asString}")
+                                updateIntegrationStatus("telegram", ConnectionStatus.ERROR)
+                            }
                         } else {
-                            addLog("Failed to validate Telegram Bot token: HTTP ${response.code}. Proceeding anyway for offline/local testing...")
-                            proceed = true
+                            addLog("Failed to validate Telegram Bot token: HTTP ${response.code}. Token rejected.")
+                            updateIntegrationStatus("telegram", ConnectionStatus.ERROR)
                         }
                     }
                 } catch (e: Exception) {
-                    addLog("Validation error: ${e.message}. Offline or network issue? Bypassing validation to save token.")
-                    proceed = true
+                    addLog("Validation error: ${e.message}")
+                    updateIntegrationStatus("telegram", ConnectionStatus.ERROR)
                 } finally {
                     ai.deepcode.android.util.SafeDispose.dispose(client)
-                }
-
-                if (proceed) {
-                    try {
-                        securePrefs.saveSetting("telegram_bot_token", botToken)
-                        val integration = repository.getIntegrationByAppId("telegram")
-                        if (integration != null) {
-                            val updated = integration.copy(
-                                status = "connected",
-                                accessToken = botToken,
-                                connectedAt = System.currentTimeMillis()
-                            )
-                            repository.insertIntegration(updated)
-                        }
-                        val botStore = BotConfigStore(appContext)
-                        botStore.saveBots(listOf(BotConfig(token = botToken)))
-                        TelegramBridgeService.registerBotCommands(botToken)
-                        TelegramBridgeService.start(appContext)
-                        addLog("Telegram Bot connected & bot commands registered for private chats.")
-                    } catch (e: Exception) {
-                        addLog("Error saving bot configuration: ${e.message}")
-                    }
                 }
             }
         }
     }
 
     fun connectNotion(notionToken: String) {
+        val cleanToken = notionToken.trim()
+        if (cleanToken.isEmpty()) {
+            addLog("Notion token cannot be empty.")
+            return
+        }
         viewModelScope.launch {
             addLog("Validating Notion Integration Token...")
+            updateIntegrationStatus("notion", ConnectionStatus.CONNECTING)
             withContext(Dispatchers.IO) {
-                val service = NotionService(notionToken.trim())
+                val service = NotionService(cleanToken)
                 val result = service.validateToken()
                 result.onSuccess { user ->
                     addLog("Notion token validated. Connected as: ${user.name} (${user.email})")
                     try {
-                        securePrefs.saveSetting("notion_token", notionToken.trim())
+                        securePrefs.saveSetting("notion_token", cleanToken)
                         val integration = repository.getIntegrationByAppId("notion")
                         if (integration != null) {
                             val updated = integration.copy(
-                                status = "connected",
-                                accessToken = notionToken.trim(),
+                                status = ConnectionStatus.CONNECTED,
+                                displayName = if (user.name.isNotBlank()) "Notion (${user.name})" else "Notion",
+                                accessToken = cleanToken,
                                 connectedAt = System.currentTimeMillis(),
                                 lastSyncedAt = System.currentTimeMillis()
                             )
                             repository.insertIntegration(updated)
                         }
-                        addLog("Notion integration saved successfully.")
+                        ai.deepcode.android.data.repository.DeepCodeRepository.getInstance(appContext).updateNotionToken(cleanToken)
+                        addLog("Notion integration saved & active.")
                     } catch (e: Exception) {
                         addLog("Error saving Notion integration: ${e.message}")
+                        updateIntegrationStatus("notion", ConnectionStatus.ERROR)
                     }
                 }.onFailure { error ->
                     addLog("Notion token validation failed: ${error.message}")
+                    updateIntegrationStatus("notion", ConnectionStatus.ERROR)
                 }
             }
         }
@@ -392,6 +413,7 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
         }
         viewModelScope.launch {
             addLog("Validating GitHub Personal Access Token...")
+            updateIntegrationStatus("github", ConnectionStatus.CONNECTING)
             withContext(Dispatchers.IO) {
                 val service = GitHubService(cleanToken)
                 val result = service.validateToken()
@@ -408,7 +430,7 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
                         val integration = repository.getIntegrationByAppId("github")
                         if (integration != null) {
                             val updated = integration.copy(
-                                status = "connected",
+                                status = ConnectionStatus.CONNECTED,
                                 displayName = if (user.name.isNotBlank() && user.name != user.login) "GitHub (${user.name} - @${user.login})" else "GitHub (@${user.login})",
                                 iconUrl = user.avatarUrl.ifEmpty { integration.iconUrl },
                                 accessToken = cleanToken,
@@ -421,9 +443,11 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
                         addLog("GitHub integration saved & live synced across AI tools successfully.")
                     } catch (e: Exception) {
                         addLog("Error saving GitHub integration: ${e.message}")
+                        updateIntegrationStatus("github", ConnectionStatus.ERROR)
                     }
                 }.onFailure { error ->
                     addLog("GitHub token validation failed: ${error.message}")
+                    updateIntegrationStatus("github", ConnectionStatus.ERROR)
                 }
             }
         }
@@ -553,7 +577,10 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
 
     fun checkWhatsAppHealth() {
         viewModelScope.launch {
-            val api = getWhatsAppAPI() ?: return@launch
+            val api = getWhatsAppAPI() ?: run {
+                updateIntegrationStatus("whatsapp", ConnectionStatus.DISCONNECTED)
+                return@launch
+            }
             withContext(Dispatchers.IO) {
                 try {
                     val resp = api.health()
@@ -561,14 +588,130 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
                         val h = resp.body()!!
                         _whatsAppConnected.value = h.connected
                         _whatsAppPhone.value = h.phone
+                        val targetStatus = if (h.connected) ConnectionStatus.CONNECTED else ConnectionStatus.DISCONNECTED
+                        updateIntegrationStatus("whatsapp", targetStatus)
                         addLog("WhatsApp Bridge: ${h.status}, connected=${h.connected}, phone=${h.phone}")
                     } else {
+                        _whatsAppConnected.value = false
+                        updateIntegrationStatus("whatsapp", ConnectionStatus.ERROR)
                         addLog("WhatsApp Bridge health check failed: HTTP ${resp.code()}")
                     }
                 } catch (e: Exception) {
+                    _whatsAppConnected.value = false
+                    updateIntegrationStatus("whatsapp", ConnectionStatus.DISCONNECTED)
                     addLog("WhatsApp Bridge unreachable: ${e.message}")
                 }
             }
+        }
+    }
+
+    suspend fun checkGoogleHealth() = withContext(Dispatchers.IO) {
+        val googleServices = listOf("google_account", "gmail", "google_calendar", "google_drive")
+        val googleAuth = ai.deepcode.android.service.google.GoogleAuthService(appContext)
+        for (appId in googleServices) {
+            val integration = repository.getIntegrationByAppId(appId) ?: continue
+            if (integration.status == ConnectionStatus.CONNECTED) {
+                val tokenResult = googleAuth.getValidAccessToken(appId)
+                if (tokenResult.isSuccess) {
+                    repository.updateStatusAndSyncTime(appId, ConnectionStatus.CONNECTED, System.currentTimeMillis())
+                } else {
+                    addLog("$appId auth expired: ${tokenResult.exceptionOrNull()?.message}")
+                    repository.updateStatusOnly(appId, ConnectionStatus.EXPIRED)
+                }
+            }
+        }
+    }
+
+    suspend fun checkGitHubHealth() = withContext(Dispatchers.IO) {
+        val integration = repository.getIntegrationByAppId("github") ?: return@withContext
+        val token = securePrefs.getSetting("github_token", "").trim()
+        if (token.isEmpty() && integration.accessToken.isBlank()) {
+            if (integration.status != ConnectionStatus.DISCONNECTED) {
+                repository.updateStatusOnly("github", ConnectionStatus.DISCONNECTED)
+            }
+            return@withContext
+        }
+        val cleanToken = token.ifEmpty { integration.accessToken }
+        val service = GitHubService(cleanToken)
+        val result = service.validateToken()
+        result.fold(
+            onSuccess = { user ->
+                repository.updateStatusAndSyncTime("github", ConnectionStatus.CONNECTED, System.currentTimeMillis())
+            },
+            onFailure = { error ->
+                addLog("GitHub health check failed: ${error.message}")
+                val isExpired = error.message?.contains("401") == true || error.message?.contains("Bad credentials") == true
+                repository.updateStatusOnly("github", if (isExpired) ConnectionStatus.EXPIRED else ConnectionStatus.ERROR)
+            }
+        )
+    }
+
+    suspend fun checkNotionHealth() = withContext(Dispatchers.IO) {
+        val integration = repository.getIntegrationByAppId("notion") ?: return@withContext
+        val token = securePrefs.getSetting("notion_token", "").trim()
+        if (token.isEmpty() && integration.accessToken.isBlank()) {
+            if (integration.status != ConnectionStatus.DISCONNECTED) {
+                repository.updateStatusOnly("notion", ConnectionStatus.DISCONNECTED)
+            }
+            return@withContext
+        }
+        val cleanToken = token.ifEmpty { integration.accessToken }
+        val service = NotionService(cleanToken)
+        val result = service.validateToken()
+        result.fold(
+            onSuccess = { user ->
+                repository.updateStatusAndSyncTime("notion", ConnectionStatus.CONNECTED, System.currentTimeMillis())
+            },
+            onFailure = { error ->
+                addLog("Notion health check failed: ${error.message}")
+                val isExpired = error.message?.contains("401") == true || error.message?.contains("unauthorized") == true
+                repository.updateStatusOnly("notion", if (isExpired) ConnectionStatus.EXPIRED else ConnectionStatus.ERROR)
+            }
+        )
+    }
+
+    suspend fun checkTelegramHealth() = withContext(Dispatchers.IO) {
+        val integration = repository.getIntegrationByAppId("telegram") ?: return@withContext
+        val token = securePrefs.getSetting("telegram_bot_token", "").trim()
+        if (token.isEmpty() && integration.accessToken.isBlank()) {
+            if (integration.status != ConnectionStatus.DISCONNECTED) {
+                repository.updateStatusOnly("telegram", ConnectionStatus.DISCONNECTED)
+            }
+            return@withContext
+        }
+        val cleanToken = token.ifEmpty { integration.accessToken }
+        val client = okhttp3.OkHttpClient()
+        try {
+            val url = "https://api.telegram.org/bot$cleanToken/getMe"
+            val request = okhttp3.Request.Builder().url(url).build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val bodyStr = response.body?.string() ?: ""
+                    val json = com.google.gson.JsonParser.parseString(bodyStr).asJsonObject
+                    if (json.get("ok")?.asBoolean == true) {
+                        repository.updateStatusAndSyncTime("telegram", ConnectionStatus.CONNECTED, System.currentTimeMillis())
+                    } else {
+                        repository.updateStatusOnly("telegram", ConnectionStatus.ERROR)
+                    }
+                } else {
+                    val isExpired = response.code == 401 || response.code == 404
+                    repository.updateStatusOnly("telegram", if (isExpired) ConnectionStatus.EXPIRED else ConnectionStatus.ERROR)
+                }
+            }
+        } catch (e: Exception) {
+            addLog("Telegram health check network error: ${e.message}")
+        } finally {
+            ai.deepcode.android.util.SafeDispose.dispose(client)
+        }
+    }
+
+    fun checkAllHealth() {
+        viewModelScope.launch {
+            checkWhatsAppHealth()
+            checkGoogleHealth()
+            checkGitHubHealth()
+            checkNotionHealth()
+            checkTelegramHealth()
         }
     }
 
@@ -577,9 +720,9 @@ class ConnectionsViewModel(context: Context) : ViewModel() {
         if (integration != null) {
             val updated = integration.copy(
                 status = status,
-                accessToken = if (status == "connected") "wa_bridge" else "",
-                connectedAt = if (status == "connected") System.currentTimeMillis() else 0L,
-                lastSyncedAt = if (status == "connected") System.currentTimeMillis() else 0L
+                accessToken = if (status == ConnectionStatus.CONNECTED) (integration.accessToken.ifEmpty { "connected" }) else "",
+                connectedAt = if (status == ConnectionStatus.CONNECTED) (if (integration.connectedAt > 0) integration.connectedAt else System.currentTimeMillis()) else 0L,
+                lastSyncedAt = if (status == ConnectionStatus.CONNECTED) System.currentTimeMillis() else integration.lastSyncedAt
             )
             repository.insertIntegration(updated)
         }

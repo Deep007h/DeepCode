@@ -53,15 +53,23 @@ object ModelPriceProvider {
         register("anthropic/claude-sonnet-4.6", ModelPricing(3.00, 15.00, 200_000, 8192, true, 3.75, 0.30))
         register("claude-sonnet-4-20250514", ModelPricing(3.00, 15.00, 200_000, 8192, true, 3.75, 0.30))
         register("claude-sonnet-4", ModelPricing(3.00, 15.00, 200_000, 8192, true, 3.75, 0.30))
+        register("claude-3-7-sonnet", ModelPricing(3.00, 15.00, 200_000, 64_000, true, 3.75, 0.30))
+        register("claude-3-7-sonnet-latest", ModelPricing(3.00, 15.00, 200_000, 64_000, true, 3.75, 0.30))
         register("claude-3.5-sonnet", ModelPricing(3.00, 15.00, 200_000, 8192, true, 3.75, 0.30))
+        register("claude-3-5-sonnet-latest", ModelPricing(3.00, 15.00, 200_000, 8192, true, 3.75, 0.30))
         register("claude-fable-5", ModelPricing(3.00, 15.00, 200_000, 8192, true, 3.75, 0.30))
         register("claude-opus-5", ModelPricing(15.00, 75.00, 200_000, 4096, true, 18.75, 1.50))
         register("claude-opus-4-8", ModelPricing(15.00, 75.00, 200_000, 4096, true, 18.75, 1.50))
         register("claude-opus-4-7", ModelPricing(15.00, 75.00, 200_000, 4096, true, 18.75, 1.50))
         register("claude-opus-4-6", ModelPricing(15.00, 75.00, 200_000, 4096, true, 18.75, 1.50))
         register("claude-3-opus", ModelPricing(15.00, 75.00, 200_000, 4096, true, 18.75, 1.50))
+        register("claude-3-opus-latest", ModelPricing(15.00, 75.00, 200_000, 4096, true, 18.75, 1.50))
         register("claude-3.5-haiku", ModelPricing(0.80, 4.00, 200_000, 8192, true, 1.00, 0.08))
+        register("claude-3-5-haiku-latest", ModelPricing(0.80, 4.00, 200_000, 8192, true, 1.00, 0.08))
         register("claude-3-haiku", ModelPricing(0.25, 1.25, 200_000, 4096, true, 0.3125, 0.025))
+        register("claude-4.5-sonnet", ModelPricing(3.00, 15.00, 200_000, 8192, true, 3.75, 0.30))
+        register("claude-4.5-opus", ModelPricing(15.00, 75.00, 200_000, 4096, true, 18.75, 1.50))
+        register("claude-4.5-haiku", ModelPricing(0.80, 4.00, 200_000, 8192, true, 1.00, 0.08))
         register("claude-pro", ModelPricing(3.00, 15.00, 200_000, 8192, true, 3.75, 0.30))
         register("claude-max", ModelPricing(3.00, 15.00, 200_000, 8192, true, 3.75, 0.30))
 
@@ -71,7 +79,7 @@ object ModelPriceProvider {
         register("gemini-3.7-flash", ModelPricing(0.10, 0.40, 1_000_000, 8192))
         register("gemini-3.6-flash", ModelPricing(0.10, 0.40, 1_000_000, 8192))
         register("gemini-3.5-flash", ModelPricing(0.10, 0.40, 1_000_000, 8192))
-        register("gemini-2.5-pro", ModelPricing(1.25, 5.00, 1_000_000, 8192))
+        register("gemini-2.5-pro", ModelPricing(1.25, 5.00, 2_000_000, 8192))
         register("gemini-2.5-flash", ModelPricing(0.10, 0.40, 1_000_000, 8192))
         register("gemini-2.0-flash", ModelPricing(0.10, 0.40, 1_048_576, 8192))
         register("gemini-2.0-flash-lite", ModelPricing(0.075, 0.30, 1_048_576, 8192))
@@ -80,16 +88,24 @@ object ModelPriceProvider {
         register("gemini-1.5-flash", ModelPricing(0.075, 0.30, 1_000_000, 8192))
 
         // ── DeepSeek ────────────────────────────────────────────────────
+        register("deepseek-chat", ModelPricing(0.14, 0.28, 64_000, 8192, true, 0.14, 0.014))
+        register("deepseek-reasoner", ModelPricing(0.55, 2.19, 64_000, 8192, true, 0.55, 0.14))
         register("deepseek-v4-flash", ModelPricing(0.14, 0.28, 1_000_000, 8192))
         register("deepseek-v4-flash-free", ModelPricing(0.14, 0.28, 1_000_000, 8192))
+        register("deepseek-v4.1-flash", ModelPricing(0.14, 0.28, 1_000_000, 8192))
+        register("deepseek-v4.1-flash:free", ModelPricing(0.00, 0.00, 1_000_000, 8192))
         register("deepseek-ai/deepseek-v4-flash", ModelPricing(0.14, 0.28, 1_000_000, 8192))
         register("deepseek-v4-pro", ModelPricing(0.55, 2.19, 1_000_000, 8192))
-        register("deepseek-v3", ModelPricing(0.14, 0.28, 64_000, 8192))
-        register("deepseek-ai/deepseek-v3", ModelPricing(0.14, 0.28, 64_000, 8192))
-        register("deepseek-r1", ModelPricing(0.55, 2.19, 64_000, 8192))
-        register("deepseek-ai/deepseek-r1", ModelPricing(0.55, 2.19, 64_000, 8192))
+        register("deepseek-v3", ModelPricing(0.14, 0.28, 64_000, 8192, true, 0.14, 0.014))
+        register("deepseek-ai/deepseek-v3", ModelPricing(0.14, 0.28, 64_000, 8192, true, 0.14, 0.014))
+        register("deepseek-r1", ModelPricing(0.55, 2.19, 64_000, 8192, true, 0.55, 0.14))
+        register("deepseek-ai/deepseek-r1", ModelPricing(0.55, 2.19, 64_000, 8192, true, 0.55, 0.14))
         register("deepseek-coder", ModelPricing(0.14, 0.28, 128_000, 8192))
         register("deepseek-r1-distill-llama-70b", ModelPricing(0.55, 0.79, 128_000, 8192))
+
+        // ── Atria ───────────────────────────────────────────────────────
+        register("atria-dawn-preview", ModelPricing(0.50, 1.50, 256_000, 16384))
+        register("atria", ModelPricing(0.50, 1.50, 256_000, 16384))
 
         // ── Groq / Meta Llama ───────────────────────────────────────────
         register("llama-3.3-70b", ModelPricing(0.59, 0.79, 128_000, 8192))
@@ -110,6 +126,7 @@ object ModelPriceProvider {
         register("qwen2.5-72b", ModelPricing(0.40, 1.20, 128_000, 8192))
         register("qwen/qwen2.5-72b-instruct", ModelPricing(0.40, 1.20, 128_000, 8192))
         register("qwen/qwen2.5-coder-32b-instruct", ModelPricing(0.20, 0.60, 128_000, 8192))
+        register("qwen2.5-coder-32b", ModelPricing(0.20, 0.60, 128_000, 8192))
 
         // ── xAI Grok ────────────────────────────────────────────────────
         register("grok-4.6", ModelPricing(3.00, 15.00, 128_000, 8192))
@@ -147,9 +164,14 @@ object ModelPriceProvider {
         register("google/gemma-2-9b-it", ModelPricing(0.08, 0.16, 8192, 4096))
 
         // ── Mistral ─────────────────────────────────────────────────────
+        register("mistral-large-latest", ModelPricing(2.00, 6.00, 128_000, 8192, true, 2.00, 1.00))
         register("mistral-large", ModelPricing(2.00, 6.00, 128_000, 8192, true, 2.00, 1.00))
-        register("mistral-small", ModelPricing(0.20, 0.60, 128_000, 8192, true, 0.20, 0.10))
+        register("mistral-small-latest", ModelPricing(0.20, 0.60, 32_000, 8192, true, 0.20, 0.10))
+        register("mistral-small", ModelPricing(0.20, 0.60, 32_000, 8192, true, 0.20, 0.10))
+        register("codestral-latest", ModelPricing(1.00, 3.00, 256_000, 8192))
         register("codestral", ModelPricing(1.00, 3.00, 256_000, 8192))
+        register("open-mistral-nemo", ModelPricing(0.15, 0.15, 128_000, 8192))
+        register("pixtral-12b-2409", ModelPricing(0.15, 0.15, 128_000, 8192))
     }
 
     fun register(modelId: String, pricing: ModelPricing) {
@@ -174,6 +196,12 @@ object ModelPriceProvider {
     }
 
     private fun resolveFamilyPricing(lower: String, stripped: String): ModelPricing = when {
+        lower.contains("atria") || stripped.contains("atria") ->
+            ModelPricing(0.50, 1.50, 256_000, 16384)
+        lower.contains("tokenharbor") || stripped.contains("tokenharbor") ->
+            ModelPricing(0.14, 0.28, 1_000_000, 8192)
+        lower.contains("cerebras") || lower.contains("cerebrus") || stripped.contains("cerebras") || stripped.contains("cerebrus") ->
+            ModelPricing(0.59, 0.79, 128_000, 8192)
         lower.contains("minimax") || stripped.contains("minimax") -> {
             if (lower.contains("m2")) ModelPricing(0.15, 0.80, 128_000, 16384)
             else ModelPricing(0.20, 1.10, 1_000_000, 16384) // MiniMax M3 default
@@ -276,6 +304,12 @@ object ModelPriceProvider {
     fun resolveProvider(modelId: String): String {
         val lower = modelId.lowercase()
         return when {
+            lower.contains("atria") -> "Atria"
+            lower.contains("tokenharbor") -> "TokenHarbor"
+            lower.contains("cerebras") || lower.contains("cerebrus") -> "Cerebras"
+            lower.contains("groq") -> "Groq"
+            lower.contains("openrouter") -> "OpenRouter"
+            lower.contains("ollama") -> "Ollama Cloud"
             lower.contains("minimax") -> "MiniMax"
             lower.contains("claude") || lower.contains("anthropic") || lower.contains("fable") -> "Anthropic"
             lower.contains("gemini") || lower.contains("google") -> "Google Gemini"
@@ -288,8 +322,6 @@ object ModelPriceProvider {
             lower.contains("kimi") || lower.contains("moonshot") -> "Moonshot AI"
             lower.contains("glm") || lower.contains("zai") -> "Zhipu AI"
             lower.contains("nemotron") || lower.contains("nvidia") -> "NVIDIA"
-            lower.contains("openrouter") -> "OpenRouter"
-            lower.contains("ollama") -> "Ollama (Local)"
             else -> "Zen AI"
         }
     }

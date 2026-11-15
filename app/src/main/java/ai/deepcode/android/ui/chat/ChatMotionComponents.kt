@@ -206,7 +206,7 @@ fun AnimatedThinkingCard(
 
     val infiniteTransition = rememberInfiniteTransition(label = "ThinkingCardTransition")
 
-    val glowAlpha by infiniteTransition.animateFloat(
+    val glowAlpha = infiniteTransition.animateFloat(
         initialValue = 0.25f,
         targetValue = 0.70f,
         animationSpec = infiniteRepeatable(
@@ -216,7 +216,7 @@ fun AnimatedThinkingCard(
         label = "GlowAlpha"
     )
 
-    val liveDotAlpha by infiniteTransition.animateFloat(
+    val liveDotAlpha = infiniteTransition.animateFloat(
         initialValue = 0.35f,
         targetValue = 1.0f,
         animationSpec = infiniteRepeatable(
@@ -228,21 +228,21 @@ fun AnimatedThinkingCard(
 
     val isDark = isDarkThemeActive
     val cardBg = if (isDark) AppSurface else Color.White
-    val borderBrush = remember(glowAlpha, effectiveAccent, isDark) {
+    val borderBrush = remember(effectiveAccent, isDark) {
         if (isDark) {
             Brush.linearGradient(
                 colors = listOf(
-                    effectiveAccent.copy(alpha = glowAlpha * 0.40f),
+                    effectiveAccent.copy(alpha = 0.35f),
                     AppBorder.copy(alpha = 0.75f),
-                    effectiveAccent.copy(alpha = glowAlpha * 0.15f)
+                    effectiveAccent.copy(alpha = 0.15f)
                 )
             )
         } else {
             Brush.linearGradient(
                 colors = listOf(
-                    effectiveAccent.copy(alpha = glowAlpha * 0.50f),
+                    effectiveAccent.copy(alpha = 0.45f),
                     AppBorder,
-                    effectiveAccent.copy(alpha = glowAlpha * 0.20f)
+                    effectiveAccent.copy(alpha = 0.20f)
                 )
             )
         }
@@ -298,8 +298,8 @@ fun AnimatedThinkingCard(
                     Box(
                         modifier = Modifier
                             .size(5.dp)
-                            .clip(CircleShape)
-                            .background(effectiveAccent.copy(alpha = liveDotAlpha))
+                            .graphicsLayer { alpha = liveDotAlpha.value }
+                            .background(effectiveAccent, CircleShape)
                     )
                     Text(
                         text = headerLabel,

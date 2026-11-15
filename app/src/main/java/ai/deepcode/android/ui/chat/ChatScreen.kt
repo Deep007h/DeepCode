@@ -363,9 +363,6 @@ fun ChatScreen(
     val automationRepo = remember { AutomationRepository(context) }
     val automations by automationRepo.getAllAutomationsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
     val activeSessionTokenSummary by remember(activeSessionId) { repository.tokenRepository.observeSession(activeSessionId) }.collectAsStateWithLifecycle(initialValue = null)
-    val userTurns = remember(messages) { messages.count { it.role == "user" } }
-    val maxTurns = remember { repository.securePrefs.getSetting("max_history_turns", "8").toIntOrNull() ?: 8 }
-    val imageCache by viewModel.imageCache.collectAsStateWithLifecycle()
     val mediaProcessingType by viewModel.mediaProcessingType.collectAsStateWithLifecycle()
     val mediaProcessingPrompt by viewModel.mediaProcessingPrompt.collectAsStateWithLifecycle()
 
@@ -440,12 +437,15 @@ fun ChatScreen(
 
     var userScrolledUp by remember { mutableStateOf(false) }
 
-    LaunchedEffect(lazyListState.isScrollInProgress) {
-        if (lazyListState.isScrollInProgress && !isNearBottom) {
-            userScrolledUp = true
-        } else if (isNearBottom) {
-            userScrolledUp = false
-        }
+    LaunchedEffect(lazyListState) {
+        snapshotFlow { isNearBottom }
+            .collect { nearBottom ->
+                if (nearBottom) {
+                    userScrolledUp = false
+                } else if (lazyListState.isScrollInProgress) {
+                    userScrolledUp = true
+                }
+            }
     }
 
     var lastScrolledSessionId by remember { mutableStateOf("") }
@@ -1118,6 +1118,36 @@ fun ChatScreen(
                         }
                     }
 
+                    val onReplyMessage = remember { { msg: Message -> replyingToMessage = msg } }
+                    val onSelectLayout = remember(viewModel) {
+                        { layoutName: String ->
+                            shouldScrollToBottomOnSend = true
+                            viewModel.sendMessage("Use $layoutName layout")
+                            Unit
+                        }
+                    }
+                    val onSendSuggestion = remember(viewModel) {
+                        { suggestion: String ->
+                            shouldScrollToBottomOnSend = true
+                            viewModel.sendMessage(suggestion)
+                            Unit
+                        }
+                    }
+                    val currentCombinedItems by rememberUpdatedState(combinedItems)
+                    val onScrollToMessage = remember(lazyListState, scope) {
+                        { targetId: String ->
+                            val targetIdx = currentCombinedItems.indexOfFirst {
+                                it is ChatItem.NormalMessage && it.message.id == targetId
+                            }
+                            if (targetIdx >= 0) {
+                                scope.launch {
+                                    lazyListState.animateScrollToItem(targetIdx)
+                                }
+                            }
+                            Unit
+                        }
+                    }
+
                     LazyColumn(
                         state = lazyListState,
                         reverseLayout = false,
@@ -1142,48 +1172,23 @@ fun ChatScreen(
                     }) { item ->
                         when (item) {
                             is ChatItem.NormalMessage -> {
-                                val onSelect = remember(viewModel) { { layoutName: String ->
-                                    shouldScrollToBottomOnSend = true
-                                    viewModel.sendMessage("Use $layoutName layout")
-                                    Unit
-                                } }
-                                val onSendSug = remember(viewModel) { { suggestion: String ->
-                                    shouldScrollToBottomOnSend = true
-                                    viewModel.sendMessage(suggestion)
-                                    Unit
-                                } }
                                 SwipeToReplyContainer(
                                     message = item.message,
-                                    onReply = { msg ->
-                                        replyingToMessage = msg
-                                    }
+                                    onReply = onReplyMessage
                                 ) {
                                     MessageBubble(
                                         message = item.message,
                                         showTimestamp = true,
-                                        imageCache = imageCache,
-                                        onSelectLayout = onSelect,
-                                        onSendSuggestion = onSendSug,
-                                        onScrollToMessage = { targetId ->
-                                            val targetIdx = combinedItems.indexOfFirst {
-                                                it is ChatItem.NormalMessage && it.message.id == targetId
-                                            }
-                                            if (targetIdx >= 0) {
-                                                scope.launch {
-                                                    lazyListState.animateScrollToItem(targetIdx)
-                                                }
-                                            }
-                                        },
-                                        onReply = { msg ->
-                                            replyingToMessage = msg
-                                        }
+                                        onSelectLayout = onSelectLayout,
+                                        onSendSuggestion = onSendSuggestion,
+                                        onScrollToMessage = onScrollToMessage,
+                                        onReply = onReplyMessage
                                     )
                                 }
                             }
                             is ChatItem.ToolExecutionGroup -> ToolExecutionGroupBubble(group = item)
                             is ChatItem.Streaming -> StreamingItem(
                                 viewModel = viewModel,
-                                imageCache = imageCache,
                                 mediaProcessingType = mediaProcessingType,
                                 mediaProcessingPrompt = mediaProcessingPrompt
                             )
@@ -1235,17 +1240,8 @@ fun ChatScreen(
             }
         }
 
-        val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-        // Hardware-accelerated tracking: when IME is visible, follow keyboard directly; otherwise float cleanly above dock
-        val currentBottomPadding = if (imeBottom > 0.dp) imeBottom + 8.dp else maxOf(bottomBarHeight + 14.dp, 122.dp)
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp)
-                .padding(top = 4.dp)
-                .padding(bottom = currentBottomPadding)
-        ) {
+        // Hardware-accelerated tracking: isolated in sub-composable RecomposeScope to eliminate frame-by-frame recomposition of ChatScreen
+        BottomDockPaddingContainer(bottomBarHeight = bottomBarHeight) {
             if (attachedFiles.isNotEmpty()) {
                 Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -1568,6 +1564,24 @@ private fun BoxScope.ScrollToBottomButton(
             )
         }
     }
+}
+
+@Composable
+private fun BottomDockPaddingContainer(
+    bottomBarHeight: Dp,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+    val currentBottomPadding = if (imeBottom > 0.dp) imeBottom + 8.dp else maxOf(bottomBarHeight + 14.dp, 122.dp)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp)
+            .padding(top = 4.dp)
+            .padding(bottom = currentBottomPadding),
+        content = content
+    )
 }
 
 @Composable
@@ -2806,7 +2820,7 @@ private fun insertIntoMediaStore(context: Context, bytes: ByteArray, ext: String
 @Composable
 private fun StreamingItem(
     viewModel: ChatViewModel,
-    imageCache: Map<String, ImageBitmap>,
+    imageCache: Map<String, ImageBitmap> = emptyMap(),
     mediaProcessingType: String?,
     mediaProcessingPrompt: String
 ) {
@@ -4784,10 +4798,15 @@ fun ProviderMiniLogo(providerName: String) {
 // ═══════════════════════════════════════════════
 // ChatItem sealed class
 // ═══════════════════════════════════════════════
+@Immutable
 sealed class ChatItem {
+    @Immutable
     data class NormalMessage(val message: Message) : ChatItem()
+    @Immutable
     data class ToolExecutionGroup(val groupId: String, val toolMessages: List<Message>) : ChatItem()
+    @Immutable
     data class Streaming(val messageId: String) : ChatItem()
+    @Immutable
     data class OrchestrationPanel(val panelId: String) : ChatItem()
 }
 

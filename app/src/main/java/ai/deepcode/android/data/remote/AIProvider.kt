@@ -261,8 +261,8 @@ val OPENAI_PROVIDERS = listOf(
         "Meta-Llama-3.3-70B-Instruct" to "Llama 3.3 70B", "DeepSeek-R1" to "DeepSeek R1",
         "DeepSeek-V3" to "DeepSeek V3", "Qwen2.5-Coder-32B-Instruct" to "Qwen 2.5 Coder"
     )),
-    genProvider("Cerebrus", "https://api.cerebras.ai/v1", listOf(
-        "llama-3.3-70b" to "Llama 3.3 70B", "llama3.1-8b" to "Llama 3.1 8B", "qwen2.5-72b" to "Qwen 2.5 72B"
+    genProvider("Cerebras", "https://api.cerebras.ai/v1", listOf(
+        "llama-3.3-70b" to "Llama 3.3 70B", "llama3.1-8b" to "Llama 3.1 8B", "qwen2.5-72b" to "Qwen 2.5 72B", "qwen2.5-coder-32b" to "Qwen 2.5 Coder 32B"
     )),
     genProvider("Hyperbolic", "https://api.hyperbolic.xyz/v1", listOf(
         "meta-llama/Meta-Llama-3.3-70B-Instruct" to "Llama 3.3 70B", "deepseek-ai/DeepSeek-R1" to "DeepSeek R1",
@@ -361,7 +361,7 @@ class AIProviderFactory {
                 ZenProvider(),
                 GeminiProvider(),
                 GroqProvider(),
-                CerebrusProvider(),
+                CerebrasProvider(),
                 OpenRouterProvider(),
                 OmnirouteProvider(),
                 OpenAIProvider(),
@@ -377,8 +377,20 @@ class AIProviderFactory {
             }
             baseList
         }
+
+        fun create(name: String, apiKey: String = ""): AIProvider? {
+            val normalized = when (name.lowercase()) {
+                "cerebrus" -> "cerebras"
+                else -> name.lowercase()
+            }
+            return providers.firstOrNull { it.name.lowercase() == normalized }
+        }
     }
 }
+
+typealias AtriaProvider = GenericOpenAIProvider
+typealias TokenHarborProvider = GenericOpenAIProvider
+
 
 
 class KeepAliveSocketFactory(private val delegate: javax.net.SocketFactory = javax.net.SocketFactory.getDefault()) : javax.net.SocketFactory() {
@@ -1585,7 +1597,13 @@ class GeminiProvider : AIProvider {
                                         if (part.has("functionCall")) {
                                             val fc = part.getAsJsonObject("functionCall")
                                             val name = fc.get("name")?.asString ?: "unknown_function"
-                                            val args = fc.getAsJsonObject("args")?.toString() ?: "{}"
+                                            val argsEl = fc.get("args")
+                                            val args = when {
+                                                argsEl == null || argsEl.isJsonNull -> "{}"
+                                                argsEl.isJsonObject -> argsEl.toString()
+                                                argsEl.isJsonPrimitive -> argsEl.asString
+                                                else -> gson.toJson(argsEl)
+                                            }
                                             val callId = UUID.randomUUID().toString()
                                             onToolCall(ToolCall(callId, name, args))
                                         } else if (part.has("text") && !part.get("text").isJsonNull) {
@@ -1777,17 +1795,18 @@ class GroqProvider : AIProvider {
 }
 
 // ==========================================
-// 2.5. CEREBRUS PROVIDER
+// 2.5. CEREBRAS PROVIDER
 // ==========================================
-class CerebrusProvider : AIProvider {
-    override val name = "Cerebrus"
+class CerebrasProvider : AIProvider {
+    override val name = "Cerebras"
     override val isFree = false
     override val models = listOf(
-        AIModel("llama-3.3-70b", "Llama 3.3 70B (Fast WSE)", "Cerebrus", true, "128k tokens", "Free"),
-        AIModel("llama3.1-8b", "Llama 3.1 8B (Ultra Fast)", "Cerebrus", true, "8k tokens", "Free"),
-        AIModel("qwen2.5-72b", "Qwen 2.5 72B (WSE)", "Cerebrus", true, "128k tokens", "Free"),
-        AIModel("gpt-oss-120b", "GPT OSS 120B", "Cerebrus", true, "128k tokens", "Free"),
-        AIModel("gemma-4-31b", "Gemma 4 31B", "Cerebrus", true, "128k tokens", "Free")
+        AIModel("llama-3.3-70b", "Llama 3.3 70B (Fast WSE)", "Cerebras", true, "128k tokens", "Free"),
+        AIModel("llama3.1-8b", "Llama 3.1 8B (Ultra Fast)", "Cerebras", true, "8k tokens", "Free"),
+        AIModel("qwen2.5-72b", "Qwen 2.5 72B (WSE)", "Cerebras", true, "128k tokens", "Free"),
+        AIModel("qwen2.5-coder-32b", "Qwen 2.5 Coder 32B", "Cerebras", true, "128k tokens", "Free"),
+        AIModel("gpt-oss-120b", "GPT OSS 120B", "Cerebras", true, "128k tokens", "Free"),
+        AIModel("gemma-4-31b", "Gemma 4 31B", "Cerebras", true, "128k tokens", "Free")
     )
 
     override suspend fun streamCompletion(
@@ -1812,10 +1831,12 @@ class CerebrusProvider : AIProvider {
             onToolCall = onToolCall,
             onComplete = onComplete,
             onError = onError,
-            onUsage = onUsage
+            onUsage = onUsage,
+            providerName = "Cerebras"
         )
     }
 }
+typealias CerebrusProvider = CerebrasProvider
 
 // ==========================================
 // 3. OPENROUTER PROVIDER
@@ -1824,10 +1845,15 @@ class OpenRouterProvider : AIProvider {
     override val name = "OpenRouter"
     override val isFree = false
     override val models = listOf(
-        AIModel("google/gemma-2-9b-it:free", "Gemma 2 9B (Free)", "OpenRouter", true, "8k tokens", "Free"),
+        AIModel("deepseek/deepseek-r1:free", "DeepSeek R1 (Free)", "OpenRouter", true, "64k tokens", "Free"),
+        AIModel("deepseek/deepseek-chat:free", "DeepSeek V3 (Free)", "OpenRouter", true, "64k tokens", "Free"),
+        AIModel("meta-llama/llama-3.3-70b-instruct:free", "Llama 3.3 70B (Free)", "OpenRouter", true, "128k tokens", "Free"),
         AIModel("meta-llama/llama-3.1-8b-instruct:free", "Llama 3.1 8B (Free)", "OpenRouter", true, "128k tokens", "Free"),
+        AIModel("google/gemma-2-9b-it:free", "Gemma 2 9B (Free)", "OpenRouter", true, "8k tokens", "Free"),
         AIModel("qwen/qwen-2.5-72b-instruct:free", "Qwen 2.5 72B (Free)", "OpenRouter", true, "128k tokens", "Free"),
-        AIModel("nousresearch/hermes-3-llama-3.1-405b:free", "Hermes 3 405B (Free)", "OpenRouter", true, "128k tokens", "Free")
+        AIModel("nousresearch/hermes-3-llama-3.1-405b:free", "Hermes 3 405B (Free)", "OpenRouter", true, "128k tokens", "Free"),
+        AIModel("anthropic/claude-3.5-sonnet", "Claude 3.5 Sonnet", "OpenRouter", false, "200k tokens", "Paid"),
+        AIModel("openai/gpt-4o-mini", "GPT-4o Mini", "OpenRouter", false, "128k tokens", "Paid")
     )
 
     override suspend fun streamCompletion(
@@ -1852,7 +1878,8 @@ class OpenRouterProvider : AIProvider {
             onToolCall = onToolCall,
             onComplete = onComplete,
             onError = onError,
-            onUsage = onUsage
+            onUsage = onUsage,
+            providerName = "OpenRouter"
         )
     }
 }
@@ -2012,8 +2039,8 @@ class AnthropicProvider : AIProvider {
     ) {
         withContext(Dispatchers.IO) {
             try {
-                val baseUrl = resolveBaseUrl(customBaseUrl, "https://api.anthropic.com")
-                val url = "$baseUrl/v1/messages"
+                val cleanBase = resolveBaseUrl(customBaseUrl, "https://api.anthropic.com").trimEnd('/')
+                val url = if (cleanBase.endsWith("/v1")) "$cleanBase/messages" else "$cleanBase/v1/messages"
 
                 val msgArray = JsonArray()
                 var systemPrompt = ""
@@ -2172,6 +2199,7 @@ class AnthropicProvider : AIProvider {
                     var currentToolName = ""
                     val currentToolArgs = StringBuilder()
                     val collectedAnthropicText = StringBuilder()
+                    var inThinkingBlock = false
                     var anthropicInputTokens = 0
                     var anthropicOutputTokens = 0
 
@@ -2200,22 +2228,37 @@ class AnthropicProvider : AIProvider {
                                     }
                                     "content_block_start" -> {
                                         val block = ai.deepcode.android.util.SafeJson.obj(chunk, "content_block") ?: continue
-                                        if (ai.deepcode.android.util.SafeJson.string(block, "type") == "tool_use") {
+                                        val blockType = ai.deepcode.android.util.SafeJson.string(block, "type")
+                                        if (blockType == "tool_use") {
                                             currentToolCallId = ai.deepcode.android.util.SafeJson.string(block, "id") ?: ""
                                             currentToolName = ai.deepcode.android.util.SafeJson.string(block, "name") ?: ""
                                             currentToolArgs.setLength(0)
+                                        } else if (blockType == "thinking") {
+                                            inThinkingBlock = true
+                                            collectedAnthropicText.append("<thought>")
+                                            onToken("<thought>")
                                         }
                                     }
                                     "content_block_delta" -> {
                                         val delta = ai.deepcode.android.util.SafeJson.obj(chunk, "delta") ?: continue
                                         val text = ai.deepcode.android.util.SafeJson.string(delta, "text")
                                         val thinking = ai.deepcode.android.util.SafeJson.string(delta, "thinking")
-                                        if (text != null) {
-                                            collectedAnthropicText.append(text)
-                                            onToken(text)
-                                        } else if (thinking != null) {
+                                        if (thinking != null) {
+                                            if (!inThinkingBlock) {
+                                                inThinkingBlock = true
+                                                collectedAnthropicText.append("<thought>")
+                                                onToken("<thought>")
+                                            }
                                             collectedAnthropicText.append(thinking)
                                             onToken(thinking)
+                                        } else if (text != null) {
+                                            if (inThinkingBlock) {
+                                                inThinkingBlock = false
+                                                collectedAnthropicText.append("</thought>\n\n")
+                                                onToken("</thought>\n\n")
+                                            }
+                                            collectedAnthropicText.append(text)
+                                            onToken(text)
                                         } else {
                                             val partial = ai.deepcode.android.util.SafeJson.string(delta, "partial_json")
                                             if (partial != null) {
@@ -2224,6 +2267,11 @@ class AnthropicProvider : AIProvider {
                                         }
                                     }
                                     "content_block_stop" -> {
+                                        if (inThinkingBlock) {
+                                            inThinkingBlock = false
+                                            collectedAnthropicText.append("</thought>\n\n")
+                                            onToken("</thought>\n\n")
+                                        }
                                         if (currentToolName.isNotEmpty()) {
                                             onToolCall(ToolCall(currentToolCallId, currentToolName, currentToolArgs.toString()))
                                             currentToolName = ""
@@ -2236,6 +2284,11 @@ class AnthropicProvider : AIProvider {
                                 // Ignore
                             }
                         }
+                    }
+                    if (inThinkingBlock) {
+                        inThinkingBlock = false
+                        collectedAnthropicText.append("</thought>")
+                        onToken("</thought>")
                     }
                     if (anthropicInputTokens > 0 || anthropicOutputTokens > 0) {
                         onUsage?.invoke(TurnTokenUsage(anthropicInputTokens, anthropicOutputTokens, 0))
@@ -2262,7 +2315,10 @@ class MistralProvider : AIProvider {
     override val isFree = false
     override val models = listOf(
         AIModel("mistral-large-latest", "Mistral Large", "Mistral AI", false, "128k tokens", "Paid"),
-        AIModel("mistral-small-latest", "Mistral Small", "Mistral AI", false, "32k tokens", "Paid")
+        AIModel("mistral-small-latest", "Mistral Small", "Mistral AI", false, "32k tokens", "Paid"),
+        AIModel("codestral-latest", "Codestral", "Mistral AI", false, "256k tokens", "Paid"),
+        AIModel("pixtral-12b-2409", "Pixtral 12B", "Mistral AI", false, "128k tokens", "Paid"),
+        AIModel("open-mistral-nemo", "Mistral NeMo", "Mistral AI", false, "128k tokens", "Paid")
     )
 
     override suspend fun streamCompletion(
@@ -2287,7 +2343,8 @@ class MistralProvider : AIProvider {
             onToolCall = onToolCall,
             onComplete = onComplete,
             onError = onError,
-            onUsage = onUsage
+            onUsage = onUsage,
+            providerName = "Mistral AI"
         )
     }
 }
@@ -2613,7 +2670,14 @@ private suspend fun streamOpenAiCompatible(
 ) {
     withContext(Dispatchers.IO) {
         try {
-            val url = "$baseUrl/chat/completions"
+            val cleanBase = baseUrl.trim().trimEnd('/')
+            val url = when {
+                cleanBase.endsWith("/chat/completions") -> cleanBase
+                cleanBase.endsWith("/v1") -> "$cleanBase/chat/completions"
+                cleanBase.contains("/v1/") -> "$cleanBase/chat/completions"
+                cleanBase == "https://api.openai.com" || cleanBase == "https://api.deepseek.com" || cleanBase == "https://api.cerebras.ai" || cleanBase == "https://api.mistral.ai" -> "$cleanBase/v1/chat/completions"
+                else -> "$cleanBase/chat/completions"
+            }
             val effectiveModel = DecommissionedModels.sanitize(model)
             if (effectiveModel != model) {
                 ai.deepcode.android.util.AppLogger.w("AIProvider", "Proactively mapped decommissioned model '$model' to '$effectiveModel'")
@@ -2653,6 +2717,7 @@ private suspend fun streamOpenAiCompatible(
             payload.addProperty("model", effectiveModel)
             payload.add("messages", finalMessages)
             payload.addProperty("stream", true)
+            payload.add("stream_options", JsonObject().apply { addProperty("include_usage", true) })
 
             if (shouldIncludeTools(messages, tools)) {
                 val toolsArray = JsonArray()
@@ -2709,13 +2774,19 @@ private suspend fun streamOpenAiCompatible(
             }
 
             val requestBody = gson.toJson(payload).toRequestBody("application/json".toMediaType())
-            val request = Request.Builder()
+            val reqBuilder = Request.Builder()
                 .url(url)
                 .post(requestBody)
                 .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("Content-Type", "application/json")
+                .addHeader("Accept", "text/event-stream")
+                .addHeader("Cache-Control", "no-cache")
                 .header("User-Agent", if (url.contains("agentrouter", ignoreCase = true)) "codex_cli_rs/0.1.0" else "opencode/1.0")
-                .build()
+            if (url.contains("openrouter.ai")) {
+                reqBuilder.addHeader("HTTP-Referer", "https://deepcode.ai")
+                reqBuilder.addHeader("X-Title", "DeepCode")
+            }
+            val request = reqBuilder.build()
 
             val accumulatedReasoning = StringBuilder()
             val accumulatedContent = StringBuilder()
@@ -2798,6 +2869,7 @@ private suspend fun streamOpenAiCompatible(
                 var usageInput = 0
                 var usageOutput = 0
                 var usageReasoning = 0
+                var usageCacheRead = 0
 
                 while (source.readUtf8Line().also { line = it } != null) {
                     val cleaned = line!!.trim()
@@ -2810,11 +2882,32 @@ private suspend fun streamOpenAiCompatible(
 
                         try {
                             val chunk = gson.fromJson(dataVal, JsonObject::class.java)
+                            if (chunk.has("error") && !chunk.get("error").isJsonNull) {
+                                val errObj = chunk.get("error")
+                                val errMsg = if (errObj.isJsonObject) {
+                                    errObj.asJsonObject.get("message")?.asString ?: gson.toJson(errObj)
+                                } else {
+                                    errObj.asString
+                                }
+                                if (ApiKeyRotator.isRotatableError(null, 429, errMsg)) {
+                                    throw RateLimitException(providerName ?: effectiveModel, 429, errMsg)
+                                }
+                                throw Exception("Stream error: $errMsg")
+                            }
                             if (chunk.has("usage") && !chunk.get("usage").isJsonNull) {
                                 val u = chunk.getAsJsonObject("usage")
                                 usageInput = u.get("prompt_tokens")?.asInt ?: 0
                                 usageOutput = u.get("completion_tokens")?.asInt ?: 0
-                                usageReasoning = u.get("reasoning_tokens")?.asInt ?: 0
+                                val reasoningFromDetails = try {
+                                    u.getAsJsonObject("completion_tokens_details")?.get("reasoning_tokens")?.asInt
+                                } catch (_: Exception) { null }
+                                usageReasoning = reasoningFromDetails ?: (u.get("reasoning_tokens")?.asInt ?: 0)
+                                val cachedTokens = try {
+                                    u.getAsJsonObject("prompt_tokens_details")?.get("cached_tokens")?.asInt ?: 0
+                                } catch (_: Exception) { 0 }
+                                if (cachedTokens > 0) {
+                                    usageCacheRead = cachedTokens
+                                }
                             }
                             val choices = chunk.getAsJsonArray("choices")
                             if (choices != null && choices.size() > 0) {
@@ -2842,7 +2935,7 @@ private suspend fun streamOpenAiCompatible(
                                         val tcArray = delta.getAsJsonArray("tool_calls") ?: continue
                                         for (i in 0 until tcArray.size()) {
                                             val tcElement = try { tcArray.get(i).asJsonObject } catch (_: Exception) { continue }
-                                            val index = try { tcElement.get("index")?.asInt ?: 0 } catch (_: Exception) { 0 }
+                                            val index = try { tcElement.get("index")?.asInt ?: i } catch (_: Exception) { i }
                                             val builder = toolCallBuilders.getOrPut(index) { ToolCallBuilder() }
                                             
                                             if (tcElement.has("id") && !tcElement.get("id").isJsonNull) {
@@ -2853,7 +2946,14 @@ private suspend fun streamOpenAiCompatible(
                                             if (function != null) {
                                                 if (function.has("name") && !function.get("name").isJsonNull) {
                                                     val nameEl = function.get("name")
-                                                    builder.name = if (nameEl.isJsonPrimitive) nameEl.asString else nameEl.toString()
+                                                    val nameStr = if (nameEl.isJsonPrimitive) nameEl.asString else nameEl.toString()
+                                                    if (nameStr.isNotBlank()) {
+                                                        if (builder.name.isEmpty()) {
+                                                            builder.name = nameStr
+                                                        } else if (!builder.name.endsWith(nameStr) && builder.name != nameStr) {
+                                                            builder.name += nameStr
+                                                        }
+                                                    }
                                                 }
                                                 if (function.has("arguments") && !function.get("arguments").isJsonNull) {
                                                     val argEl = function.get("arguments")
@@ -2866,23 +2966,51 @@ private suspend fun streamOpenAiCompatible(
                                 }
                             }
                         } catch (e: Exception) {
-                            // Ignore
+                            if (e is RateLimitException || e.message?.startsWith("Stream error:") == true) throw e
                         }
                     }
                 }
                 
+                var foundEmbeddedToolCall = false
+                if (toolCallBuilders.isEmpty()) {
+                    val contentStr = accumulatedContent.toString()
+                    val rawToolCallPattern = Regex("""(?s)(?:\]<\]minimax\[>\[\s*)?<tool_call>\s*(\{[^<]+\})\s*(?:</tool_call>)?""")
+                    val m = rawToolCallPattern.find(contentStr)
+                    if (m != null) {
+                        val jsonStr = m.groupValues[1].trim()
+                        try {
+                            val jsonObj = JsonParser.parseString(jsonStr).asJsonObject
+                            val name = jsonObj.get("name")?.asString ?: ""
+                            val argsObj = jsonObj.get("arguments")
+                            val argsStr = when {
+                                argsObj == null -> "{}"
+                                argsObj.isJsonPrimitive -> argsObj.asString
+                                else -> gson.toJson(argsObj)
+                            }
+                            if (name.isNotEmpty()) {
+                                val tcId = "call_" + UUID.randomUUID().toString().take(8)
+                                val cleanRemaining = contentStr.removeRange(m.range).trim()
+                                accumulatedContent.setLength(0)
+                                accumulatedContent.append(cleanRemaining)
+                                try { onToolCall(ToolCall(tcId, name, argsStr)) } catch (_: Exception) {}
+                                foundEmbeddedToolCall = true
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
+
                 toolCallBuilders.values.forEach { builder ->
                     if (builder.name.isNotEmpty()) {
                         onToolCall(ToolCall(builder.getValidId(), builder.name, builder.arguments.toString()))
                     }
                 }
                 if (usageInput > 0 || usageOutput > 0) {
-                    onUsage?.invoke(TurnTokenUsage(usageInput, usageOutput, usageReasoning))
+                    onUsage?.invoke(TurnTokenUsage(usageInput, usageOutput, usageReasoning, usageCacheRead, 0))
                 } else {
                     val estimatedInput = messages.sumOf { it.content.length / 4 }
                     val accumulatedText = accumulatedContent.toString()
                     val estimatedOutput = (accumulatedText.length / 4).coerceAtLeast(1)
-                    onUsage?.invoke(TurnTokenUsage(estimatedInput, estimatedOutput, 0))
+                    onUsage?.invoke(TurnTokenUsage(estimatedInput, estimatedOutput, 0, 0, 0))
                 }
             }
             val finalAnswer = if (accumulatedContent.isNotEmpty()) {
@@ -2948,8 +3076,8 @@ class AntigravityProvider : AIProvider {
         onUsage: ((TurnTokenUsage) -> Unit)?
     ) = withContext(Dispatchers.IO) {
         try {
-            val baseUrl = resolveBaseUrl(customBaseUrl, "https://daily-cloudcode-pa.googleapis.com")
-            val url = "$baseUrl/v1internal:streamGenerateContent?alt=sse"
+            val cleanBase = resolveBaseUrl(customBaseUrl, "https://daily-cloudcode-pa.googleapis.com").trimEnd('/')
+            val url = if (cleanBase.endsWith("/v1internal")) "$cleanBase:streamGenerateContent?alt=sse" else "$cleanBase/v1internal:streamGenerateContent?alt=sse"
             val parts2 = apiKey.split("||", limit = 2)
             val oauthToken = parts2[0]
 
@@ -2994,6 +3122,7 @@ class AntigravityProvider : AIProvider {
             val reader = BufferedReader(InputStreamReader(bodyStream))
             var collectedText = StringBuilder()
             var hasError = false
+            var inThoughtBlock = false
             var debugLines = mutableListOf<String>()
             val maxDebugLines = 5
             var toolCallCounter = 0
@@ -3036,20 +3165,41 @@ class AntigravityProvider : AIProvider {
                                 if (parts != null) {
                                     for (i in 0 until parts.size()) {
                                         val part = parts[i].asJsonObject
-                                        if (part.has("text") && !part.has("thought") && !part.has("thoughtSignature")) {
+                                        val isThought = (part.has("thought") && part.get("thought")?.asBoolean == true) || part.has("thoughtSignature")
+                                        if (part.has("text") && !part.get("text").isJsonNull) {
                                             val text = part.get("text").asString ?: ""
                                             if (text.isNotEmpty()) {
-                                                onToken(text)
-                                                collectedText.append(text)
+                                                if (isThought) {
+                                                    if (!inThoughtBlock) {
+                                                        inThoughtBlock = true
+                                                        onToken("<thought>")
+                                                        collectedText.append("<thought>")
+                                                    }
+                                                    onToken(text)
+                                                    collectedText.append(text)
+                                                } else {
+                                                    if (inThoughtBlock) {
+                                                        inThoughtBlock = false
+                                                        onToken("</thought>\n\n")
+                                                        collectedText.append("</thought>\n\n")
+                                                    }
+                                                    onToken(text)
+                                                    collectedText.append(text)
+                                                }
                                             }
                                         }
                                         if (part.has("functionCall")) {
                                             val fc = part.getAsJsonObject("functionCall")
                                             val name = fc.get("name")?.asString ?: ""
-                                            val args = fc.get("args")?.asJsonObject
+                                            val argsEl = fc.get("args")
+                                            val argsStr = when {
+                                                argsEl == null || argsEl.isJsonNull -> "{}"
+                                                argsEl.isJsonObject -> argsEl.toString()
+                                                argsEl.isJsonPrimitive -> argsEl.asString
+                                                else -> gson.toJson(argsEl)
+                                            }
                                             if (name.isNotEmpty()) {
                                                 hasFunctionCalls = true
-                                                val argsStr = args?.toString() ?: "{}"
                                                 onToolCall(ToolCall(id = "tc_${toolCallCounter++}", name = name, arguments = argsStr))
                                             }
                                         }
@@ -3073,6 +3223,11 @@ class AntigravityProvider : AIProvider {
                 }
             }
             reader.close()
+            if (inThoughtBlock) {
+                inThoughtBlock = false
+                onToken("</thought>")
+                collectedText.append("</thought>")
+            }
             if (!hasError) {
                 if (collectedText.isEmpty() && !hasFunctionCalls && debugLines.isNotEmpty()) {
                     onError(Exception("Antigravity returned no text. Raw events:\n${debugLines.joinToString("\n")}"))

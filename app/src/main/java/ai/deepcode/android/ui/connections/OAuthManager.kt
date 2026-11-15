@@ -8,19 +8,23 @@ import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
 import ai.deepcode.android.service.google.GoogleAuthService
 import ai.deepcode.android.service.google.GoogleTokens
+import ai.deepcode.android.util.AppLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import java.net.InetAddress
 import java.net.ServerSocket
 import java.util.UUID
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
+/**
+ * Hardened OAuth lifecycle manager for external integrations and Google services.
+ *
+ * Guarantees:
+ * 1. Safe credential handling — no access tokens, refresh tokens, or auth codes leaked to logs.
+ * 2. Accurate connection state transitions — never marks status as connected without a verified token.
+ * 3. Secure local loopback server binding strictly to 127.0.0.1.
+ */
 class OAuthManager(private val context: Context, private val scope: CoroutineScope? = null) {
     private val repository = IntegrationRepository(context)
     private val googleAuth = GoogleAuthService(context)
@@ -74,9 +78,7 @@ class OAuthManager(private val context: Context, private val scope: CoroutineSco
                     else -> GoogleAuthService.IDENTITY_SCOPES
                 }
 
-                val integration = repository.getIntegrationByAppId(appId)
-                if (integration == null) return@withContext false
-
+                val integration = repository.getIntegrationByAppId(appId) ?: return@withContext false
                 var accessToken = ""
 
                 try {
@@ -84,43 +86,64 @@ class OAuthManager(private val context: Context, private val scope: CoroutineSco
                     if (tokenResult.isSuccess) {
                         accessToken = tokenResult.getOrThrow()
                     }
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    addLog("Device auth token retrieval exception: ${e.javaClass.simpleName}")
+                }
                 googleAuth.saveGoogleAccountEmail(account.name)
 
-                // Instantly attach selected email to integration so it gets connected like native apps
                 val now = System.currentTimeMillis()
-                val updated = integration.copy(
-                    displayName = account.name,
-                    status = "connected",
-                    accessToken = accessToken,
-                    connectedAt = now,
-                    lastSyncedAt = now
-                )
-                repository.insertIntegration(updated)
+                if (accessToken.isNotBlank()) {
+                    // Valid auth token retrieved from device AccountManager
+                    val updated = integration.copy(
+                        displayName = account.name,
+                        status = "connected",
+                        accessToken = accessToken,
+                        connectedAt = now,
+                        lastSyncedAt = now
+                    )
+                    repository.insertIntegration(updated)
 
-                // Also attach related Google sub-services
-                val subServices = listOf("gmail", "google_calendar", "google_drive", "google_account")
-                for (subId in subServices) {
-                    val sub = repository.getIntegrationByAppId(subId)
-                    if (sub != null && sub.status != "connected") {
-                        val subUpdated = sub.copy(
-                            displayName = account.name,
-                            status = "connected",
-                            accessToken = accessToken,
-                            connectedAt = now,
-                            lastSyncedAt = now
-                        )
-                        repository.insertIntegration(subUpdated)
+                    val subServices = listOf("gmail", "google_calendar", "google_drive", "google_account")
+                    for (subId in subServices) {
+                        val sub = repository.getIntegrationByAppId(subId)
+                        if (sub != null && sub.status != "connected") {
+                            val subUpdated = sub.copy(
+                                displayName = account.name,
+                                status = "connected",
+                                accessToken = accessToken,
+                                connectedAt = now,
+                                lastSyncedAt = now
+                            )
+                            repository.insertIntegration(subUpdated)
+                        }
                     }
+                    return@withContext true
                 }
 
-                if (accessToken.isBlank() && googleAuth.getClientId().isNotBlank()) {
-                    // Pass loginHint so web auth pre-selects the chosen account without asking for login/password
-                    performLoopbackOAuth(appId, allScopes, loginHint = account.name)
+                // If device token was unavailable, set state to "connecting" and attempt loopback OAuth
+                if (googleAuth.getClientId().isNotBlank()) {
+                    val connectingIntegration = integration.copy(
+                        displayName = account.name,
+                        status = "connecting",
+                        lastSyncedAt = now
+                    )
+                    repository.insertIntegration(connectingIntegration)
+
+                    val loopbackSuccess = performLoopbackOAuth(appId, allScopes, loginHint = account.name)
+                    if (!loopbackSuccess) {
+                        val failedIntegration = integration.copy(
+                            displayName = account.name,
+                            status = "error",
+                            lastSyncedAt = System.currentTimeMillis()
+                        )
+                        repository.insertIntegration(failedIntegration)
+                    }
+                    return@withContext loopbackSuccess
                 }
 
-                return@withContext true
+                return@withContext false
             } catch (e: Exception) {
+                addLog("performDeviceAuth error: ${e.javaClass.simpleName}")
                 false
             }
         }
@@ -128,7 +151,8 @@ class OAuthManager(private val context: Context, private val scope: CoroutineSco
 
     private suspend fun performLoopbackOAuth(appId: String, scopes: List<String>, loginHint: String? = null): Boolean {
         return withContext(Dispatchers.IO) {
-            val server = ServerSocket(0)
+            val loopbackAddress = InetAddress.getByName(GoogleAuthService.LOOPBACK_HOST)
+            val server = ServerSocket(0, 50, loopbackAddress)
             val port = server.localPort
             server.soTimeout = 120000
             addLog("Loopback OAuth server started on port $port")
@@ -257,7 +281,7 @@ class OAuthManager(private val context: Context, private val scope: CoroutineSco
     suspend fun handleGoogleCodeExchange(appId: String, code: String): String {
         return withContext(Dispatchers.IO) {
             val result = googleAuth.exchangeCodeForTokensSync(code)
-            if (result.isFailure) return@withContext "Error: ${result.exceptionOrNull()?.message}"
+            if (result.isFailure) return@withContext "Error: ${sanitizeOAuthLog(result.exceptionOrNull()?.message.orEmpty())}"
             val tokens = result.getOrThrow()
             val integration = repository.getIntegrationByAppId(appId)
             if (integration == null) return@withContext "Error: Integration not found"
@@ -295,7 +319,11 @@ class OAuthManager(private val context: Context, private val scope: CoroutineSco
 
         return when (appId) {
             "google_account", "gmail", "google_calendar", "google_drive" -> handleGoogleCallback(integration, appId, code)
-            else -> handleMockCallback(integration)
+            else -> {
+                addLog("Unsupported callback for $appId")
+                repository.insertIntegration(integration.copy(status = ConnectionStatus.ERROR))
+                false
+            }
         }
     }
 
@@ -304,13 +332,25 @@ class OAuthManager(private val context: Context, private val scope: CoroutineSco
         appId: String,
         code: String
     ): Boolean {
-        if (code == "missing_client_id" || code.startsWith("mock_code_")) {
-            return handleMockCallback(integration)
+        if (code == "missing_client_id") {
+            addLog("Google OAuth aborted: Google Client ID is missing. Configure Client ID in Settings.")
+            repository.insertIntegration(integration.copy(status = ConnectionStatus.ERROR))
+            return false
+        }
+        if (code.startsWith("mock_code_")) {
+            addLog("Mock OAuth code rejected. Real authentication required.")
+            repository.insertIntegration(integration.copy(status = ConnectionStatus.ERROR))
+            return false
         }
         return withContext(Dispatchers.IO) {
             try {
                 val result = googleAuth.exchangeCodeForTokens(code)
-                if (result.isFailure) return@withContext false
+                if (result.isFailure) {
+                    addLog("Google callback token exchange failed: ${result.exceptionOrNull()?.message}")
+                    val failed = integration.copy(status = ConnectionStatus.ERROR, lastSyncedAt = System.currentTimeMillis())
+                    repository.insertIntegration(failed)
+                    return@withContext false
+                }
                 val tokens = result.getOrThrow()
 
                 var dispName = integration.displayName
@@ -330,7 +370,7 @@ class OAuthManager(private val context: Context, private val scope: CoroutineSco
                 val updated = integration.copy(
                     displayName = dispName,
                     iconUrl = pictureUrl,
-                    status = "connected",
+                    status = ConnectionStatus.CONNECTED,
                     accessToken = tokens.accessToken,
                     refreshToken = tokens.refreshToken.ifEmpty { integration.refreshToken },
                     connectedAt = System.currentTimeMillis(),
@@ -342,9 +382,9 @@ class OAuthManager(private val context: Context, private val scope: CoroutineSco
                     val subServices = listOf("gmail", "google_calendar", "google_drive")
                     for (subId in subServices) {
                         val sub = repository.getIntegrationByAppId(subId)
-                        if (sub != null && sub.status != "connected") {
+                        if (sub != null && sub.status != ConnectionStatus.CONNECTED) {
                             val subUpdated = sub.copy(
-                                status = "connected",
+                                status = ConnectionStatus.CONNECTED,
                                 accessToken = tokens.accessToken,
                                 refreshToken = tokens.refreshToken.ifEmpty { sub.refreshToken },
                                 connectedAt = System.currentTimeMillis(),
@@ -357,6 +397,8 @@ class OAuthManager(private val context: Context, private val scope: CoroutineSco
 
                 true
             } catch (e: Exception) {
+                addLog("handleGoogleCallback exception: ${e.javaClass.simpleName}")
+                repository.insertIntegration(integration.copy(status = ConnectionStatus.ERROR))
                 false
             }
         }
@@ -375,6 +417,22 @@ class OAuthManager(private val context: Context, private val scope: CoroutineSco
     }
 
     private fun addLog(message: String) {
-        ai.deepcode.android.util.AppLogger.i("OAuthManager", message)
+        AppLogger.i("OAuthManager", sanitizeOAuthLog(message))
+    }
+
+    companion object {
+        private val BEARER_REGEX = Regex("""(?i)Bearer\s+[a-zA-Z0-9_\-\.]+""")
+        private val SENSITIVE_PARAM_REGEX = Regex(
+            """(?i)(code|access_token|refresh_token|client_secret|api[_-]?key)\s*[:=]\s*([^\s&,"']+)"""
+        )
+
+        fun sanitizeOAuthLog(raw: String): String {
+            if (raw.isEmpty()) return raw
+            var cleaned = BEARER_REGEX.replace(raw, "Bearer [REDACTED]")
+            cleaned = SENSITIVE_PARAM_REGEX.replace(cleaned) { match ->
+                "${match.groupValues[1]}=[REDACTED]"
+            }
+            return cleaned
+        }
     }
 }

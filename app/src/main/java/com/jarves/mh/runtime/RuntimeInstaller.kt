@@ -275,6 +275,10 @@ class RuntimeInstaller(private val context: Context) {
 
     val agyVersion: String get() = agyMarker.readTextOrNull().orEmpty()
 
+    val hermesVersion: String get() = hermesMarker.readTextOrNull().orEmpty()
+
+    val opencodeVersion: String get() = opencodeMarker.readTextOrNull().orEmpty()
+
     val githubCliVersion: String get() = githubCliMarker.readTextOrNull().orEmpty()
 
     fun isGitHubCliInstalled(): Boolean = isInstalled() &&

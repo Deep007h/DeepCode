@@ -56,11 +56,15 @@ object PluginRegistry {
         register(ai.deepcode.android.plugin.builtin.SystemToolkitPlugin())
         register(ai.deepcode.android.plugin.builtin.VideoIntelligencePlugin())
 
-        // Google Workspace connector plugins
+        // External service connector plugins
         appContext?.let { ctx ->
             register(ai.deepcode.android.connector.google.GmailConnectorPlugin(ctx))
             register(ai.deepcode.android.connector.google.CalendarConnectorPlugin(ctx))
             register(ai.deepcode.android.connector.google.DriveConnectorPlugin(ctx))
+            register(ai.deepcode.android.connector.github.GitHubConnectorPlugin(ctx))
+            register(ai.deepcode.android.connector.notion.NotionConnectorPlugin(ctx))
+            register(ai.deepcode.android.connector.telegram.TelegramConnectorPlugin(ctx))
+            register(ai.deepcode.android.connector.whatsapp.WhatsAppConnectorPlugin(ctx))
         }
     }
 

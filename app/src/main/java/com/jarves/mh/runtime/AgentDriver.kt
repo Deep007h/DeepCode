@@ -46,6 +46,7 @@ class AgentRegistry(drivers: List<AgentDriver>) {
             deepSeek: RuntimeBridge,
             antigravity: RuntimeBridge,
             hermes: RuntimeBridge? = null,
+            opencode: RuntimeBridge? = null,
         ) = AgentRegistry(
             listOf(
                 BuiltInAgentDriver(
@@ -89,6 +90,17 @@ class AgentRegistry(drivers: List<AgentDriver>) {
                         AgentCapability.PROVIDER_PICKER,
                         AgentCapability.MODEL_PICKER,
                         AgentCapability.RESUME,
+                    ),
+                ),
+                BuiltInAgentDriver(
+                    AgentKind.OPENCODE,
+                    opencode ?: deepSeek,
+                    setOf(
+                        AgentCapability.API_KEY,
+                        AgentCapability.PROVIDER_PICKER,
+                        AgentCapability.MODEL_PICKER,
+                        AgentCapability.RESUME,
+                        AgentCapability.INTERACTIVE_APPROVALS,
                     ),
                 ),
             ),

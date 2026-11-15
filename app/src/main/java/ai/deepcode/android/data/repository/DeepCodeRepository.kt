@@ -196,6 +196,17 @@ class DeepCodeRepository(context: Context) {
         }
     }
 
+    fun updateNotionToken(token: String?) {
+        val cleanToken = token?.trim()?.takeIf { it.isNotEmpty() }
+        if (cleanToken != null) {
+            securePrefs.saveSetting("notion_token", cleanToken)
+            toolExecutor.notionService = ai.deepcode.android.service.notion.NotionService(cleanToken)
+        } else {
+            securePrefs.saveSetting("notion_token", "")
+            toolExecutor.notionService = null
+        }
+    }
+
     fun getGitStatus(workingDir: String): GitInfo {
         return gitService.getGitStatus(workingDir)
     }

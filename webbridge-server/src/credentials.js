@@ -35,6 +35,10 @@ export class CredentialVault {
     this._store.delete(platform.toLowerCase());
   }
 
+  remove(platform) {
+    this.delete(platform);
+  }
+
   clear() {
     this._store.clear();
   }

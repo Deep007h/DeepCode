@@ -23,4 +23,12 @@ class IntegrationRepository(context: Context) {
     suspend fun updateConnectionStatus(appId: String, status: String, accessToken: String, refreshToken: String, connectedAt: Long) {
         integrationDao.updateConnectionStatus(appId, status, accessToken, refreshToken, connectedAt)
     }
+
+    suspend fun updateStatusOnly(appId: String, status: String) {
+        integrationDao.updateStatusOnly(appId, status)
+    }
+
+    suspend fun updateStatusAndSyncTime(appId: String, status: String, lastSyncedAt: Long) {
+        integrationDao.updateStatusAndSyncTime(appId, status, lastSyncedAt)
+    }
 }

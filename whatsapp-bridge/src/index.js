@@ -109,6 +109,18 @@ app.post('/presence', async (req, res) => {
 });
 
 // ── Start ──
-app.listen(PORT, HOST, () => {
+const server = app.listen(PORT, HOST, () => {
   console.log(`WhatsApp Bridge server listening on http://${HOST}:${PORT}`);
+});
+
+process.on('SIGINT', () => {
+  console.log('Shutting down WhatsApp Bridge (SIGINT)...');
+  wa.disconnect();
+  server.close(() => process.exit(0));
+});
+
+process.on('SIGTERM', () => {
+  console.log('Shutting down WhatsApp Bridge (SIGTERM)...');
+  wa.disconnect();
+  server.close(() => process.exit(0));
 });

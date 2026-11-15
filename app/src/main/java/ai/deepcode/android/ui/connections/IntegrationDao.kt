@@ -28,4 +28,10 @@ interface IntegrationDao {
 
     @Query("UPDATE integrations SET status = :status, access_token = :accessToken, refresh_token = :refreshToken, connected_at = :connectedAt WHERE app_id = :appId")
     suspend fun updateConnectionStatus(appId: String, status: String, accessToken: String, refreshToken: String, connectedAt: Long)
+
+    @Query("UPDATE integrations SET status = :status WHERE app_id = :appId")
+    suspend fun updateStatusOnly(appId: String, status: String)
+
+    @Query("UPDATE integrations SET status = :status, last_synced_at = :lastSyncedAt WHERE app_id = :appId")
+    suspend fun updateStatusAndSyncTime(appId: String, status: String, lastSyncedAt: Long)
 }

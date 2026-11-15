@@ -1,5 +1,6 @@
 package ai.deepcode.android.domain.model
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 
 data class ChatSession(
@@ -14,6 +15,7 @@ data class ChatSession(
     val isCompacting: Boolean = false
 )
 
+@Immutable
 data class Message(
     val id: String,
     val sessionId: String,

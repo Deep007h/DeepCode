@@ -146,8 +146,8 @@ fun ConnectionsScreen(
         viewModel.onAccountPicked(result.data)
     }
 
-    val activeConnections = integrations.filter { it.status == "connected" }
-    val availableConnections = integrations.filter { it.status != "connected" }
+    val activeConnections = integrations.filter { it.status != ConnectionStatus.DISCONNECTED }
+    val availableConnections = integrations.filter { it.status == ConnectionStatus.DISCONNECTED }
 
     var showAllAvailable by remember { mutableStateOf(false) }
     val displayedAvailable = if (showAllAvailable) availableConnections else availableConnections.take(6)
@@ -162,16 +162,42 @@ fun ConnectionsScreen(
     ) {
         // Top Connection / Status Card
         item {
-            val hasActiveIntegrations = activeConnections.isNotEmpty() || whatsAppConnected
-            val statusTitle = if (hasActiveIntegrations) "Connected" else "Disconnected"
+            val anyConnected = activeConnections.any { it.status == ConnectionStatus.CONNECTED } || whatsAppConnected
+            val anyConnecting = activeConnections.any { it.status == ConnectionStatus.CONNECTING }
+            val anyExpired = activeConnections.any { it.status == ConnectionStatus.EXPIRED }
+            val anyError = activeConnections.any { it.status == ConnectionStatus.ERROR }
+
+            val statusTitle = when {
+                anyConnected -> "Connected"
+                anyConnecting -> "Connecting..."
+                anyExpired -> "Expired"
+                anyError -> "Error"
+                else -> "Disconnected"
+            }
+            val connectedCount = activeConnections.count { it.status == ConnectionStatus.CONNECTED }
             val statusSubtitle = when {
-                whatsAppConnected && activeConnections.isNotEmpty() -> "WhatsApp Bridge & ${activeConnections.size} service(s) active"
+                whatsAppConnected && connectedCount > 0 -> "WhatsApp Bridge & $connectedCount service(s) active"
                 whatsAppConnected -> "WhatsApp Bridge Active"
-                activeConnections.isNotEmpty() -> "${activeConnections.size} integration service(s) active"
+                connectedCount > 0 -> "$connectedCount integration service(s) active"
+                anyConnecting -> "Connecting to external services..."
+                anyExpired -> "Credentials expired. Reconnect required."
+                anyError -> "Connection error. Check console logs."
                 else -> "No active network"
             }
-            val statusColor = if (hasActiveIntegrations) Color(0xFF10B981) else Color(0xFFE53935)
-            val statusIcon = if (hasActiveIntegrations) Icons.Default.Wifi else Icons.Default.WifiOff
+            val statusColor = when {
+                anyConnected -> Color(0xFF10B981)
+                anyConnecting -> Color(0xFF3B82F6)
+                anyExpired -> Color(0xFFF59E0B)
+                anyError -> Color(0xFFEF4444)
+                else -> Color(0xFFE53935)
+            }
+            val statusIcon = when {
+                anyConnected -> Icons.Default.Wifi
+                anyConnecting -> Icons.Default.Sync
+                anyExpired -> Icons.Default.Warning
+                anyError -> Icons.Default.ErrorOutline
+                else -> Icons.Default.WifiOff
+            }
 
             var isRefreshing by remember { mutableStateOf(false) }
             val refreshRotation by animateFloatAsState(
@@ -236,7 +262,7 @@ fun ConnectionsScreen(
                             .background(AppDivider)
                             .bouncyClickable(provideHaptic = true) {
                                 isRefreshing = true
-                                viewModel.checkWhatsAppHealth()
+                                viewModel.checkAllHealth()
                             },
                         contentAlignment = Alignment.Center
                     ) {
@@ -388,13 +414,36 @@ fun ConnectionsScreen(
             }
         } else {
             items(activeConnections, key = { it.id }) { connection ->
+                val (statusLabel, statusColor) = when (connection.status.lowercase()) {
+                    ConnectionStatus.CONNECTED -> "Connected" to Color(0xFF10B981)
+                    ConnectionStatus.CONNECTING -> "Connecting..." to Color(0xFF3B82F6)
+                    ConnectionStatus.EXPIRED -> "Expired" to Color(0xFFF59E0B)
+                    ConnectionStatus.ERROR -> "Error" to Color(0xFFEF4444)
+                    else -> "Disconnected" to AppMuted
+                }
+
                 Row(
                     modifier = Modifier
                         .animateItem()
                         .fillMaxWidth()
                         .depthCard(shape = RoundedCornerShape(16.dp), elevation = 2.5.dp, isDark = isDarkThemeActive)
-                        .clickable(enabled = connection.appId == "chatgpt") {
-                            showChatGPTDialog = true
+                        .clickable {
+                            when (connection.appId) {
+                                "chatgpt" -> showChatGPTDialog = true
+                                "telegram" -> showTelegramDialog = true
+                                "notion" -> showNotionDialog = true
+                                "github" -> showGitHubDialog = true
+                                "whatsapp" -> {
+                                    showWhatsAppQRDialog = true
+                                    viewModel.connectWhatsApp()
+                                }
+                                "google_account", "gmail", "google_calendar", "google_drive" -> {
+                                    if (connection.status != ConnectionStatus.CONNECTED) {
+                                        val intent = viewModel.getAccountPickerIntent(connection.appId)
+                                        accountPickerLauncher.launch(intent)
+                                    }
+                                }
+                            }
                         }
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -421,13 +470,13 @@ fun ConnectionsScreen(
                                     modifier = Modifier
                                         .size(6.dp)
                                         .clip(CircleShape)
-                                        .background(Color(0xFF10B981))
+                                        .background(statusColor)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "Connected",
+                                    text = statusLabel,
                                     fontSize = 11.sp,
-                                    color = Color(0xFF10B981)
+                                    color = statusColor
                                 )
                                 Text(
                                     text = "  • Last synced: ${

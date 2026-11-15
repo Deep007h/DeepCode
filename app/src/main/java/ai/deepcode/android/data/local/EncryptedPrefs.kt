@@ -7,35 +7,43 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-class EncryptedPrefs private constructor(context: Context) {
-    private val sharedPrefs = try {
-        createEncryptedPrefs(context)
-    } catch (e: Exception) {
-        try {
-            context.deleteSharedPreferences("deepcode_secure_prefs")
-            val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-            keyStore.deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
-        } catch (_: Exception) {}
-        try {
-            createEncryptedPrefs(context)
-        } catch (e2: Exception) {
-            context.getSharedPreferences("deepcode_secure_prefs_fallback", Context.MODE_PRIVATE)
-        }
+class EncryptedPrefs private constructor(context: Context?, customPrefs: android.content.SharedPreferences? = null) {
+    private val appContext: Context? = context?.applicationContext
+
+    @Volatile
+    private var sharedPrefs: android.content.SharedPreferences = customPrefs ?: run {
+        requireNotNull(context) { "Context must be provided if customPrefs is null" }
+        initPrefs(context)
     }
+
+    internal constructor(customPrefs: android.content.SharedPreferences) : this(null, customPrefs)
+
+    internal constructor(context: Context) : this(context, null)
 
     companion object {
         @Volatile
         private var instance: EncryptedPrefs? = null
 
+        const val MAX_API_KEYS_PER_PROVIDER = 6
+        private const val PREFS_FILE = "deepcode_secure_prefs"
+        private const val FALLBACK_PREFS_FILE = "deepcode_secure_prefs_fallback"
+
         /**
          * Thread-safe singleton accessor. Always uses applicationContext to avoid
          * Activity/Fragment lifecycle leaks. The EncryptedSharedPreferences and
-         * MasterKey are initialized exactly once.
+         * MasterKey are initialized safely.
          */
         fun getInstance(context: Context): EncryptedPrefs {
             return instance ?: synchronized(this) {
                 instance ?: EncryptedPrefs(context.applicationContext).also { instance = it }
             }
+        }
+
+        /**
+         * Test factory for providing in-memory or mock SharedPreferences.
+         */
+        fun forTesting(prefs: android.content.SharedPreferences): EncryptedPrefs {
+            return EncryptedPrefs(prefs)
         }
 
         private fun createEncryptedPrefs(context: Context): android.content.SharedPreferences {
@@ -44,14 +52,82 @@ class EncryptedPrefs private constructor(context: Context) {
                 .build()
             return EncryptedSharedPreferences.create(
                 context,
-                "deepcode_secure_prefs",
+                PREFS_FILE,
                 masterKey,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
         }
 
-        const val MAX_API_KEYS_PER_PROVIDER = 6
+        private fun initPrefs(context: Context): android.content.SharedPreferences {
+            return try {
+                createEncryptedPrefs(context)
+            } catch (e: Exception) {
+                ai.deepcode.android.util.AppLogger.w("EncryptedPrefs", "Failed initial createEncryptedPrefs, attempting reset: ${e.javaClass.simpleName}")
+                try {
+                    context.deleteSharedPreferences(PREFS_FILE)
+                    val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                    if (keyStore.containsAlias(MasterKey.DEFAULT_MASTER_KEY_ALIAS)) {
+                        keyStore.deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
+                    }
+                } catch (_: Exception) {}
+                try {
+                    createEncryptedPrefs(context)
+                } catch (e2: Exception) {
+                    ai.deepcode.android.util.AppLogger.e("EncryptedPrefs", "EncryptedSharedPreferences unavailable, falling back to isolated prefs: ${e2.javaClass.simpleName}")
+                    context.getSharedPreferences(FALLBACK_PREFS_FILE, Context.MODE_PRIVATE)
+                }
+            }
+        }
+    }
+
+    /**
+     * Safely executes a SharedPreferences block, recovering if Keystore or SharedPreferences corruption occurs.
+     */
+    private fun <T> safePrefAccess(block: (android.content.SharedPreferences) -> T, fallback: T): T {
+        return try {
+            block(sharedPrefs)
+        } catch (e: Exception) {
+            ai.deepcode.android.util.AppLogger.w("EncryptedPrefs", "SharedPreferences access failed (${e.javaClass.simpleName}), attempting safe recovery")
+            appContext?.let { ctx ->
+                recoverCorruptedStorage(ctx)
+            }
+            try {
+                block(sharedPrefs)
+            } catch (_: Exception) {
+                fallback
+            }
+        }
+    }
+
+    /**
+     * Recovers from Keystore or EncryptedSharedPreferences corruption by deleting corrupted files
+     * and recreating the storage cleanly.
+     */
+    @Synchronized
+    fun recoverCorruptedStorage(context: Context): Boolean {
+        ai.deepcode.android.util.AppLogger.w("EncryptedPrefs", "Initiating safe recovery of encrypted preferences and keystore")
+        try {
+            context.deleteSharedPreferences(PREFS_FILE)
+        } catch (_: Exception) {}
+        try {
+            val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+            if (keyStore.containsAlias(MasterKey.DEFAULT_MASTER_KEY_ALIAS)) {
+                keyStore.deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
+            }
+        } catch (_: Exception) {}
+        try {
+            val masterKeyFile = java.io.File(context.filesDir, "_androidx_security_master_key_preference_")
+            if (masterKeyFile.exists()) masterKeyFile.delete()
+        } catch (_: Exception) {}
+
+        sharedPrefs = try {
+            createEncryptedPrefs(context)
+        } catch (e: Exception) {
+            ai.deepcode.android.util.AppLogger.e("EncryptedPrefs", "Failed to recreate EncryptedSharedPreferences, using isolated fallback: ${e.javaClass.simpleName}")
+            context.getSharedPreferences(FALLBACK_PREFS_FILE, Context.MODE_PRIVATE)
+        }
+        return true
     }
 
     private val _themeFlow = MutableStateFlow("system")
@@ -91,20 +167,24 @@ class EncryptedPrefs private constructor(context: Context) {
     val dashboardStyleFlow: StateFlow<String> = _dashboardStyleFlow
 
     init {
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
-            _themeFlow.value = getSetting("theme", "system")
-            _accentFlow.value = getSetting("accent", "amber")
-            _wallpaperFlow.value = getSetting("chat_wallpaper", "default")
-            _customWallpaperFlow.value = getSetting("chat_wallpaper_custom", "")
-            _refreshRateModeFlow.value = getSetting("refresh_rate_mode", "dynamic")
-            _fontSizeFlow.value = getSetting("font_size", "medium")
-            _uiScaleFlow.value = getSetting("ui_scale", "default")
-            _rootModeFlow.value = getBooleanSetting("root_mode", false)
-            _personaEnabledFlow.value = getSetting("persona_enabled", "false") == "true"
-            _customPersonaFlow.value = getSetting("custom_persona", "")
-            _workflowModeFlow.value = getSetting("workflow_mode", WORKFLOW_DIRECT)
-            _dashboardStyleFlow.value = getSetting("dashboard_style", DASHBOARD_STYLE_FLOATING)
-        }
+        try {
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
+                try {
+                    _themeFlow.value = getSetting("theme", "system")
+                    _accentFlow.value = getSetting("accent", "amber")
+                    _wallpaperFlow.value = getSetting("chat_wallpaper", "default")
+                    _customWallpaperFlow.value = getSetting("chat_wallpaper_custom", "")
+                    _refreshRateModeFlow.value = getSetting("refresh_rate_mode", "dynamic")
+                    _fontSizeFlow.value = getSetting("font_size", "medium")
+                    _uiScaleFlow.value = getSetting("ui_scale", "default")
+                    _rootModeFlow.value = getBooleanSetting("root_mode", false)
+                    _personaEnabledFlow.value = getSetting("persona_enabled", "false") == "true"
+                    _customPersonaFlow.value = getSetting("custom_persona", "")
+                    _workflowModeFlow.value = getSetting("workflow_mode", WORKFLOW_DIRECT)
+                    _dashboardStyleFlow.value = getSetting("dashboard_style", DASHBOARD_STYLE_FLOATING)
+                } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {}
     }
 
     private fun decodeKey(b64: String): String = try {
@@ -112,7 +192,7 @@ class EncryptedPrefs private constructor(context: Context) {
     } catch (_: Exception) { "" }
 
     fun getApiKey(provider: String): String {
-        val key = sharedPrefs.getString("api_key_$provider", "") ?: ""
+        val key = safePrefAccess({ it.getString("api_key_$provider", "") ?: "" }, "")
         if (key.isNotEmpty()) return key
         val clean = provider.trim().lowercase()
         if (clean == "atria" || clean == "atria-ai") {
@@ -125,7 +205,10 @@ class EncryptedPrefs private constructor(context: Context) {
     }
 
     fun saveApiKey(provider: String, key: String) {
-        sharedPrefs.edit().putString("api_key_$provider", key).apply()
+        safePrefAccess({ it.edit().putString("api_key_$provider", key).apply() }, Unit)
+        try {
+            ai.deepcode.android.data.remote.ApiKeyRotator.clearCooldowns(provider, this)
+        } catch (_: Exception) {}
     }
 
     /**
@@ -153,7 +236,12 @@ class EncryptedPrefs private constructor(context: Context) {
     fun saveApiKeySlot(provider: String, slot: Int, key: String) {
         when {
             slot <= 1 -> saveApiKey(provider, key)
-            slot in 2..MAX_API_KEYS_PER_PROVIDER -> saveSetting("api_key_${provider}_$slot", key)
+            slot in 2..MAX_API_KEYS_PER_PROVIDER -> {
+                saveSetting("api_key_${provider}_$slot", key)
+                try {
+                    ai.deepcode.android.data.remote.ApiKeyRotator.clearCooldowns(provider, this)
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -182,7 +270,7 @@ class EncryptedPrefs private constructor(context: Context) {
             "persona_enabled" -> "false"
             else -> default
         }
-        val value = sharedPrefs.getString("setting_$key", null)
+        val value = safePrefAccess({ it.getString("setting_$key", null) }, null)
         if (key == "custom_persona" && (value == null || value == DEFAULT_CUSTOM_PERSONA)) {
             return ""
         }
@@ -193,7 +281,7 @@ class EncryptedPrefs private constructor(context: Context) {
     }
 
     fun saveSetting(key: String, value: String) {
-        sharedPrefs.edit().putString("setting_$key", value).apply()
+        safePrefAccess({ it.edit().putString("setting_$key", value).apply() }, Unit)
         when (key) {
             "theme" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_themeFlow, value)
             "accent" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_accentFlow, value)
@@ -208,7 +296,7 @@ class EncryptedPrefs private constructor(context: Context) {
             "dashboard_style" -> ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_dashboardStyleFlow, value)
             "root_mode" -> {
                 val b = value == "true"
-                sharedPrefs.edit().putBoolean("setting_bool_root_mode", b).apply()
+                safePrefAccess({ it.edit().putBoolean("setting_bool_root_mode", b).apply() }, Unit)
                 ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_rootModeFlow, b)
             }
         }
@@ -221,11 +309,11 @@ class EncryptedPrefs private constructor(context: Context) {
     fun setDashboardStyle(style: String) = saveSetting("dashboard_style", style)
 
     fun getBooleanSetting(key: String, default: Boolean): Boolean {
-        return sharedPrefs.getBoolean("setting_bool_$key", default)
+        return safePrefAccess({ it.getBoolean("setting_bool_$key", default) }, default)
     }
 
     fun saveBooleanSetting(key: String, value: Boolean) {
-        sharedPrefs.edit().putBoolean("setting_bool_$key", value).apply()
+        safePrefAccess({ it.edit().putBoolean("setting_bool_$key", value).apply() }, Unit)
         if (key == "root_mode") {
             ai.deepcode.android.util.SafeState.tryUpdateStateFlow(_rootModeFlow, value)
         }
@@ -255,5 +343,3 @@ const val DASHBOARD_STYLE_FLOATING = "floating"
 const val DASHBOARD_STYLE_FIXED = "fixed"
 
 private const val DEFAULT_CUSTOM_PERSONA = ""
-
-

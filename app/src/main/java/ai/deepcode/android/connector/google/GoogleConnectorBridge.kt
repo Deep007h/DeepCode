@@ -6,6 +6,7 @@ import ai.deepcode.android.data.local.EncryptedPrefs
 import ai.deepcode.android.service.google.GoogleAuthService
 import ai.deepcode.android.ui.connections.IntegrationRepository
 import ai.deepcode.android.util.AppLogger
+import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
  * Shared OAuth/token plumbing for all Google Workspace connectors.
@@ -114,9 +115,10 @@ abstract class GoogleConnectorBridge(protected val context: Context) : Connector
 
             // Call Google's revoke endpoint
             val client = okhttp3.OkHttpClient()
+            val emptyBody = ByteArray(0).toRequestBody(null, 0, 0)
             val request = okhttp3.Request.Builder()
                 .url("$REVOKE_URL?token=$token")
-                .post(okhttp3.RequestBody.create(null, ByteArray(0)))
+                .post(emptyBody)
                 .build()
             val response = client.newCall(request).execute()
             response.close()

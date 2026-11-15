@@ -3126,8 +3126,9 @@ fun FullScreenImagePreviewDialog(
             val window = (view.parent as? DialogWindowProvider)?.window
             if (window != null) {
                 window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK))
-                window.statusBarColor = android.graphics.Color.BLACK
-                window.navigationBarColor = android.graphics.Color.BLACK
+                val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, view)
+                insetsController.isAppearanceLightStatusBars = false
+                insetsController.isAppearanceLightNavigationBars = false
                 window.setDimAmount(0f)
             }
             onDispose {}
