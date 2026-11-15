@@ -12,8 +12,8 @@
 
 <br/>
 
-[![Latest Release](https://img.shields.io/badge/Release-v2.0.2-22c55e?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Deep007h/DeepCode/releases/tag/v2.0.2)
-[![Download APK](https://img.shields.io/badge/Download%20APK-v2.0.2%20(21%20MB)-F97316?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Deep007h/DeepCode/releases/download/v2.0.2/DeepCode-v2.0.2.apk)
+[![Latest Release](https://img.shields.io/badge/Release-v2.0.4-22c55e?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Deep007h/DeepCode/releases/tag/v2.0.4)
+[![Download APK](https://img.shields.io/badge/Download%20APK-v2.0.4%20(21%20MB)-F97316?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Deep007h/DeepCode/releases/download/v2.0.4/DeepCode-v2.0.4.apk)
 [![Platform](https://img.shields.io/badge/Android-API%2026%2B%20(8.0--16)-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Architecture](https://img.shields.io/badge/Arch-arm64--v8a-blueviolet?style=for-the-badge&logo=arm&logoColor=white)](https://developer.android.com/ndk)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0%2B-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
@@ -24,7 +24,7 @@
 
 <p align="center">
   <a href="#-interface-preview"><b>Interface</b></a> •
-  <a href="#-whats-new-in-v202"><b>What's New</b></a> •
+  <a href="#-whats-new-in-v204"><b>What's New</b></a> •
   <a href="#-key-features"><b>Features</b></a> •
   <a href="#-linux-subsystem--runtimes"><b>Linux Subsystem</b></a> •
   <a href="#-ai-providers--model-matrix"><b>AI Providers</b></a> •
@@ -64,10 +64,53 @@ Whether you need to generate multi-file codebases, execute Python/Node.js/C++ to
 
 ---
 
-## ⚡ What's New in v2.0.2
+## ⚡ What's New in v2.0.4
 
 <details open>
-<summary><b>✨ Highlights of Release 2.0.2 (Current)</b></summary>
+<summary><b>✨ Highlights of Release 2.0.4 (Current)</b></summary>
+<br/>
+
+- 🔌 **Native Enterprise & Cloud Connectors**:
+  - **First-Class Integrations**: Added direct service connectors and plugin architectures for **GitHub**, **Notion**, **Telegram**, **WhatsApp**, and **Google** (Calendar & Drive).
+  - **OAuth & Token Lifecycle**: Bi-directional token synchronization, automated integration health checks, and secure credential storage via `IntegrationDao` and `OAuthManager`.
+
+- 🛡️ **Hardware-Isolated Keystore & Multi-Key Ring Vault**:
+  - **Dynamic Multi-Key Rotation**: Upgraded `ApiKeyVault` and `ApiKeyRotator` with hardware-backed **AES-256-GCM** encryption through Android Keystore.
+  - **Silent Rate-Limit Failover**: Real-time HTTP 429 quota and rate-limit tracking with instant, zero-latency failover across up to 6 keys per provider ring.
+
+- 🛠️ **Autonomous Tool Execution Engine Hardening**:
+  - **Exact Whitespace & Indentation Preservation**: Implemented raw string extraction (`optRawString`) in `ToolExecutor` to eliminate whitespace trimming bugs in `edit_file`, `write_file`, and `apply_patch`.
+  - **Resilient JSON Argument Deserialization**: `executeTool` now transparently unwraps JSON arrays, raw primitives, and nested parameter envelopes.
+  - **1-Indexed Line Slicing for File Inspection**: `read_file` / `view_file` now natively supports `start_line` and `end_line` slicing with total line counts for inspection of large codebases.
+  - **Robust Glob Regex Escaping & Exit Code Reporting**: Fixed glob metacharacter syntax handling in `findByName` and ensured non-zero exit codes are reliably captured in `TerminalRunner`.
+
+- 🤖 **Universal Remote AI Provider Compatibility**:
+  - **Safe Tool Deserialization**: Added `parseToolCallsArray` helper preventing crashes when handling object-format tool payloads in `AnthropicProvider` and `GeminiProvider`.
+  - **Multi-Format Text Tool Calling**: Expanded `parseToolCallsFromText` in `ChatScreen` to parse bracketed (`[TOOL_CALL:...]`, `[CALL:...]`) and tagged (`<tool_call:...>`) tool envelopes from DeepSeek, Qwen, and Ollama.
+
+- 🎨 **Jetpack Compose UI Polish**:
+  - Modernized legacy icons to `Icons.AutoMirrored` across navigation and action components.
+  - Cleaned up touch event propagation and indentation in `CapsuleTabBar`.
+  - Updated `Modifier.menuAnchor` implementations to `ExposedDropdownMenuAnchorType.PrimaryNotEditable`.
+
+</details>
+
+<details>
+<summary><b>📜 Highlights of Release 2.0.3</b></summary>
+<br/>
+
+- 🐧 **OpenCode CLI Autonomous PRoot Harness**:
+  - Self-contained autonomous agent bootstrap running directly inside rootless PRoot Linux.
+  - Integrated `OpencodeRuntimeBridge` and `RuntimeInstaller` with zero root requirements.
+
+- 🍙 **Draggable Bottom Dock Capsule & Service Stability**:
+  - Tactile draggable pill navigation dock with continuous haptic feedback.
+  - Hardened background automation foreground services and scheduler alarms.
+
+</details>
+
+<details>
+<summary><b>📜 Highlights of Release 2.0.2</b></summary>
 <br/>
 
 - 🍎 **Apple-Style Floating Island Dashboard & Dock**:
@@ -208,7 +251,7 @@ The autonomous agent loop executes native tools directly on Android:
 ## 📦 Installation
 
 ### Option 1: Direct APK Download (Recommended)
-1. Download the latest **`DeepCode-v2.0.2.apk`** from [GitHub Releases](https://github.com/Deep007h/DeepCode/releases/tag/v2.0.2).
+1. Download the latest **`DeepCode-v2.0.4.apk`** from [GitHub Releases](https://github.com/Deep007h/DeepCode/releases/tag/v2.0.4).
 2. Allow installation from unknown sources in Android Settings.
 3. Open DeepCode and configure your preferred provider or choose a free-tier engine during the Onboarding Setup Wizard.
 
