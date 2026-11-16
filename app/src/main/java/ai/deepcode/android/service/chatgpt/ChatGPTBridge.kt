@@ -177,13 +177,24 @@ class ChatGPTBridge private constructor(private val context: Context) {
             return@withContext trimmed
         }
 
+        // If user provided an OpenAI API key directly
+        if (trimmed.startsWith("sk-")) {
+            prefs.saveApiKey("openai", trimmed)
+            prefs.saveApiKey("chatgpt", trimmed)
+            prefs.saveChatGPTAccessToken(trimmed)
+            AppLogger.i(TAG, "Saved raw OpenAI API key directly")
+            return@withContext trimmed
+        }
+
         val cookieHeader = if (trimmed.contains("=")) trimmed else "__Secure-next-auth.session-token=$trimmed"
 
         try {
             val req = Request.Builder()
                 .url("https://chatgpt.com/api/auth/session")
                 .header("Cookie", cookieHeader)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
+                .header("Origin", "https://chatgpt.com")
+                .header("Referer", "https://chatgpt.com/")
                 .get()
                 .build()
 

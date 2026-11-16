@@ -4,6 +4,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
+import android.os.Message
 import android.util.Base64
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -11,9 +13,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.viewinterop.AndroidView
+import android.webkit.CookieManager
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.webkit.CookieManager
 import ai.deepcode.android.service.chatgpt.ChatGPTBridge
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -134,6 +139,9 @@ fun ConnectionsScreen(
     var chatGPTManualToken by remember { mutableStateOf("") }
     var isCheckingChatGPTLogin by remember { mutableStateOf(false) }
     var chatGPTStatusMessage by remember { mutableStateOf<String?>(null) }
+    var chatGPTWebView by remember { mutableStateOf<WebView?>(null) }
+    var chatGPTLoadingProgress by remember { mutableFloatStateOf(0f) }
+    var isChatGPTPageLoading by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
     val whatsAppConnected by viewModel.whatsAppConnected.collectAsStateWithLifecycle()
@@ -842,6 +850,90 @@ fun ConnectionsScreen(
                         .fillMaxSize()
                         .padding(18.dp)
                 ) {
+                    val reloadChatGPTLogin: (WebView?) -> Unit = { targetWebView ->
+                        chatGPTStatusMessage = "Connecting to OpenAI..."
+                        val initHtml = """
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                                <style>
+                                    body {
+                                        background-color: #111827;
+                                        color: #E5E7EB;
+                                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                                        display: flex;
+                                        flex-direction: column;
+                                        align-items: center;
+                                        justify-content: center;
+                                        height: 100vh;
+                                        margin: 0;
+                                        text-align: center;
+                                        padding: 24px;
+                                        box-sizing: border-box;
+                                    }
+                                    .spinner {
+                                        width: 40px;
+                                        height: 40px;
+                                        border: 3.5px solid rgba(16, 163, 127, 0.2);
+                                        border-top-color: #10A37F;
+                                        border-radius: 50%;
+                                        animation: spin 0.8s linear infinite;
+                                    }
+                                    @keyframes spin { to { transform: rotate(360deg); } }
+                                    h3 { margin-top: 20px; margin-bottom: 6px; font-size: 15px; font-weight: 600; color: #F3F4F6; }
+                                    p { margin: 0; font-size: 12.5px; color: #9CA3AF; line-height: 1.5; }
+                                </style>
+                            </head>
+                            <body>
+                                <div class="spinner"></div>
+                                <h3>Connecting to OpenAI...</h3>
+                                <p>Redirecting to Google / OpenAI login</p>
+                                <script>
+                                    (function() {
+                                        var timer = setTimeout(function() {
+                                            window.location.href = 'https://chatgpt.com';
+                                        }, 5000);
+
+                                        fetch('https://chatgpt.com/api/auth/csrf')
+                                            .then(function(res) { return res.json(); })
+                                            .then(function(data) {
+                                                clearTimeout(timer);
+                                                if (data && data.csrfToken) {
+                                                    var form = document.createElement('form');
+                                                    form.method = 'POST';
+                                                    form.action = 'https://chatgpt.com/api/auth/signin/openai';
+                                                    
+                                                    var csrfInput = document.createElement('input');
+                                                    csrfInput.type = 'hidden';
+                                                    csrfInput.name = 'csrfToken';
+                                                    csrfInput.value = data.csrfToken;
+                                                    form.appendChild(csrfInput);
+                                                    
+                                                    var cbInput = document.createElement('input');
+                                                    cbInput.type = 'hidden';
+                                                    cbInput.name = 'callbackUrl';
+                                                    cbInput.value = 'https://chatgpt.com';
+                                                    form.appendChild(cbInput);
+                                                    
+                                                    document.body.appendChild(form);
+                                                    form.submit();
+                                                } else {
+                                                    window.location.href = 'https://chatgpt.com';
+                                                }
+                                            })
+                                            .catch(function(err) {
+                                                clearTimeout(timer);
+                                                window.location.href = 'https://chatgpt.com';
+                                            });
+                                    })();
+                                </script>
+                            </body>
+                            </html>
+                        """.trimIndent()
+                        targetWebView?.loadDataWithBaseURL("https://chatgpt.com", initHtml, "text/html", "UTF-8", "https://chatgpt.com")
+                    }
+
                     // Header
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -869,16 +961,55 @@ fun ConnectionsScreen(
                                 )
                             }
                         }
-                        IconButton(onClick = {
-                            showChatGPTDialog = false
-                            chatGPTStatusMessage = null
-                        }) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Close",
-                                tint = AppMuted
-                            )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (chatGPTTab == 0) {
+                                IconButton(onClick = {
+                                    reloadChatGPTLogin(chatGPTWebView)
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Reload Login",
+                                        tint = AppMuted
+                                    )
+                                }
+                                IconButton(onClick = {
+                                    try {
+                                        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://chatgpt.com"))
+                                        context.startActivity(browserIntent)
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
+                                    }
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                                        contentDescription = "Open in Browser",
+                                        tint = AppMuted
+                                    )
+                                }
+                            }
+                            IconButton(onClick = {
+                                showChatGPTDialog = false
+                                chatGPTStatusMessage = null
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Close",
+                                    tint = AppMuted
+                                )
+                            }
                         }
+                    }
+
+                    if (isChatGPTPageLoading && chatGPTTab == 0) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { chatGPTLoadingProgress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(2.dp),
+                            color = Color(0xFF10A37F),
+                            trackColor = Color(0xFF10A37F).copy(alpha = 0.2f)
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -934,7 +1065,7 @@ fun ConnectionsScreen(
                     if (chatGPTTab == 0) {
                         // Google / Web Sign-in Tab
                         Text(
-                            text = "Tap 'Log in' and choose 'Continue with Google'. DeepCode will automatically extract the session token upon sign in.",
+                            text = "Tap 'Continue with Google' to sign in. DeepCode will automatically extract the session token upon sign in.",
                             fontSize = 12.sp,
                             color = AppMuted,
                             modifier = Modifier.padding(bottom = 6.dp)
@@ -969,9 +1100,19 @@ fun ConnectionsScreen(
                             AndroidView(
                                 factory = { ctx ->
                                     WebView(ctx).apply {
+                                        chatGPTWebView = this
                                         settings.javaScriptEnabled = true
                                         settings.domStorageEnabled = true
-                                        settings.setSupportZoom(false)
+                                        settings.databaseEnabled = true
+                                        settings.javaScriptCanOpenWindowsAutomatically = true
+                                        settings.setSupportMultipleWindows(true)
+                                        settings.useWideViewPort = true
+                                        settings.loadWithOverviewMode = true
+                                        settings.setSupportZoom(true)
+                                        settings.builtInZoomControls = false
+                                        settings.displayZoomControls = false
+                                        settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                                        settings.cacheMode = WebSettings.LOAD_DEFAULT
                                         // Standard mobile Chrome UA without "wv" or "Version/4.0" to avoid Google OAuth disallowed_useragent error
                                         settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -979,12 +1120,70 @@ fun ConnectionsScreen(
                                         cookieManager.setAcceptCookie(true)
                                         cookieManager.setAcceptThirdPartyCookies(this, true)
 
+                                        webChromeClient = object : WebChromeClient() {
+                                            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                                                super.onProgressChanged(view, newProgress)
+                                                chatGPTLoadingProgress = newProgress / 100f
+                                                isChatGPTPageLoading = newProgress < 100
+                                            }
+
+                                            override fun onCreateWindow(
+                                                view: WebView?,
+                                                isDialog: Boolean,
+                                                isUserGesture: Boolean,
+                                                resultMsg: Message?
+                                            ): Boolean {
+                                                val transport = resultMsg?.obj as? WebView.WebViewTransport
+                                                transport?.webView = view
+                                                resultMsg?.sendToTarget()
+                                                return true
+                                            }
+                                        }
+
                                         webViewClient = object : WebViewClient() {
+                                            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                                val urlStr = request?.url?.toString() ?: return false
+                                                if (urlStr.startsWith("http://") || urlStr.startsWith("https://")) {
+                                                    return false
+                                                }
+                                                try {
+                                                    val intent = Intent.parseUri(urlStr, Intent.URI_INTENT_SCHEME)
+                                                    ctx.startActivity(intent)
+                                                    return true
+                                                } catch (e: Exception) {
+                                                    return false
+                                                }
+                                            }
+
                                             override fun onPageFinished(view: WebView?, url: String?) {
                                                 super.onPageFinished(view, url)
+                                                cookieManager.flush()
+
+                                                // Auto-dismiss cookie preferences banner if present
+                                                view?.evaluateJavascript(
+                                                    """
+                                                    (function() {
+                                                        try {
+                                                            var btns = Array.from(document.querySelectorAll('button, a'));
+                                                            for (var b of btns) {
+                                                                var t = (b.innerText || b.textContent || '').trim().toLowerCase();
+                                                                if (t === 'accept all' || t === 'allow all' || t === 'agree' || t === 'accept') {
+                                                                    b.click();
+                                                                    break;
+                                                                }
+                                                            }
+                                                        } catch(e) {}
+                                                    })();
+                                                    """.trimIndent(),
+                                                    null
+                                                )
+
                                                 url?.let { currentUrl ->
-                                                    val cookies = cookieManager.getCookie(currentUrl) ?: ""
-                                                    if (cookies.contains("__Secure-next-auth.session-token")) {
+                                                    val gptCookies = cookieManager.getCookie("https://chatgpt.com") ?: ""
+                                                    val currentCookies = cookieManager.getCookie(currentUrl) ?: ""
+                                                    val cookies = "$gptCookies; $currentCookies"
+                                                    if (cookies.contains("__Secure-next-auth.session-token") ||
+                                                        (currentUrl.contains("chatgpt.com") && !currentUrl.contains("/api/auth/signin") && !currentUrl.contains("auth.openai.com"))) {
                                                         if (!isCheckingChatGPTLogin) {
                                                             isCheckingChatGPTLogin = true
                                                             chatGPTStatusMessage = "Session detected! Authenticating..."
@@ -1006,7 +1205,8 @@ fun ConnectionsScreen(
                                                 }
                                             }
                                         }
-                                        loadUrl("https://chatgpt.com/auth/login")
+
+                                        reloadChatGPTLogin(this)
                                     }
                                 },
                                 modifier = Modifier.fillMaxSize()
@@ -1023,12 +1223,15 @@ fun ConnectionsScreen(
                             FilledAppButton(
                                 onClick = {
                                     val cookieManager = CookieManager.getInstance()
-                                    val cookies = cookieManager.getCookie("https://chatgpt.com") ?: ""
+                                    cookieManager.flush()
+                                    val gptCookies = cookieManager.getCookie("https://chatgpt.com") ?: ""
+                                    val authCookies = cookieManager.getCookie("https://auth.openai.com") ?: ""
+                                    val combinedCookies = "$gptCookies; $authCookies"
                                     coroutineScope.launch {
                                         isCheckingChatGPTLogin = true
                                         chatGPTStatusMessage = "Checking cookies..."
                                         val bridge = ChatGPTBridge.getInstance(context)
-                                        val token = bridge.fetchAccessTokenFromSessionCookie(cookies)
+                                        val token = bridge.fetchAccessTokenFromSessionCookie(combinedCookies)
                                         if (token != null && token.isNotBlank()) {
                                             viewModel.connectChatGPT(token)
                                             Toast.makeText(context, "ChatGPT connected successfully!", Toast.LENGTH_SHORT).show()
